@@ -7,27 +7,26 @@ export async function logEvent(db: Db, orderId: string | null, type: string, det
 }
 
 // The never-sell-twice rule: one atomic statement, so two buyers racing for
-// the last unit can't both succeed. Returns false when there isn't enough.
-export async function holdStock(db: Db, productId: string, storeId: string, qty: number): Promise<boolean> {
+// the last unit cannot both succeed.
+export async function holdStock(db: Db, productId: string, storeId: string, quantity: number): Promise<boolean> {
   const { rowCount } = await db.query(
     `UPDATE stock SET available = available - $3, updated_at = now()
      WHERE product_id = $1 AND store_id = $2 AND available >= $3`,
-    [productId, storeId, qty],
+    [productId, storeId, quantity],
   );
   return rowCount === 1;
 }
 
-export async function releaseStock(db: Db, productId: string, storeId: string, qty: number) {
+async function releaseStock(db: Db, productId: string, storeId: string, quantity: number) {
   await db.query(
     `UPDATE stock SET available = available + $3, updated_at = now()
      WHERE product_id = $1 AND store_id = $2`,
-    [productId, storeId, qty],
+    [productId, storeId, quantity],
   );
 }
 
-// Moves unpaid orders past their hold to `expired` and returns their stock,
-// in one statement. Safe to run concurrently: row locks mean each order is
-// expired, and its stock returned, exactly once.
+// Moves elapsed holds to expired and returns their stock. Row locks make this
+// safe when multiple requests run the sweep at the same time.
 export async function expireStaleOrders(db: Db): Promise<number> {
   const { rowCount } = await db.query(`
     WITH expired AS (
@@ -45,7 +44,6 @@ export async function expireStaleOrders(db: Db): Promise<number> {
   return rowCount ?? 0;
 }
 
-// Ends a pending order as failed and gives its held stock back.
 export async function failOrder(db: Db, orderId: string, reason: string, detail: Record<string, unknown> = {}) {
   const { rows } = await db.query(
     `UPDATE orders SET status = 'failed', failure_reason = $2, updated_at = now()

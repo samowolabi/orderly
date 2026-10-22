@@ -1,7 +1,7 @@
 import { createApp } from "./app";
 import { config } from "./config";
 import { pool } from "./db/pool";
-import { expireStaleOrders } from "./orders/stock";
+import { expireStaleOrders } from "./services/stock";
 
 const { PORT } = config();
 
