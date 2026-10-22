@@ -1,6 +1,6 @@
 import { pool, withTransaction } from "../db/pool";
-import { ApiError } from "../http/respond";
 import { formatNaira, toKobo, toNaira } from "../utils/format";
+import { ApiError } from "../utils/http";
 import { DAYS, hoursView, toRows, type HourRow, type HoursInputValue } from "../utils/store-hours";
 import {
   addressView,

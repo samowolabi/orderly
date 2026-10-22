@@ -1,6 +1,4 @@
 import type { Request, Response } from "express";
-import { ok } from "../http/respond";
-import { parse } from "../http/validate";
 import {
   AddProductBody,
   AddStoreBody,
@@ -12,6 +10,7 @@ import {
   UpdateStoreBody,
 } from "../openapi/schemas/catalog";
 import * as catalogService from "../services/catalog";
+import { ok, parse } from "../utils/http";
 
 export async function listStores(_request: Request, response: Response) {
   ok(response, await catalogService.listStores());

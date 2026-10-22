@@ -17,7 +17,7 @@ const Env = z.object({
   PORT: z.coerce.number().int().positive().default(3000),
 });
 
-export type Config = z.infer<typeof Env>;
+type Config = z.infer<typeof Env>;
 
 // Parsed on first use so the db scripts only need DATABASE_URL.
 let cached: Config | undefined;

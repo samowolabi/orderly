@@ -1,6 +1,6 @@
 import { Router } from "express";
 import * as controller from "../controllers/catalog";
-import { requireRole } from "../http/auth";
+import { requireRole } from "../middleware/auth";
 
 export const catalog = Router();
 

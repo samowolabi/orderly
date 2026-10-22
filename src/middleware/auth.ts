@@ -1,14 +1,14 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import type { RequestHandler } from "express";
 import { config } from "../config";
-import { fail } from "./respond";
+import { fail } from "../utils/http";
 
 // Orderly Shop sends the buyer key, Orderly Owner the seller key.
-// Checked on every request, so a tricked agent still can't use owner tools.
+// Checked on every request, so a tricked agent still cannot use owner tools.
 export type Role = "buyer" | "seller";
 
-const digest = (s: string) => createHash("sha256").update(s).digest();
-const same = (a: string, b: string) => timingSafeEqual(digest(a), digest(b));
+const digest = (value: string) => createHash("sha256").update(value).digest();
+const same = (left: string, right: string) => timingSafeEqual(digest(left), digest(right));
 
 function roleFor(key: string): Role | null {
   const { BUYER_API_KEY, SELLER_API_KEY } = config();
@@ -18,21 +18,28 @@ function roleFor(key: string): Role | null {
 }
 
 export function requireRole(...allowed: Role[]): RequestHandler {
-  return (req, res, next) => {
-    const header = req.get("x-api-key") ?? req.get("authorization")?.replace(/^Bearer\s+/i, "");
+  return (request, response, next) => {
+    const header = request.get("x-api-key") ?? request.get("authorization")?.replace(/^Bearer\s+/i, "");
     const role = header ? roleFor(header) : null;
+
     if (!role) {
-      return fail(res, 401, "unauthorized", "The API key is missing or wrong. This is a setup problem: hand over to a person.");
+      return fail(
+        response,
+        401,
+        "unauthorized",
+        "The API key is missing or wrong. This is a setup problem: hand over to a person.",
+      );
     }
     if (!allowed.includes(role)) {
       return fail(
-        res,
+        response,
         403,
         "owner_only",
         "Only the store owner can do this. Tell the customer you can't change prices, stock or store details, and offer to help with something else.",
       );
     }
-    res.locals.role = role;
+
+    response.locals.role = role;
     next();
   };
 }

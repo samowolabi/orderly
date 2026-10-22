@@ -1,8 +1,8 @@
 import { randomBytes } from "node:crypto";
 import { config } from "../config";
 import { pool, withTransaction } from "../db/pool";
-import { ApiError } from "../http/respond";
 import { formatNaira, lagosTime, toNaira } from "../utils/format";
+import { ApiError } from "../utils/http";
 import { formatAddress, type AddressRow } from "../utils/store-location";
 import { initializeTransaction, PaystackUnavailable, verifyTransaction, type PaystackTransaction } from "./paystack";
 import { expireStaleOrders, failOrder, holdStock, logEvent, type Db } from "./stock";

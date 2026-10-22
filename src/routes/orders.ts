@@ -1,6 +1,6 @@
 import { Router } from "express";
 import * as controller from "../controllers/orders";
-import { requireRole } from "../http/auth";
+import { requireRole } from "../middleware/auth";
 
 export const orders = Router();
 

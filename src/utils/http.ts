@@ -1,5 +1,23 @@
+import type { Response } from "express";
 import type { z } from "zod";
-import { ApiError } from "./respond";
+
+export function ok<T>(response: Response, data: T, status = 200) {
+  return response.status(status).json({ ok: true, data, error: null });
+}
+
+export function fail(response: Response, status: number, code: string, message_for_agent: string) {
+  return response.status(status).json({ ok: false, data: null, error: { code, message_for_agent } });
+}
+
+export class ApiError extends Error {
+  constructor(
+    readonly status: number,
+    readonly code: string,
+    message_for_agent: string,
+  ) {
+    super(message_for_agent);
+  }
+}
 
 export function parse<S extends z.ZodType>(schema: S, value: unknown): z.output<S> {
   const result = schema.safeParse(value ?? {});

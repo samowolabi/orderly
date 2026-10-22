@@ -1,10 +1,11 @@
-import express, { type NextFunction, type Request, type Response } from "express";
+import express from "express";
 import { config } from "./config";
 import { pool } from "./db/pool";
-import { ApiError, fail, ok } from "./http/respond";
+import { errorHandler, notFound } from "./middleware/errors";
 import { openApiDocument } from "./openapi/document";
 import { catalog } from "./routes/catalog";
 import { orders } from "./routes/orders";
+import { ok } from "./utils/http";
 
 export function createApp() {
   const app = express();
@@ -23,18 +24,8 @@ export function createApp() {
   app.use(catalog);
   app.use(orders);
 
-  app.use((_req, res) => {
-    fail(res, 404, "not_found", "This endpoint does not exist. Check the tool name.");
-  });
-
-  app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
-    if (err instanceof ApiError) return fail(res, err.status, err.code, err.message);
-    if (err instanceof SyntaxError && "body" in err) {
-      return fail(res, 400, "bad_json", "The request body was not valid JSON.");
-    }
-    console.error(err);
-    fail(res, 500, "internal_error", "Something went wrong on our side. Do not retry; hand over to a person.");
-  });
+  app.use(notFound);
+  app.use(errorHandler);
 
   return app;
 }
