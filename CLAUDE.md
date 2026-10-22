@@ -37,6 +37,9 @@ Every response has the shape `{ ok, data, error: { code, message_for_agent } }`.
 - `npm run dev` serves on :3000. `GET /health` checks the database.
 - Migrations are plain SQL in `migrations/`, applied in name order and tracked in `schema_migrations`.
 - Seed: Kola Gadgets, 2 stores, 9 products. `IP15P-256` has a single unit (Ikeja) for the last-unit race test.
+- API keys: send `X-Api-Key` (or `Authorization: Bearer`). Buyer key for Orderly Shop, seller key for Orderly Owner.
+- `npm run openapi -- <public url>` writes `openapi.json` for Chord (gitignored); the running API also serves it at `/openapi.json`. Each route registers its own spec entry in `src/routes/`, and `operationId` is the Chord tool name.
+- Curl tests: `npm run fake-paystack` (a local stand-in on :4010 that can decline, fail or go down on demand), start the API with `PAYSTACK_BASE_URL=http://localhost:4010 npm run dev`, run `npm run db:seed`, then `npm run test:api`. Then repeat the happy path against real Paystack test mode.
 
 ## Build order
 1. Database and seed data

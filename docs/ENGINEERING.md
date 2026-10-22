@@ -73,14 +73,21 @@ Chord's built-in tools cover the rest: `schedule_reminder` for the payment nudge
 stateDiagram-v2
   [*] --> pending_payment: create_order (stock held 30 min)
   pending_payment --> pending_payment: verify, not paid yet (resend link)
+  pending_payment --> pending_payment: card declined (new link, hold kept)
   pending_payment --> paid: Paystack success, amount matches
-  pending_payment --> failed: declined, or amount mismatch
+  pending_payment --> failed: 3rd decline, amount mismatch, or link fails (stock back)
   pending_payment --> expired: unpaid after 30 min, stock back
   expired --> paid: paid late, stock still there (re-held)
   expired --> paid_no_stock: paid late, item gone, owner refunds
+  failed --> paid: paid late on an old link, stock still there
+  failed --> paid_no_stock: paid late on an old link, item gone
 ```
 
 Only a verified Paystack payment marks an order paid.
+
+- **Paystack references.** Each payment link gets its own reference: the order id plus a random suffix (`ORD-1001-3fa9c2`). Paystack references are unique across the account forever, so plain order ids would collide after a reseed, or between local dev and Railway on the same test key. An order keeps every reference it has had, and verify checks all of them, newest first, so a payment finished on an older page is still found.
+- **Declined cards.** A decline keeps the hold and returns a new link. After the second decline, `next_step` tells the agent to hand over; the third cancels the order and releases the stock.
+- **Expiry.** Holds are expired, and their stock returned, in one SQL statement. It runs before every stock-dependent request and every 60 seconds in the server.
 
 ## Chord setup
 
@@ -113,7 +120,8 @@ The API enforces the rules, so a confused or tricked agent still can't break the
 
 | Failure | API does | Agent says |
 | --- | --- | --- |
-| Paystack link fails | Releases the held stock | Sorry, try again; hands over on the second failure |
+| Paystack link fails | Releases the held stock, marks the order failed | Sorry, try again; hands over on the second failure |
+| Card declined | Keeps the hold, makes a new link | Sends the new link; hands over after the second decline |
 | Paystack doesn't answer | Retries once, then reports it | "I can't confirm right now"; hands over |
 | Amount doesn't match | Marks the order failed | Hands over; never confirms |
 | Paid after the hold expired, item gone | Marks it `paid_no_stock` | Tells the customer honestly; owner refunds |

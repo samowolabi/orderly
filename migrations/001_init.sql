@@ -37,7 +37,7 @@ CREATE TABLE stock (
 CREATE SEQUENCE order_number_seq START 1001;
 
 CREATE TABLE orders (
-  -- Also used as the Paystack transaction reference.
+  -- Prefix of its Paystack references (see 002).
   id              text PRIMARY KEY DEFAULT 'ORD-' || nextval('order_number_seq'),
   product_id      text NOT NULL REFERENCES products(id),
   store_id        text NOT NULL REFERENCES stores(id),
