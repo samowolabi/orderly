@@ -1,21 +1,36 @@
+import { toRows } from "../utils/store-hours";
+import type { AddressInputValue, CoordinatesInputValue } from "../utils/store-location";
 import { pool, withTransaction } from "./pool";
 
 // Kola Gadgets: a made-up Lagos phone and gadget store. All data is fictional.
 
 const naira = (n: number) => n * 100;
 
-const stores = [
+type SeedStore = {
+  id: string;
+  name: string;
+  address: AddressInputValue;
+  location: CoordinatesInputValue;
+  hours: Parameters<typeof toRows>[0];
+};
+
+const stores: SeedStore[] = [
   {
     id: "ikeja",
     name: "Kola Gadgets Ikeja",
-    address: "14 Allen Avenue, Ikeja, Lagos",
-    opening_hours: "Mon to Sat, 9am to 7pm",
+    address: { line1: "14 Allen Avenue", area: "Ikeja", city: "Lagos", state: "Lagos", country_code: "NG" },
+    location: { latitude: 6.604718, longitude: 3.350299 },
+    hours: [{ days: ["mon", "tue", "wed", "thu", "fri", "sat"], opens: "09:00", closes: "19:00" }],
   },
   {
     id: "lekki",
     name: "Kola Gadgets Lekki",
-    address: "8 Admiralty Way, Lekki Phase 1, Lagos",
-    opening_hours: "Mon to Sat, 10am to 8pm; Sun, 12pm to 5pm",
+    address: { line1: "8 Admiralty Way", area: "Lekki Phase 1", city: "Lagos", state: "Lagos", country_code: "NG" },
+    location: { latitude: 6.448381, longitude: 3.47926 },
+    hours: [
+      { days: ["mon", "tue", "wed", "thu", "fri", "sat"], opens: "10:00", closes: "20:00" },
+      { days: ["sun"], opens: "12:00", closes: "17:00" },
+    ],
   },
 ];
 
@@ -40,14 +55,38 @@ async function seed() {
   }
 
   await withTransaction(async (db) => {
-    await db.query("TRUNCATE events, orders, stock, products, stores RESTART IDENTITY CASCADE");
+    await db.query("TRUNCATE events, orders, stock, products, store_hours, stores RESTART IDENTITY CASCADE");
     await db.query("ALTER SEQUENCE order_number_seq RESTART WITH 1001");
 
     for (const s of stores) {
       await db.query(
-        "INSERT INTO stores (id, name, address, opening_hours) VALUES ($1, $2, $3, $4)",
-        [s.id, s.name, s.address, s.opening_hours],
+        `INSERT INTO stores (
+           id, name, address_line1, address_line2, area, city, state, country_code,
+           postal_code, latitude, longitude, directions_note
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+        [
+          s.id,
+          s.name,
+          s.address.line1,
+          s.address.line2 ?? null,
+          s.address.area,
+          s.address.city,
+          s.address.state,
+          s.address.country_code,
+          s.address.postal_code ?? null,
+          s.location.latitude,
+          s.location.longitude,
+          s.address.directions_note ?? null,
+        ],
       );
+      for (const h of toRows(s.hours)) {
+        await db.query("INSERT INTO store_hours (store_id, weekday, opens, closes) VALUES ($1, $2, $3, $4)", [
+          s.id,
+          h.weekday,
+          h.opens,
+          h.closes,
+        ]);
+      }
     }
 
     for (const p of products) {
