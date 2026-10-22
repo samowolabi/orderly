@@ -382,6 +382,8 @@ export async function processPaystackWebhook(webhook: PaystackWebhook) {
     return { outcome: "ignored" as const, event: webhook.event };
   }
 
+  await expireStaleOrders(pool);
+
   return withTransaction(async (db) => {
     const { rows } = await db.query<OrderRow>(
       `SELECT * FROM orders
