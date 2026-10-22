@@ -17,6 +17,7 @@ flowchart TB
   API[Orderly REST API<br/>imported into Chord via OpenAPI<br/>TypeScript on Railway]
   API -- stores, stock, orders --> DB[(Postgres)]
   API -- create link, verify --> PS[Paystack test mode]
+  PS -- signed payment webhook --> API
   CW -. pays by link .-> PS
 ```
 
@@ -57,7 +58,7 @@ Six tables. Stores are rows, not fixed names, so an owner can run any number of 
 | store_hours | When each store is open, Lagos time | store_id, weekday (1 = Monday), opens, closes; a day with no row is closed |
 | products | What the business sells | id (e.g. IP13-128), name, variant, price_kobo, min_price_kobo |
 | stock | Units per product per store | product_id, store_id, available (never below 0) |
-| orders | Each purchase | id (e.g. ORD-1042, also the Paystack reference), product_id, store_id, amount_kobo, buyer_name, status, payment_url, expires_at |
+| orders | Each purchase | id (e.g. ORD-1042), product_id, store_id, amount_kobo, buyer_name, status, payment_references, paid_reference, expires_at |
 | events | A log of everything that happened | order_id, type, detail, created_at |
 
 The demo seeds Kola Gadgets with two stores, Ikeja and Lekki; the owner can add more by chat.
@@ -84,6 +85,8 @@ Each endpoint becomes one tool in Chord when the OpenAPI spec is imported. Every
 
 Chord's built-in tools cover the rest: `schedule_reminder` for the payment nudge and `handover_to_human` for escalation.
 
+`POST /webhooks/paystack` is infrastructure, not a Chord tool, so it is deliberately absent from OpenAPI. Paystack calls it with a signed `charge.success` event.
+
 `list_stores` always returns a clickable map URL. When latitude and longitude are present, Chord can also use them for a native WhatsApp location message if the channel exposes that message type. Otherwise it sends the address and map URL as text.
 
 ## Payment states
@@ -102,9 +105,11 @@ stateDiagram-v2
   failed --> paid_no_stock: paid late on an old link, item gone
 ```
 
-Only a verified Paystack payment marks an order paid.
+Only a verified Paystack payment marks an order paid. The signed webhook is the primary confirmation path. `verify_payment` remains the fallback when the webhook is delayed and lets Chord retrieve the final state and receipt during the conversation.
 
 - **Paystack references.** Each payment link gets its own reference: the order id plus a random suffix (`ORD-1001-3fa9c2`). Paystack references are unique across the account forever, so plain order ids would collide after a reseed, or between local dev and Railway on the same test key. An order keeps every reference it has had, and verify checks all of them, newest first, so a payment finished on an older page is still found.
+- **Webhook authentication.** The API computes an HMAC-SHA512 digest from the unparsed request bytes and the Paystack secret, then compares it with `x-paystack-signature`. Invalid signatures are rejected before any payment data is used.
+- **Idempotency.** Both webhook and polling confirmation lock the order row and use the same payment transition. A repeated notification returns the existing outcome without taking stock or writing another payment event. The exact successful reference is stored in `paid_reference` for the receipt.
 - **Declined cards.** A decline keeps the hold and returns a new link. After the second decline, `next_step` tells the agent to hand over; the third cancels the order and releases the stock.
 - **Expiry.** Holds are expired, and their stock returned, in one SQL statement. It runs before every stock-dependent request and every 60 seconds in the server.
 
@@ -132,7 +137,7 @@ The API enforces the rules, so a confused or tricked agent still can't break the
 
 - **Two API keys.** Customer tools send a buyer key, owner tools a seller key. The API refuses owner actions on the buyer key.
 - **No overselling.** Stock is held with one atomic update: `UPDATE stock SET available = available - qty WHERE available >= qty`.
-- **Paystack is the truth.** Verify checks status, amount and currency before marking an order paid.
+- **Paystack is the truth.** Signed webhooks and explicit verification both check status, amount and currency before marking an order paid.
 - **Secrets stay on the server.** The Paystack test key lives only in the API's environment, never in Chord.
 
 **When things fail**

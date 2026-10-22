@@ -9,6 +9,7 @@ API=http://localhost:3000
 FAKE=http://localhost:4010
 BUYER=$(grep '^BUYER_API_KEY=' .env | cut -d= -f2)
 SELLER=$(grep '^SELLER_API_KEY=' .env | cut -d= -f2)
+PAYSTACK_SECRET_KEY=$(grep '^PAYSTACK_SECRET_KEY=' .env | cut -d= -f2-)
 DATABASE_URL=$(grep "^DATABASE_URL=" .env | cut -d= -f2-)
 PSQL="$(command -v psql || echo /Library/PostgreSQL/18/bin/psql) $DATABASE_URL -X -qtA"
 PASS=0; FAILS=0
@@ -21,6 +22,14 @@ call() {
   [ "$key" != none ] && hdr=(-H "X-Api-Key: $key")
   local out
   out=$(curl -s -w $'\n%{http_code}' -X "$method" "${hdr[@]}" -H 'content-type: application/json' ${data:+-d "$data"} "$API$path")
+  STATUS=${out##*$'\n'}; BODY=${out%$'\n'*}
+}
+webhook() {
+  local data=$1 signature=${2:-}
+  [ -z "$signature" ] && signature=$(printf '%s' "$data" | openssl dgst -sha512 -hmac "$PAYSTACK_SECRET_KEY" -hex | awk '{print $NF}')
+  local out
+  out=$(curl -s -w $'\n%{http_code}' -X POST -H 'content-type: application/json' \
+    -H "x-paystack-signature: $signature" -d "$data" "$API/webhooks/paystack")
   STATUS=${out##*$'\n'}; BODY=${out%$'\n'*}
 }
 # check <name> <expected status> <jq expression that must be true>
@@ -41,6 +50,8 @@ pay() {
 }
 mode() { curl -s -X POST -H 'content-type: application/json' -d "$1" "$FAKE/_fake/mode" >/dev/null; }
 ref() { $PSQL -c "SELECT payment_references[cardinality(payment_references)] FROM orders WHERE id='$1'"; }
+amount() { $PSQL -c "SELECT amount_kobo FROM orders WHERE id='$1'"; }
+event_count() { $PSQL -c "SELECT count(*) FROM events WHERE order_id='$1' AND type='$2'"; }
 stock() { $PSQL -c "SELECT available FROM stock WHERE product_id='$1' AND store_id='$2'"; }
 expire() { $PSQL -c "UPDATE orders SET expires_at = now() - interval '1 second' WHERE id='$1'"; }
 
@@ -166,9 +177,17 @@ call "$BUYER" POST "/orders/$RACE/verify";    check "late payer gets paid_no_sto
 echo "== Late payment, item still there: re-held"
 call "$BUYER" POST /orders '{"product_id":"A15-128","store_id":"lekki","buyer_name":"Dayo"}'; O2=$(jq -r .data.order_id <<<"$BODY")
 a15=$(stock A15-128 lekki); expire "$O2"
-call "$SELLER" GET /orders;                   check "list_orders runs the expiry" 200 '[.data.orders[] | select(.order_id=="'"$O2"'") | .status] == ["expired"]'
-pay "$O2"
-call "$BUYER" POST "/orders/$O2/verify";      check "paid late, re-held" 200 '.data.outcome == "paid_late_reheld" and .data.order.status == "paid"'
+O2_REF=$(ref "$O2"); O2_AMOUNT=$(amount "$O2")
+WEBHOOK=$(jq -nc --arg reference "$O2_REF" --argjson amount "$O2_AMOUNT" \
+  '{event:"charge.success",data:{status:"success",reference:$reference,amount:$amount,currency:"NGN",channel:"card",paid_at:"2026-10-22T22:00:00.000Z",gateway_response:"Successful"}}')
+webhook "$WEBHOOK" bad;                        check "invalid webhook signature" 401 '.error.code == "invalid_webhook_signature"'
+webhook "$WEBHOOK";                            check "webhook expires the hold, then re-holds" 200 '.data.outcome == "paid_late_reheld" and .data.order_id == "'"$O2"'"'
+webhook "$WEBHOOK";                            check "repeated webhook is idempotent" 200 '.data.outcome == "already_paid"'
+[ "$(event_count "$O2" payment_confirmed)" = 0 ] \
+  && [ "$(event_count "$O2" paid_late_reheld)" = 1 ] \
+  && { PASS=$((PASS+1)); echo "  ok    webhook logs one payment event"; } \
+  || { FAILS=$((FAILS+1)); echo "  FAIL  webhook logged duplicate payment events"; }
+call "$BUYER" POST "/orders/$O2/verify";      check "verify sees webhook-confirmed payment" 200 '.data.outcome == "already_paid" and .data.receipt.payment_reference == "'"$O2_REF"'"'
 [ "$(stock A15-128 lekki)" = "$a15" ] && { PASS=$((PASS+1)); echo "  ok    unit taken again on late payment"; } || { FAILS=$((FAILS+1)); echo "  FAIL  stock: $(stock A15-128 lekki), wanted $a15"; }
 
 echo "== Declined card: new link, then success on the new link"

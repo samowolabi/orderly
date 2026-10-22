@@ -44,7 +44,7 @@ These are the core features. Each one answers something the sellers raised.
 
 - **Ask price and stock:** answered live, including which store has it.
 - **Order and pay:** the item is held for 30 minutes and a Paystack payment link is sent.
-- **Payment confirmed for real:** the order is confirmed only when Paystack says it is paid, never from a screenshot.
+- **Payment confirmed for real:** a signed Paystack webhook confirms the order, with an explicit Paystack check as fallback. A screenshot is never accepted as proof.
 - **Receipt:** sent in chat as soon as payment is confirmed.
 - **One reminder:** if the customer goes quiet, one nudge after 20 minutes.
 - **A real person when needed:** anything unusual is handed to the owner instead of guessed.
@@ -54,7 +54,7 @@ These are the core features. Each one answers something the sellers raised.
 These are enforced by Orderly's own API, not just by the AI's instructions.
 
 1. **Never sell twice.** Stock is held the moment an order is created, so two customers can't buy the last unit.
-2. **Never confirm without Paystack.** "I've paid" is checked against Paystack, including the amount.
+2. **Never confirm without Paystack.** Signed notifications and "I've paid" checks both validate the payment amount and currency.
 3. **Never invent a price or stock level.** Every figure comes from the store's records.
 4. **Customers can't change anything.** Orderly Shop has no access to the owner's tools.
 5. **Late payment is handled honestly.** If someone pays after their hold expired and the item is gone, they are told, and the owner is alerted to refund.
@@ -64,7 +64,7 @@ These are enforced by Orderly's own API, not just by the AI's instructions.
 | When | What |
 | --- | --- |
 | Next if time | Promo codes; an end-of-day sales summary for the owner |
-| Stretch | Discount requests approved by Orderly Owner within a price floor; PDF receipts; instant payment confirmation by webhook |
+| Stretch | Discount requests approved by Orderly Owner within a price floor; PDF receipts |
 | Designed, not built | Refunds through Paystack, ready to build if reviewers ask |
 | Left out | Delivery booking, product photos, multiple businesses, real payments or phone numbers |
 

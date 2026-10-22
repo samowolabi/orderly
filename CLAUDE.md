@@ -21,7 +21,7 @@ Read these first:
 - `src/services/`: business rules, database workflows, stock holds and Paystack calls
 - `src/utils/`: shared HTTP, formatting and store address/hours helpers
 - `src/openapi/`: independent schemas, path descriptions, registry and document generation
-- `src/middleware/`: API-key authorization and Express error handling
+- `src/middleware/`: API-key authorization, Paystack signature checks and Express error handling
 - `src/db/`: database connection, migrations and seed data
 
 Keep route modules thin. Controllers translate HTTP requests into service calls. Services enforce the business rules and must not depend on Express request or response objects. OpenAPI must not import routes or controllers.
@@ -35,7 +35,7 @@ Kola Gadgets, a made-up Lagos phone and gadget store. Stores are rows in a `stor
 
 ## Rules the API must enforce (not just the prompts)
 1. Never sell twice: hold stock atomically at order creation (`UPDATE stock SET available = available - qty WHERE available >= qty`), release after 30 minutes unpaid.
-2. Never confirm without Paystack: verify status, amount and currency against the order.
+2. Never confirm without Paystack: signed webhooks and explicit verification both check status, amount and currency against the order.
 3. Never invent prices or stock: every figure comes from the database.
 4. Customers can't change anything: buyer key vs seller key, checked on every request.
 5. Late payment after the hold expired: re-hold if stock is there, otherwise mark `paid_no_stock` for an owner refund.
@@ -50,6 +50,7 @@ Every response has the shape `{ ok, data, error: { code, message_for_agent } }`.
 - Seed: Kola Gadgets, 2 stores, 9 products. `IP15P-256` has a single unit (Ikeja) for the last-unit race test.
 - API keys: send `X-Api-Key` (or `Authorization: Bearer`). Buyer key for Orderly Shop, seller key for Orderly Owner.
 - `npm run openapi -- <public url>` writes `openapi.json` for Chord (gitignored); the running API also serves it at `/openapi.json`. The independent `src/openapi/` module owns the spec, and each `operationId` is the Chord tool name.
+- `POST /webhooks/paystack` is Paystack infrastructure, not a Chord tool, so it must stay out of OpenAPI. It needs the raw request body to validate `x-paystack-signature` before processing JSON.
 - Curl tests: `npm run fake-paystack` (a local stand-in on :4010 that can decline, fail or go down on demand), start the API with `PAYSTACK_BASE_URL=http://localhost:4010 npm run dev`, run `npm run db:seed`, then `npm run test:api`. Then repeat the happy path against real Paystack test mode.
 
 ## Build order
