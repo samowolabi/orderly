@@ -46,27 +46,34 @@ type ListOrdersInput = {
 
 type OrderRow = {
   id: string;
+
   product_id: string;
+  product_name: string;
+  product_variant: string | null;
+
   store_id: string;
+  store_name: string;
+
   quantity: number;
   unit_price_kobo: number;
   amount_kobo: number;
   currency: string;
+
   buyer_name: string;
   buyer_email: string | null;
+
   status: OrderStatus;
+  failure_reason: string | null;
+
   payment_url: string | null;
   payment_references: string[];
   paid_reference: string | null;
-  declined_attempts: number;
   payment_channel: string | null;
-  failure_reason: string | null;
+  declined_attempts: number;
+
   expires_at: Date;
   paid_at: Date | null;
   created_at: Date;
-  product_name: string;
-  product_variant: string | null;
-  store_name: string;
 } & AddressRow;
 
 type VerifyResult =
