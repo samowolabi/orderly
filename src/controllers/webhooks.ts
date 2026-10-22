@@ -1,10 +1,17 @@
 import type { Request, Response } from "express";
-import { processPaystackWebhook } from "../services/orders";
-import { parsePaystackWebhook } from "../services/paystack";
-import { ok } from "../utils/http";
+import { paymentProcessor } from "../adapters";
+import { InvalidPaymentPayload } from "../adapters/payment-processor";
+import { processPaymentWebhook } from "../services/orders";
+import { ApiError, ok } from "../utils/http";
 
 // Parses and processes an authenticated Paystack webhook.
 export async function paystackWebhook(request: Request, response: Response) {
-  const webhook = parsePaystackWebhook(request.body as Buffer);
-  ok(response, await processPaystackWebhook(webhook));
+  let webhook;
+  try {
+    webhook = paymentProcessor.parseWebhook(request.body as Buffer);
+  } catch (error) {
+    if (error instanceof InvalidPaymentPayload) throw new ApiError(400, error.code, error.message);
+    throw error;
+  }
+  ok(response, await processPaymentWebhook(webhook));
 }

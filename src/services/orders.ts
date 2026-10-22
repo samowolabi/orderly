@@ -1,17 +1,15 @@
 import { randomBytes } from "node:crypto";
+import { paymentProcessor } from "../adapters";
+import {
+  PaymentProcessorUnavailable,
+  type PaymentTransaction,
+  type PaymentWebhookEvent,
+} from "../adapters/payment-processor";
 import { config } from "../config";
 import { pool, withTransaction } from "../db/pool";
 import { formatNaira, lagosTime, toNaira } from "../utils/format";
 import { ApiError } from "../utils/http";
 import { formatAddress, type AddressRow } from "../utils/store-location";
-import {
-  initializeTransaction,
-  PaystackUnavailable,
-  transactionFromWebhook,
-  verifyTransaction,
-  type PaystackTransaction,
-  type PaystackWebhook,
-} from "./paystack";
 import { expireStaleOrders, failOrder, holdStock, logEvent, type Db } from "./stock";
 
 const MAX_DECLINES = 3;
@@ -158,12 +156,12 @@ const placeholderEmail = (orderId: string) => `buyer+${orderId.toLowerCase()}@ex
 // Creates a unique Paystack reference for one payment attempt.
 const newReference = (orderId: string) => `${orderId}-${randomBytes(3).toString("hex")}`;
 
-// Initializes Paystack and attaches the resulting payment link to an order.
+// Initializes the payment processor and attaches its checkout link to an order.
 async function attachPaymentLink(
   order: Pick<OrderRow, "id" | "amount_kobo" | "buyer_email" | "product_id" | "store_id">,
 ) {
   const reference = newReference(order.id);
-  const { authorization_url } = await initializeTransaction({
+  const { checkoutUrl } = await paymentProcessor.createCheckout({
     reference,
     amountKobo: order.amount_kobo,
     email: order.buyer_email ?? placeholderEmail(order.id),
@@ -172,7 +170,7 @@ async function attachPaymentLink(
   await pool.query(
     `UPDATE orders SET payment_url = $2, payment_references = array_append(payment_references, $3), updated_at = now()
      WHERE id = $1`,
-    [order.id, authorization_url, reference],
+    [order.id, checkoutUrl, reference],
   );
   await logEvent(pool, order.id, "payment_link_created", { reference });
 }
@@ -231,7 +229,7 @@ export async function createOrder(input: CreateOrderInput) {
       store_id: input.store_id,
     });
   } catch (error) {
-    if (!(error instanceof PaystackUnavailable)) throw error;
+    if (!(error instanceof PaymentProcessorUnavailable)) throw error;
     console.error(`[paystack] ${order.id}: ${error.message}`);
     // Releases the held stock if Paystack cannot create a link.
     await withTransaction((db) => failOrder(db, order.id, "payment_link_failed", { error: error.message }));
@@ -283,12 +281,12 @@ async function verifyOrder(order: OrderRow): Promise<VerifyResult> {
     return { outcome: "failed" };
   }
 
-  let paid: PaystackTransaction | null = null;
-  let latest: PaystackTransaction | null = null;
+  let paid: PaymentTransaction | null = null;
+  let latest: PaymentTransaction | null = null;
   try {
     const references = [...order.payment_references].reverse();
     for (const [index, reference] of references.entries()) {
-      const transaction = await verifyTransaction(reference);
+      const transaction = await paymentProcessor.verifyTransaction(reference);
       if (index === 0) latest = transaction;
       if (transaction?.status === "success") {
         paid = transaction;
@@ -296,7 +294,7 @@ async function verifyOrder(order: OrderRow): Promise<VerifyResult> {
       }
     }
   } catch (error) {
-    if (!(error instanceof PaystackUnavailable)) throw error;
+    if (!(error instanceof PaymentProcessorUnavailable)) throw error;
     console.error(`[paystack] verify ${order.id}: ${error.message}`);
     await logEvent(pool, order.id, "verify_unavailable", { error: error.message });
     throw new ApiError(
@@ -334,7 +332,7 @@ async function verifyOrder(order: OrderRow): Promise<VerifyResult> {
 }
 
 // Applies one verified successful transaction without double-selling stock.
-async function confirmSuccessfulPayment(db: Db, order: OrderRow, transaction: PaystackTransaction): Promise<VerifyResult> {
+async function confirmSuccessfulPayment(db: Db, order: OrderRow, transaction: PaymentTransaction): Promise<VerifyResult> {
   if (order.status === "paid") return { outcome: "already_paid" };
   if (order.status === "paid_no_stock" || order.status === "handed_over") return { outcome: order.status };
 
@@ -389,17 +387,13 @@ async function confirmSuccessfulPayment(db: Db, order: OrderRow, transaction: Pa
   return { outcome };
 }
 
-// Confirms a signed Paystack success event against its matching order.
-export async function processPaystackWebhook(webhook: PaystackWebhook) {
-  if (webhook.event !== "charge.success") {
-    return { outcome: "ignored" as const, event: webhook.event };
+// Confirms a normalized payment-success event against its matching order.
+export async function processPaymentWebhook(webhook: PaymentWebhookEvent) {
+  if (webhook.type === "ignored") {
+    return { outcome: "ignored" as const, event: webhook.sourceEvent };
   }
 
-  const transaction = transactionFromWebhook(webhook);
-  if (transaction.status !== "success") {
-    return { outcome: "ignored" as const, event: webhook.event };
-  }
-
+  const { transaction } = webhook;
   await expireStaleOrders(pool);
 
   // Locks the referenced order while applying the idempotent confirmation.
@@ -437,7 +431,7 @@ export async function verifyPayment(id: string) {
     try {
       await attachPaymentLink(before);
     } catch (error) {
-      if (!(error instanceof PaystackUnavailable)) throw error;
+      if (!(error instanceof PaymentProcessorUnavailable)) throw error;
       console.error(`[paystack] ${id}: ${error.message}`);
       throw new ApiError(
         502,
