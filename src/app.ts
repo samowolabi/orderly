@@ -5,10 +5,14 @@ import { errorHandler, notFound } from "./middleware/errors";
 import { openApiDocument } from "./openapi/document";
 import { catalog } from "./routes/catalog";
 import { orders } from "./routes/orders";
+import { webhooks } from "./routes/webhooks";
 import { ok } from "./utils/http";
 
 export function createApp() {
   const app = express();
+
+  // Paystack signs the exact request bytes, so this route must run before JSON parsing.
+  app.use(webhooks);
   app.use(express.json({ limit: "100kb" }));
 
   app.get("/health", async (_req, res) => {

@@ -4,7 +4,14 @@ import { pool, withTransaction } from "../db/pool";
 import { formatNaira, lagosTime, toNaira } from "../utils/format";
 import { ApiError } from "../utils/http";
 import { formatAddress, type AddressRow } from "../utils/store-location";
-import { initializeTransaction, PaystackUnavailable, verifyTransaction, type PaystackTransaction } from "./paystack";
+import {
+  initializeTransaction,
+  PaystackUnavailable,
+  transactionFromWebhook,
+  verifyTransaction,
+  type PaystackTransaction,
+  type PaystackWebhook,
+} from "./paystack";
 import { expireStaleOrders, failOrder, holdStock, logEvent, type Db } from "./stock";
 
 const MAX_DECLINES = 3;
@@ -52,6 +59,7 @@ type OrderRow = {
   status: OrderStatus;
   payment_url: string | null;
   payment_references: string[];
+  paid_reference: string | null;
   declined_attempts: number;
   payment_channel: string | null;
   failure_reason: string | null;
@@ -109,7 +117,7 @@ function orderView(order: OrderRow) {
 function receiptView(order: OrderRow) {
   const paidAt = order.paid_at ?? new Date();
   const business = config().BUSINESS_NAME;
-  const reference = order.payment_references.at(-1) ?? order.id;
+  const reference = order.paid_reference ?? order.payment_references.at(-1) ?? order.id;
   const storeAddress = formatAddress(order);
   const lines = [
     `${business} receipt ${order.id}`,
@@ -286,39 +294,9 @@ async function verifyOrder(order: OrderRow): Promise<VerifyResult> {
   return withTransaction(async (db): Promise<VerifyResult> => {
     const { rows } = await db.query<OrderRow>("SELECT * FROM orders WHERE id = $1 FOR UPDATE", [order.id]);
     const current = rows[0]!;
-    if (current.status === "paid") return { outcome: "already_paid" };
 
     if (paid) {
-      if (paid.amount !== current.amount_kobo || paid.currency !== current.currency) {
-        if (current.status === "pending_payment") {
-          await failOrder(db, current.id, "amount_mismatch", { paid_kobo: paid.amount, currency: paid.currency });
-        } else {
-          await db.query(
-            "UPDATE orders SET status = 'failed', failure_reason = 'amount_mismatch', updated_at = now() WHERE id = $1",
-            [current.id],
-          );
-          await logEvent(db, current.id, "order_failed", { reason: "amount_mismatch", paid_kobo: paid.amount });
-        }
-        return { outcome: "amount_mismatch", paidKobo: paid.amount, currency: paid.currency };
-      }
-
-      let status: "paid" | "paid_no_stock" = "paid";
-      let outcome: PaymentOutcome = "paid";
-      if (current.status !== "pending_payment") {
-        const reheld = await holdStock(db, current.product_id, current.store_id, current.quantity);
-        status = reheld ? "paid" : "paid_no_stock";
-        outcome = reheld ? "paid_late_reheld" : "paid_no_stock";
-      }
-      await db.query(
-        `UPDATE orders SET status = $2, paid_at = coalesce($3::timestamptz, now()), payment_channel = $4, updated_at = now()
-         WHERE id = $1`,
-        [current.id, status, paid.paid_at, paid.channel],
-      );
-      await logEvent(db, current.id, outcome === "paid" ? "payment_confirmed" : outcome, {
-        reference: paid.reference,
-        amount_kobo: paid.amount,
-      });
-      return { outcome };
+      return confirmSuccessfulPayment(db, current, paid);
     }
 
     if (current.status === "expired") return { outcome: "expired" };
@@ -336,6 +314,87 @@ async function verifyOrder(order: OrderRow): Promise<VerifyResult> {
     }
 
     return { outcome: latest && IN_PROGRESS.has(latest.status) ? "payment_processing" : "not_paid_yet" };
+  });
+}
+
+async function confirmSuccessfulPayment(db: Db, order: OrderRow, transaction: PaystackTransaction): Promise<VerifyResult> {
+  if (order.status === "paid") return { outcome: "already_paid" };
+  if (order.status === "paid_no_stock" || order.status === "handed_over") return { outcome: order.status };
+
+  if (transaction.amount !== order.amount_kobo || transaction.currency !== order.currency) {
+    if (order.failure_reason === "amount_mismatch") {
+      return { outcome: "amount_mismatch", paidKobo: transaction.amount, currency: transaction.currency };
+    }
+
+    if (order.status === "pending_payment") {
+      await failOrder(db, order.id, "amount_mismatch", {
+        paid_kobo: transaction.amount,
+        currency: transaction.currency,
+        reference: transaction.reference,
+      });
+    } else {
+      await db.query(
+        "UPDATE orders SET status = 'failed', failure_reason = 'amount_mismatch', updated_at = now() WHERE id = $1",
+        [order.id],
+      );
+      await logEvent(db, order.id, "order_failed", {
+        reason: "amount_mismatch",
+        paid_kobo: transaction.amount,
+        currency: transaction.currency,
+        reference: transaction.reference,
+      });
+    }
+
+    return { outcome: "amount_mismatch", paidKobo: transaction.amount, currency: transaction.currency };
+  }
+
+  let status: "paid" | "paid_no_stock" = "paid";
+  let outcome: PaymentOutcome = "paid";
+
+  if (order.status !== "pending_payment") {
+    const reheld = await holdStock(db, order.product_id, order.store_id, order.quantity);
+    status = reheld ? "paid" : "paid_no_stock";
+    outcome = reheld ? "paid_late_reheld" : "paid_no_stock";
+  }
+
+  await db.query(
+    `UPDATE orders
+     SET status = $2, paid_at = coalesce($3::timestamptz, now()), payment_channel = $4,
+         paid_reference = $5, updated_at = now()
+     WHERE id = $1`,
+    [order.id, status, transaction.paid_at, transaction.channel, transaction.reference],
+  );
+  await logEvent(db, order.id, outcome === "paid" ? "payment_confirmed" : outcome, {
+    reference: transaction.reference,
+    amount_kobo: transaction.amount,
+  });
+
+  return { outcome };
+}
+
+export async function processPaystackWebhook(webhook: PaystackWebhook) {
+  if (webhook.event !== "charge.success") {
+    return { outcome: "ignored" as const, event: webhook.event };
+  }
+
+  const transaction = transactionFromWebhook(webhook);
+  if (transaction.status !== "success") {
+    return { outcome: "ignored" as const, event: webhook.event };
+  }
+
+  return withTransaction(async (db) => {
+    const { rows } = await db.query<OrderRow>(
+      `SELECT * FROM orders
+       WHERE payment_references @> ARRAY[$1]::text[]
+       LIMIT 1
+       FOR UPDATE`,
+      [transaction.reference],
+    );
+    const order = rows[0];
+    if (!order) return { outcome: "unknown_reference" as const, reference: transaction.reference };
+
+    const result = await confirmSuccessfulPayment(db, order, transaction);
+    return { ...result, order_id: order.id, reference: transaction.reference };
   });
 }
 

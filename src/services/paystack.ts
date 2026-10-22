@@ -1,4 +1,6 @@
+import { createHmac, timingSafeEqual } from "node:crypto";
 import { config } from "../config";
+import { ApiError } from "../utils/http";
 
 export class PaystackUnavailable extends Error {}
 
@@ -12,7 +14,76 @@ export type PaystackTransaction = {
   gateway_response: string | null;
 };
 
+export type PaystackWebhook = {
+  event: string;
+  data: Record<string, unknown>;
+};
+
 const TIMEOUT_MS = 10_000;
+
+export function hasValidPaystackSignature(body: Buffer, signature: string | undefined) {
+  if (!signature) return false;
+
+  const expected = createHmac("sha512", config().PAYSTACK_SECRET_KEY).update(body).digest();
+  let received: Buffer;
+
+  try {
+    received = Buffer.from(signature, "hex");
+  } catch {
+    return false;
+  }
+
+  return received.length === expected.length && timingSafeEqual(received, expected);
+}
+
+export function parsePaystackWebhook(body: Buffer): PaystackWebhook {
+  let value: unknown;
+
+  try {
+    value = JSON.parse(body.toString("utf8"));
+  } catch {
+    throw new ApiError(400, "bad_json", "The Paystack webhook body was not valid JSON.");
+  }
+
+  if (!value || typeof value !== "object") {
+    throw new ApiError(400, "invalid_webhook", "The Paystack webhook body was invalid.");
+  }
+
+  const event = (value as Record<string, unknown>).event;
+  const data = (value as Record<string, unknown>).data;
+  if (typeof event !== "string" || !data || typeof data !== "object" || Array.isArray(data)) {
+    throw new ApiError(400, "invalid_webhook", "The Paystack webhook event or data was missing.");
+  }
+
+  return { event, data: data as Record<string, unknown> };
+}
+
+export function transactionFromWebhook(webhook: PaystackWebhook): PaystackTransaction {
+  const { data } = webhook;
+  if (
+    typeof data.reference !== "string" ||
+    typeof data.status !== "string" ||
+    typeof data.amount !== "number" ||
+    typeof data.currency !== "string"
+  ) {
+    throw new ApiError(400, "invalid_webhook", "The Paystack transaction data was incomplete.");
+  }
+
+  return {
+    status: data.status,
+    reference: data.reference,
+    amount: data.amount,
+    currency: data.currency,
+    channel: typeof data.channel === "string" ? data.channel : null,
+    paid_at:
+      typeof data.paid_at === "string"
+        ? data.paid_at
+        : typeof data.paidAt === "string"
+          ? data.paidAt
+          : null,
+    gateway_response: typeof data.gateway_response === "string" ? data.gateway_response : null,
+  };
+}
 
 async function request(method: "GET" | "POST", path: string, requestBody?: unknown) {
   const { PAYSTACK_BASE_URL, PAYSTACK_SECRET_KEY } = config();
