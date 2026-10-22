@@ -18,13 +18,14 @@ Read these first:
 ## Source layout
 - `src/routes/`: Express endpoint wiring and authorization
 - `src/controllers/`: request parsing and HTTP responses
-- `src/services/`: business rules, database workflows, stock holds and Paystack calls
+- `src/services/`: business rules, database workflows and stock holds
+- `src/adapters/`: payment processor contract, provider selection and Paystack implementation
 - `src/utils/`: shared HTTP, formatting and store address/hours helpers
 - `src/openapi/`: independent schemas, path descriptions, registry and document generation
 - `src/middleware/`: API-key authorization, Paystack signature checks and Express error handling
 - `src/db/`: database connection, migrations and seed data
 
-Keep route modules thin. Controllers translate HTTP requests into service calls. Services enforce the business rules and must not depend on Express request or response objects. OpenAPI must not import routes or controllers.
+Keep route modules thin. Controllers translate HTTP requests into service calls. Services enforce the business rules and must not depend on Express request or response objects. Payment services depend on the generic `PaymentProcessor` contract, not Paystack payloads. OpenAPI must not import routes or controllers.
 
 ## Demo business
 Kola Gadgets, a made-up Lagos phone and gadget store. Stores are rows in a `stores` table, so any number is supported; the seed data has two stores, Ikeja and Lekki. Addresses are structured, and both seed stores have coordinates plus a derived map URL for sharing with customers.

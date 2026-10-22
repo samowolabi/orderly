@@ -35,18 +35,19 @@ The customer pays on Paystack's own page, so card details never touch the agent,
 
 ## Application structure
 
-The API uses four layers:
+The API is split into focused modules:
 
 | Directory | Responsibility |
 | --- | --- |
 | `src/routes/` | Wires Express endpoints to role checks and controllers |
 | `src/controllers/` | Validates request data, calls a service and writes the HTTP response |
 | `src/services/` | Enforces business rules and owns database, stock and payment workflows |
+| `src/adapters/` | Defines the payment processor contract and translates Paystack calls and webhooks into generic payment data |
 | `src/utils/` | Shared HTTP, currency, time, opening-hours and address helpers |
 | `src/openapi/` | Owns API schemas, path descriptions, the registry and document generation |
 | `src/middleware/` | Handles API-key roles, unknown routes and application errors |
 
-`src/db/` contains connection, migration and seed code. Services do not depend on Express request or response objects, which keeps the business workflows reusable and easier to test. OpenAPI does not import Express routes or controllers, so the specification can be generated independently.
+`src/db/` contains connection, migration and seed code. Services do not depend on Express request or response objects, which keeps the business workflows reusable and easier to test. Order services call the `PaymentProcessor` interface. `src/adapters/index.ts` is the single composition point that selects `PaystackAdapter`, so another processor can be added without putting provider payloads into order logic. OpenAPI does not import Express routes or controllers, so the specification can be generated independently.
 
 ## Data
 
@@ -109,6 +110,7 @@ Only a verified Paystack payment marks an order paid. The signed webhook is the 
 
 - **Paystack references.** Each payment link gets its own reference: the order id plus a random suffix (`ORD-1001-3fa9c2`). Paystack references are unique across the account forever, so plain order ids would collide after a reseed, or between local dev and Railway on the same test key. An order keeps every reference it has had, and verify checks all of them, newest first, so a payment finished on an older page is still found.
 - **Webhook authentication.** The API computes an HMAC-SHA512 digest from the unparsed request bytes and the Paystack secret, then compares it with `x-paystack-signature`. Invalid signatures are rejected before any payment data is used.
+- **Payment adapter.** `PaystackAdapter` owns checkout initialization, verification retries, signature validation and webhook normalization. Order workflows consume only normalized transaction and webhook types.
 - **Idempotency.** Both webhook and polling confirmation lock the order row and use the same payment transition. A repeated notification returns the existing outcome without taking stock or writing another payment event. The exact successful reference is stored in `paid_reference` for the receipt.
 - **Declined cards.** A decline keeps the hold and returns a new link. After the second decline, `next_step` tells the agent to hand over; the third cancels the order and releases the stock.
 - **Expiry.** Holds are expired, and their stock returned, in one SQL statement. It runs before every stock-dependent request and every 60 seconds in the server.
