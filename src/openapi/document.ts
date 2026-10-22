@@ -1,9 +1,10 @@
 import { OpenApiGeneratorV3 } from "@asteasolutions/zod-to-openapi";
 import { registry } from "./registry";
 
-// Importing the routes registers their paths.
-import "../routes/catalog";
-import "../routes/orders";
+// The OpenAPI module owns its schemas and path registration. It does not
+// import Express routes or application controllers.
+import "./paths/catalog";
+import "./paths/orders";
 
 export function openApiDocument(serverUrl?: string) {
   return new OpenApiGeneratorV3(registry.definitions).generateDocument({

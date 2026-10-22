@@ -3,8 +3,8 @@ import { z } from "zod";
 
 extendZodWithOpenApi(z);
 
-// Routes register their own paths next to their handlers, so the spec
-// Chord imports can't drift from what the API actually accepts.
+// Path modules add definitions to this registry. Express routes are kept
+// separate, so the OpenAPI document can be generated on its own.
 export const registry = new OpenAPIRegistry();
 
 export const apiKey = registry.registerComponent("securitySchemes", "ApiKey", {
@@ -21,7 +21,7 @@ const ErrorBody = z
   })
   .openapi("Error");
 
-export function envelope<T extends z.ZodType>(data: T) {
+function envelope<T extends z.ZodType>(data: T) {
   return z.object({ ok: z.literal(true), data, error: z.null() });
 }
 
