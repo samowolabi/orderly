@@ -16,7 +16,7 @@ PASS=0; FAILS=0
 RACE_FILE=$(mktemp -t orderly-race)
 trap 'rm -f "$RACE_FILE"' EXIT
 
-# call <key|none> <METHOD> <path> [json]  -> sets $STATUS and $BODY
+# Sends an API request and stores its response status and body.
 call() {
   local key=$1 method=$2 path=$3 data=$4 hdr=()
   [ "$key" != none ] && hdr=(-H "X-Api-Key: $key")
@@ -24,6 +24,7 @@ call() {
   out=$(curl -s -w $'\n%{http_code}' -X "$method" "${hdr[@]}" -H 'content-type: application/json' ${data:+-d "$data"} "$API$path")
   STATUS=${out##*$'\n'}; BODY=${out%$'\n'*}
 }
+# Signs and sends a Paystack webhook request.
 webhook() {
   local data=$1 signature=${2:-}
   [ -z "$signature" ] && signature=$(printf '%s' "$data" | openssl dgst -sha512 -hmac "$PAYSTACK_SECRET_KEY" -hex | awk '{print $NF}')
@@ -32,7 +33,7 @@ webhook() {
     -H "x-paystack-signature: $signature" -d "$data" "$API/webhooks/paystack")
   STATUS=${out##*$'\n'}; BODY=${out%$'\n'*}
 }
-# check <name> <expected status> <jq expression that must be true>
+# Checks the last API response against an HTTP status and jq assertion.
 check() {
   local name=$1 want=$2 expr=${3:-true}
   if [ "$STATUS" = "$want" ] && [ "$(jq -r "$expr" <<<"$BODY" 2>/dev/null)" = "true" ]; then
@@ -41,18 +42,26 @@ check() {
     FAILS=$((FAILS+1)); printf '  FAIL  %s (HTTP %s, wanted %s)\n        %s\n' "$name" "$STATUS" "$want" "$(head -c 400 <<<"$BODY")"
   fi
 }
+# Prints agent guidance from the last API response.
 msg() { jq -r '.error.message_for_agent // .data.next_step // empty' <<<"$BODY" | sed 's/^/        > /'; }
+# Marks the newest fake transaction for an order with the requested outcome.
 pay() {
   local data=${2:-'{"outcome":"success"}'}
   # $1 is an order id; pays its newest Paystack reference
   local ref; ref=$(ref "$1")
   curl -sf -X POST -H 'content-type: application/json' -d "$data" "$FAKE/_fake/pay/$ref" >/dev/null || echo "        (fake pay $1/$ref failed)"
 }
+# Changes fake Paystack's initialize or verify failure mode.
 mode() { curl -s -X POST -H 'content-type: application/json' -d "$1" "$FAKE/_fake/mode" >/dev/null; }
+# Reads an order's newest payment reference from Postgres.
 ref() { $PSQL -c "SELECT payment_references[cardinality(payment_references)] FROM orders WHERE id='$1'"; }
+# Reads an order's total amount in kobo from Postgres.
 amount() { $PSQL -c "SELECT amount_kobo FROM orders WHERE id='$1'"; }
+# Counts matching event-log rows for an order.
 event_count() { $PSQL -c "SELECT count(*) FROM events WHERE order_id='$1' AND type='$2'"; }
+# Reads available stock for a product at one store.
 stock() { $PSQL -c "SELECT available FROM stock WHERE product_id='$1' AND store_id='$2'"; }
+# Moves an order's expiry timestamp into the past for late-payment tests.
 expire() { $PSQL -c "UPDATE orders SET expires_at = now() - interval '1 second' WHERE id='$1'"; }
 
 echo "== Auth and roles"

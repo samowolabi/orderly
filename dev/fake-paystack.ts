@@ -26,6 +26,7 @@ const mode = { initialize: "ok", verify: "ok" };
 const app = express();
 app.use(express.json());
 
+// Enforces a test-key-shaped authorization header on Paystack-like routes.
 app.use("/transaction", (req, res, next) => {
   if (!req.get("authorization")?.startsWith("Bearer sk_test_")) {
     return res.status(401).json({ status: false, message: "Invalid key" });
@@ -33,6 +34,7 @@ app.use("/transaction", (req, res, next) => {
   next();
 });
 
+// Creates an in-memory fake transaction and checkout URL.
 app.post("/transaction/initialize", (req, res) => {
   if (mode.initialize === "fail") return res.status(503).json({ status: false, message: "Service unavailable" });
   const { reference, amount, email, currency = "NGN" } = req.body ?? {};
@@ -48,6 +50,7 @@ app.post("/transaction/initialize", (req, res) => {
   });
 });
 
+// Returns the current state of a fake transaction reference.
 app.get("/transaction/verify/:reference", (req, res) => {
   if (mode.verify === "down") return res.status(503).json({ status: false, message: "Service unavailable" });
   const tx = txs.get(req.params.reference);
@@ -55,6 +58,7 @@ app.get("/transaction/verify/:reference", (req, res) => {
   res.json({ status: true, message: "Verification successful", data: { id: 1, ...tx } });
 });
 
+// Changes a fake transaction to a chosen payment outcome.
 app.post("/_fake/pay/:reference", (req, res) => {
   const tx = txs.get(req.params.reference);
   if (!tx) return res.status(404).json({ error: "unknown reference" });
@@ -67,11 +71,14 @@ app.post("/_fake/pay/:reference", (req, res) => {
   res.json(tx);
 });
 
+// Changes fake initialization and verification failure modes.
 app.post("/_fake/mode", (req, res) => {
   Object.assign(mode, req.body ?? {});
   res.json(mode);
 });
 
+// Exposes fake Paystack state for local debugging.
 app.get("/_fake/state", (_req, res) => res.json({ mode, transactions: [...txs.values()] }));
 
+// Reports when the fake Paystack server is ready.
 app.listen(PORT, () => console.log(`Fake Paystack on :${PORT}`));
