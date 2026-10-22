@@ -2,12 +2,12 @@ import type pg from "pg";
 
 export type Db = pg.Pool | pg.PoolClient;
 
+// Appends one auditable business event to the event log.
 export async function logEvent(db: Db, orderId: string | null, type: string, detail: Record<string, unknown> = {}) {
   await db.query("INSERT INTO events (order_id, type, detail) VALUES ($1, $2, $3)", [orderId, type, detail]);
 }
 
-// The never-sell-twice rule: one atomic statement, so two buyers racing for
-// the last unit cannot both succeed.
+// Atomically holds stock so two buyers racing for the last unit cannot both succeed.
 export async function holdStock(db: Db, productId: string, storeId: string, quantity: number): Promise<boolean> {
   const { rowCount } = await db.query(
     `UPDATE stock SET available = available - $3, updated_at = now()
@@ -17,6 +17,7 @@ export async function holdStock(db: Db, productId: string, storeId: string, quan
   return rowCount === 1;
 }
 
+// Returns previously held units to a store's available stock.
 async function releaseStock(db: Db, productId: string, storeId: string, quantity: number) {
   await db.query(
     `UPDATE stock SET available = available + $3, updated_at = now()
@@ -25,8 +26,7 @@ async function releaseStock(db: Db, productId: string, storeId: string, quantity
   );
 }
 
-// Moves elapsed holds to expired and returns their stock. Row locks make this
-// safe when multiple requests run the sweep at the same time.
+// Expires elapsed holds and safely returns their stock during concurrent sweeps.
 export async function expireStaleOrders(db: Db): Promise<number> {
   const { rowCount } = await db.query(`
     WITH expired AS (
@@ -44,6 +44,7 @@ export async function expireStaleOrders(db: Db): Promise<number> {
   return rowCount ?? 0;
 }
 
+// Fails an order, releases any active hold and records the reason.
 export async function failOrder(db: Db, orderId: string, reason: string, detail: Record<string, unknown> = {}) {
   const { rows } = await db.query(
     `UPDATE orders SET status = 'failed', failure_reason = $2, updated_at = now()

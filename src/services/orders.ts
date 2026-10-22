@@ -84,15 +84,18 @@ const ORDER_SELECT = `
   JOIN products p ON p.id = o.product_id
   JOIN stores s ON s.id = o.store_id`;
 
+// Loads one order with the product and store fields needed by API views.
 async function loadOrder(db: Db, id: string): Promise<OrderRow> {
   const { rows } = await db.query<OrderRow>(`${ORDER_SELECT} WHERE o.id = $1`, [id]);
   if (!rows[0]) throw new ApiError(404, "order_not_found", `No order ${id}. Check the order number with the customer.`);
   return rows[0];
 }
 
+// Formats an order's product name with its optional variant.
 const itemName = (order: OrderRow) =>
   order.product_variant ? `${order.product_name} (${order.product_variant})` : order.product_name;
 
+// Converts an order row into the customer-safe API representation.
 function orderView(order: OrderRow) {
   const pending = order.status === "pending_payment";
   return {
@@ -114,6 +117,7 @@ function orderView(order: OrderRow) {
   };
 }
 
+// Builds structured and ready-to-send receipt data for a paid order.
 function receiptView(order: OrderRow) {
   const paidAt = order.paid_at ?? new Date();
   const business = config().BUSINESS_NAME;
@@ -149,9 +153,12 @@ function receiptView(order: OrderRow) {
   };
 }
 
+// Creates a test-safe email when a WhatsApp buyer did not provide one.
 const placeholderEmail = (orderId: string) => `buyer+${orderId.toLowerCase()}@example.com`;
+// Creates a unique Paystack reference for one payment attempt.
 const newReference = (orderId: string) => `${orderId}-${randomBytes(3).toString("hex")}`;
 
+// Initializes Paystack and attaches the resulting payment link to an order.
 async function attachPaymentLink(
   order: Pick<OrderRow, "id" | "amount_kobo" | "buyer_email" | "product_id" | "store_id">,
 ) {
@@ -170,9 +177,11 @@ async function attachPaymentLink(
   await logEvent(pool, order.id, "payment_link_created", { reference });
 }
 
+// Holds stock, creates an order and attaches its first payment link.
 export async function createOrder(input: CreateOrderInput) {
   await expireStaleOrders(pool);
 
+  // Holds stock and inserts the order in one transaction.
   const order = await withTransaction(async (db) => {
     const product = (await db.query("SELECT id FROM products WHERE id = $1 AND active", [input.product_id])).rows[0];
     if (!product) {
@@ -189,7 +198,10 @@ export async function createOrder(input: CreateOrderInput) {
         [input.product_id, input.store_id, input.quantity],
       );
       const hint = elsewhere.length
-        ? `It is available at ${elsewhere.map((candidate) => `${candidate.name} (${candidate.available})`).join(", ")}. Offer that store instead.`
+        ? `It is available at ${elsewhere.map(
+            // Formats one alternative store and its available quantity.
+            (candidate) => `${candidate.name} (${candidate.available})`,
+          ).join(", ")}. Offer that store instead.`
         : "It is sold out at every store. Say so honestly and offer something similar from list_products.";
       throw new ApiError(
         409,
@@ -221,6 +233,7 @@ export async function createOrder(input: CreateOrderInput) {
   } catch (error) {
     if (!(error instanceof PaystackUnavailable)) throw error;
     console.error(`[paystack] ${order.id}: ${error.message}`);
+    // Releases the held stock if Paystack cannot create a link.
     await withTransaction((db) => failOrder(db, order.id, "payment_link_failed", { error: error.message }));
     throw new ApiError(
       502,
@@ -232,6 +245,7 @@ export async function createOrder(input: CreateOrderInput) {
   return orderView(await loadOrder(pool, order.id));
 }
 
+// Maps a payment outcome to the exact conversational instruction for Chord.
 function nextStep(outcome: PaymentOutcome, order: OrderRow): string {
   switch (outcome) {
     case "paid":
@@ -261,6 +275,7 @@ function nextStep(outcome: PaymentOutcome, order: OrderRow): string {
   }
 }
 
+// Checks every payment attempt and applies the latest verified order outcome.
 async function verifyOrder(order: OrderRow): Promise<VerifyResult> {
   if (order.status === "paid") return { outcome: "already_paid" };
   if (order.status === "paid_no_stock" || order.status === "handed_over") return { outcome: order.status };
@@ -291,6 +306,7 @@ async function verifyOrder(order: OrderRow): Promise<VerifyResult> {
     );
   }
 
+  // Locks the order before applying the verified payment state.
   return withTransaction(async (db): Promise<VerifyResult> => {
     const { rows } = await db.query<OrderRow>("SELECT * FROM orders WHERE id = $1 FOR UPDATE", [order.id]);
     const current = rows[0]!;
@@ -317,6 +333,7 @@ async function verifyOrder(order: OrderRow): Promise<VerifyResult> {
   });
 }
 
+// Applies one verified successful transaction without double-selling stock.
 async function confirmSuccessfulPayment(db: Db, order: OrderRow, transaction: PaystackTransaction): Promise<VerifyResult> {
   if (order.status === "paid") return { outcome: "already_paid" };
   if (order.status === "paid_no_stock" || order.status === "handed_over") return { outcome: order.status };
@@ -372,6 +389,7 @@ async function confirmSuccessfulPayment(db: Db, order: OrderRow, transaction: Pa
   return { outcome };
 }
 
+// Confirms a signed Paystack success event against its matching order.
 export async function processPaystackWebhook(webhook: PaystackWebhook) {
   if (webhook.event !== "charge.success") {
     return { outcome: "ignored" as const, event: webhook.event };
@@ -384,6 +402,7 @@ export async function processPaystackWebhook(webhook: PaystackWebhook) {
 
   await expireStaleOrders(pool);
 
+  // Locks the referenced order while applying the idempotent confirmation.
   return withTransaction(async (db) => {
     const { rows } = await db.query<OrderRow>(
       `SELECT * FROM orders
@@ -400,6 +419,7 @@ export async function processPaystackWebhook(webhook: PaystackWebhook) {
   });
 }
 
+// Exposes payment verification, recovery guidance and any available receipt.
 export async function verifyPayment(id: string) {
   await expireStaleOrders(pool);
   const before = await loadOrder(pool, id);
@@ -436,6 +456,7 @@ export async function verifyPayment(id: string) {
   };
 }
 
+// Returns a receipt only when the order is confirmed paid.
 export async function getReceipt(id: string) {
   const order = await loadOrder(pool, id);
   if (order.status !== "paid") {
@@ -448,6 +469,7 @@ export async function getReceipt(id: string) {
   return receiptView(order);
 }
 
+// Lists filtered orders with sales totals and owner attention items.
 export async function listOrders(input: ListOrdersInput) {
   await expireStaleOrders(pool);
 
@@ -472,7 +494,9 @@ export async function listOrders(input: ListOrdersInput) {
     ),
   ]);
 
+  // Converts one grouped status row into a count entry.
   const counts = Object.fromEntries(summary.rows.map((row) => [row.status, row.n]));
+  // Adds one grouped paid amount to the sales total.
   const paidKobo = summary.rows.reduce((total, row) => total + row.paid_kobo, 0);
   const attention = await pool.query<{ id: string; status: OrderStatus; failure_reason: string | null }>(
     `SELECT o.id, o.status, o.failure_reason FROM orders o
@@ -485,6 +509,7 @@ export async function listOrders(input: ListOrdersInput) {
   return {
     period: input.period,
     summary: { counts, paid_total_naira: toNaira(paidKobo), paid_total_display: formatNaira(paidKobo) },
+    // Converts one exceptional order into an owner action item.
     needs_attention: attention.rows.map((row) => ({
       order_id: row.id,
       status: row.status,

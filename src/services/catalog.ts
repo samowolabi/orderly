@@ -51,6 +51,7 @@ type AddProductInput = {
 type UpdateStockInput = { store_id: string; change?: number; set_to?: number };
 type UpdatePriceInput = { price_naira: number; min_price_naira?: number };
 
+// Loads active products and their store-level stock using optional filters.
 async function findProducts(db: Db, filters: { storeId?: string; words?: string[]; productId?: string }) {
   const { rows } = await db.query<ProductRow>(
     `SELECT p.id, p.name, p.variant, p.price_kobo, p.min_price_kobo,
@@ -72,6 +73,7 @@ async function findProducts(db: Db, filters: { storeId?: string; words?: string[
   return rows;
 }
 
+// Converts a product row into the role-appropriate API representation.
 function productView(row: ProductRow, role: Role) {
   return {
     id: row.id,
@@ -81,16 +83,22 @@ function productView(row: ProductRow, role: Role) {
     price_display: formatNaira(row.price_kobo),
     ...(role === "seller" ? { min_price_naira: toNaira(row.min_price_kobo) } : {}),
     stores: row.stores,
-    total_available: row.stores.reduce((total, store) => total + store.available, 0),
+    total_available: row.stores.reduce(
+      // Adds one store's available units to the product total.
+      (total, store) => total + store.available,
+      0,
+    ),
   };
 }
 
+// Loads one product or raises a consistent not-found error.
 async function loadProduct(db: Db, id: string, role: Role) {
   const [row] = await findProducts(db, { productId: id });
   if (!row) throw new ApiError(404, "product_not_found", `No product with id ${id}.`);
   return productView(row, role);
 }
 
+// Ensures an active store exists before a dependent operation runs.
 async function assertStore(db: Db, storeId: string) {
   const { rows } = await db.query("SELECT id FROM stores WHERE id = $1 AND active", [storeId]);
   if (!rows[0]) {
@@ -98,6 +106,7 @@ async function assertStore(db: Db, storeId: string) {
   }
 }
 
+// Loads active stores with structured addresses and opening hours.
 async function findStores(db: Db, id?: string) {
   const { rows } = await db.query<StoreRow>(
     `SELECT s.id, s.name, s.address_line1, s.address_line2, s.area, s.city, s.state,
@@ -113,15 +122,23 @@ async function findStores(db: Db, id?: string) {
     [id ?? null],
   );
   const now = new Date();
+  // Converts one store row into its customer-facing location and hours view.
   return rows.map((store) => ({ id: store.id, name: store.name, ...addressView(store), ...hoursView(store.hours, now) }));
 }
 
-const escapeLike = (value: string) => value.replace(/[\\%_]/g, (character) => `\\${character}`);
+// Escapes SQL LIKE wildcard characters in product search words.
+const escapeLike = (value: string) => value.replace(
+  /[\\%_]/g,
+  // Prefixes one wildcard character with a SQL escape slash.
+  (character) => `\\${character}`,
+);
 
+// Returns every active store with normalized location and hours data.
 export async function listStores() {
   return { stores: await findStores(pool) };
 }
 
+// Creates a store, its hours and zeroed stock rows in one transaction.
 export async function addStore(input: AddStoreInput) {
   const id =
     input.id ??
@@ -132,6 +149,7 @@ export async function addStore(input: AddStoreInput) {
       .replace(/^-|-$/g, "");
   if (!id) throw new ApiError(400, "invalid_input", "Give the store a short id, e.g. yaba.");
 
+  // Persists the store and all dependent rows atomically.
   return withTransaction(async (db) => {
     const { rowCount } = await db.query(
       `INSERT INTO stores (
@@ -172,7 +190,9 @@ export async function addStore(input: AddStoreInput) {
   });
 }
 
+// Applies a partial store update while preserving unchanged fields and days.
 export async function updateStore(id: string, input: UpdateStoreInput) {
+  // Locks and updates the store atomically.
   return withTransaction(async (db) => {
     const locked = await db.query("SELECT id FROM stores WHERE id = $1 AND active FOR UPDATE", [id]);
     if (!locked.rows[0]) throw new ApiError(404, "store_not_found", `No store ${id}. Call list_stores for the right id.`);
@@ -190,8 +210,11 @@ export async function updateStore(id: string, input: UpdateStoreInput) {
         postal_code: input.address.postal_code,
         directions_note: input.address.directions_note,
       };
+      // Keeps only address properties included in the patch.
       const updates = Object.entries(columns).filter((entry) => entry[1] !== undefined);
+      // Converts one address update into its parameter value.
       const values: (string | null)[] = [id, ...updates.map((entry) => entry[1] ?? null)];
+      // Converts one address column into its parameterized SQL assignment.
       const set = updates.map(([column], index) => `${column} = $${index + 2}`).join(", ");
       await db.query(`UPDATE stores SET ${set} WHERE id = $1`, values);
     }
@@ -212,6 +235,7 @@ export async function updateStore(id: string, input: UpdateStoreInput) {
     if (input.closed_days) {
       await db.query("DELETE FROM store_hours WHERE store_id = $1 AND weekday = ANY($2::smallint[])", [
         id,
+        // Converts one short weekday name into its ISO weekday number.
         input.closed_days.map((day) => DAYS.indexOf(day) + 1),
       ]);
     }
@@ -226,19 +250,23 @@ export async function updateStore(id: string, input: UpdateStoreInput) {
   });
 }
 
+// Searches active products after expiring stale stock holds.
 export async function listProducts(filters: { store_id?: string; q?: string; product_id?: string }, role: Role) {
   await expireStaleOrders(pool);
   if (filters.store_id) await assertStore(pool, filters.store_id);
   const words = filters.q?.trim().split(/\s+/).filter(Boolean).map(escapeLike);
   const rows = await findProducts(pool, { storeId: filters.store_id, words, productId: filters.product_id });
+  // Converts one product row into the caller's permitted view.
   return { products: rows.map((row) => productView(row, role)) };
 }
 
+// Creates a product and its per-store stock rows atomically.
 export async function addProduct(input: AddProductInput) {
   const id =
     input.id ??
     `${input.name} ${input.variant ?? ""}`.toUpperCase().replace(/[^A-Z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40);
 
+  // Persists the product and all stock rows in one transaction.
   return withTransaction(async (db) => {
     const duplicate = await db.query(
       `SELECT id FROM products
@@ -253,8 +281,12 @@ export async function addProduct(input: AddProductInput) {
       );
     }
 
+    // Extracts each known store id for stock validation and insertion.
     const stores = (await db.query<{ id: string }>("SELECT id FROM stores")).rows.map((row) => row.id);
-    const unknown = input.stock.map((stock) => stock.store_id).filter((storeId) => !stores.includes(storeId));
+    // Extracts one requested stock row's store id.
+    const requestedStores = input.stock.map((stock) => stock.store_id);
+    // Keeps requested store ids that are absent from the database.
+    const unknown = requestedStores.filter((storeId) => !stores.includes(storeId));
     if (unknown.length) {
       throw new ApiError(404, "store_not_found", `Unknown store: ${unknown.join(", ")}. Call list_stores for the right ids.`);
     }
@@ -264,6 +296,7 @@ export async function addProduct(input: AddProductInput) {
       "INSERT INTO products (id, name, variant, price_kobo, min_price_kobo) VALUES ($1, $2, $3, $4, $5)",
       [id, input.name, input.variant ?? null, price, input.min_price_naira === undefined ? price : toKobo(input.min_price_naira)],
     );
+    // Converts each requested stock row into a store-to-quantity entry.
     const units = new Map(input.stock.map((stock) => [stock.store_id, stock.quantity]));
     for (const storeId of stores) {
       await db.query("INSERT INTO stock (product_id, store_id, available) VALUES ($1, $2, $3)", [
@@ -277,9 +310,11 @@ export async function addProduct(input: AddProductInput) {
   });
 }
 
+// Adjusts available stock without counting units held by unpaid orders.
 export async function updateStock(id: string, input: UpdateStockInput) {
   await expireStaleOrders(pool);
 
+  // Locks the stock row while calculating and applying its new value.
   const result = await withTransaction(async (db) => {
     await assertStore(db, input.store_id);
     const { rows } = await db.query<{ available: number; held: number }>(
@@ -321,8 +356,10 @@ export async function updateStock(id: string, input: UpdateStockInput) {
   };
 }
 
+// Changes a product price while keeping its discount floor valid.
 export async function updatePrice(id: string, input: UpdatePriceInput) {
   const price = toKobo(input.price_naira);
+  // Locks the product while updating its price and discount floor.
   const result = await withTransaction(async (db) => {
     const { rows } = await db.query<{ price_kobo: number; min_price_kobo: number }>(
       "SELECT price_kobo, min_price_kobo FROM products WHERE id = $1 AND active FOR UPDATE",

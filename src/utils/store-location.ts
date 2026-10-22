@@ -35,6 +35,7 @@ export type AddressRow = {
   directions_note: string | null;
 };
 
+// Joins normalized address columns into one readable address line.
 export function formatAddress(row: AddressRow) {
   const parts = [row.address_line1, row.address_line2, row.area, row.city];
   if (row.state.toLowerCase() !== row.city.toLowerCase()) parts.push(row.state);
@@ -43,6 +44,7 @@ export function formatAddress(row: AddressRow) {
   return parts.filter(Boolean).join(", ");
 }
 
+// Builds structured address data and a shareable Google Maps URL.
 export function addressView(row: AddressRow) {
   const address = formatAddress(row);
   const hasCoordinates = row.latitude !== null && row.longitude !== null;

@@ -21,6 +21,7 @@ export type PaystackWebhook = {
 
 const TIMEOUT_MS = 10_000;
 
+// Verifies a Paystack HMAC signature against the exact raw request body.
 export function hasValidPaystackSignature(body: Buffer, signature: string | undefined) {
   if (!signature) return false;
 
@@ -36,6 +37,7 @@ export function hasValidPaystackSignature(body: Buffer, signature: string | unde
   return received.length === expected.length && timingSafeEqual(received, expected);
 }
 
+// Parses a raw Paystack webhook into its minimal event shape.
 export function parsePaystackWebhook(body: Buffer): PaystackWebhook {
   let value: unknown;
 
@@ -58,6 +60,7 @@ export function parsePaystackWebhook(body: Buffer): PaystackWebhook {
   return { event, data: data as Record<string, unknown> };
 }
 
+// Validates and normalizes transaction data from a Paystack webhook.
 export function transactionFromWebhook(webhook: PaystackWebhook): PaystackTransaction {
   const { data } = webhook;
   if (
@@ -85,6 +88,7 @@ export function transactionFromWebhook(webhook: PaystackWebhook): PaystackTransa
   };
 }
 
+// Sends an authenticated request to Paystack with a fixed timeout.
 async function request(method: "GET" | "POST", path: string, requestBody?: unknown) {
   const { PAYSTACK_BASE_URL, PAYSTACK_SECRET_KEY } = config();
   const response = await fetch(new URL(path, PAYSTACK_BASE_URL), {
@@ -96,6 +100,7 @@ async function request(method: "GET" | "POST", path: string, requestBody?: unkno
     body: requestBody === undefined ? undefined : JSON.stringify(requestBody),
     signal: AbortSignal.timeout(TIMEOUT_MS),
   });
+  // Treats a non-JSON Paystack response as an absent response body.
   const responseBody = (await response.json().catch(() => null)) as {
     status?: boolean;
     message?: string;
@@ -104,6 +109,7 @@ async function request(method: "GET" | "POST", path: string, requestBody?: unkno
   return { httpStatus: response.status, body: responseBody };
 }
 
+// Creates a Paystack checkout URL for an order payment attempt.
 export async function initializeTransaction(input: {
   reference: string;
   amountKobo: number;
@@ -132,6 +138,7 @@ export async function initializeTransaction(input: {
   return { authorization_url: url };
 }
 
+// Verifies a Paystack reference with one retry for transient failures.
 export async function verifyTransaction(reference: string): Promise<PaystackTransaction | null> {
   let lastError = "";
 
