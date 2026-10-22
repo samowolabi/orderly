@@ -11,11 +11,12 @@
     "db:migrate": "tsx src/db/migrate.ts",
     "db:seed": "tsx src/db/seed.ts",
     "db:reset": "npm run db:migrate && npm run db:seed",
-    "db:start": "/Library/PostgreSQL/18/bin/pg_ctl -D .pgdata -o \"-p 5440 -k /tmp\" -l .pgdata/server.log start",
-    "db:stop": "/Library/PostgreSQL/18/bin/pg_ctl -D .pgdata stop",
     "openapi": "tsx src/openapi/write.ts",
     "fake-paystack": "tsx dev/fake-paystack.ts",
-    "test:api": "bash dev/curl-tests.sh"
+    "test:api": "bash dev/curl-tests.sh",
+    "test:hours": "tsx dev/hours-tests.ts",
+    "test:location": "tsx dev/location-tests.ts",
+    "db:create": "bash dev/create-local-db.sh"
   },
   "author": "Samuel Owolabi",
   "license": "UNLICENSED",

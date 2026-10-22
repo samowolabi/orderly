@@ -1,6 +1,6 @@
 #!/bin/bash
 # Curl tests for the Orderly API against dev/fake-paystack.ts.
-# Needs: npm run db:start, npm run fake-paystack, and the API started with
+# Needs: the database in .env, npm run fake-paystack, and the API started with
 #   PAYSTACK_BASE_URL=http://localhost:4010 npm run dev
 # Reseeds nothing; run npm run db:seed first for a clean slate.
 # Usage: npm run test:api
@@ -9,8 +9,11 @@ API=http://localhost:3000
 FAKE=http://localhost:4010
 BUYER=$(grep '^BUYER_API_KEY=' .env | cut -d= -f2)
 SELLER=$(grep '^SELLER_API_KEY=' .env | cut -d= -f2)
-PSQL="/Library/PostgreSQL/18/bin/psql -h localhost -p 5440 -U orderly -d orderly -X -qtA"
+DATABASE_URL=$(grep "^DATABASE_URL=" .env | cut -d= -f2-)
+PSQL="$(command -v psql || echo /Library/PostgreSQL/18/bin/psql) $DATABASE_URL -X -qtA"
 PASS=0; FAILS=0
+RACE_FILE=$(mktemp -t orderly-race)
+trap 'rm -f "$RACE_FILE"' EXIT
 
 # call <key|none> <METHOD> <path> [json]  -> sets $STATUS and $BODY
 call() {
@@ -45,12 +48,16 @@ echo "== Auth and roles"
 call none GET /stores;                         check "no key is refused" 401 '.ok == false and .error.code == "unauthorized"'
 call wrong-key-0000000000 GET /stores;         check "wrong key is refused" 401
 call "$BUYER" PATCH /products/IP13-128 '{"price_naira":1}'; check "buyer can't change a price" 403 '.error.code == "owner_only"'; msg
-call "$BUYER" POST /stores '{"name":"Hack","address":"x x x x x","opening_hours":"never"}'; check "buyer can't add a store" 403
+call "$BUYER" POST /stores '{"name":"Hack","address":{"line1":"1 Fake Road","area":"Ikeja","city":"Lagos","state":"Lagos"},"hours":[{"days":["mon","tue","wed","thu","fri"],"opens":"08:30","closes":"18:00"},{"days":["sat"],"opens":"10:00","closes":"16:00"}]}'; check "buyer can't add a store" 403
 call "$BUYER" GET /orders;                     check "buyer can't list orders" 403
 call "$SELLER" POST /orders '{"product_id":"IP13-128","store_id":"ikeja","buyer_name":"x"}'; check "seller can't create orders (buyer tool)" 403
 
 echo "== Catalog reads"
 call "$BUYER" GET /stores;                     check "list_stores" 200 '.data.stores | length == 2'
+check "Ikeja hours text" 200 '.data.stores[0].opening_hours == "Mon to Sat, 9am to 7pm; Sun, closed"'
+check "Lekki hours text" 200 '.data.stores[1].opening_hours == "Mon to Sat, 10am to 8pm; Sun, 12pm to 5pm"'
+check "structured hours and open_now" 200 '(.data.stores[0].hours | length == 6) and .data.stores[0].hours[0] == {"day":"Monday","opens":"09:00","closes":"19:00"} and (.data.stores | all(.open_now | type == "boolean"))'
+check "structured addresses and map pins" 200 '.data.stores[0].address_details == {"line1":"14 Allen Avenue","line2":null,"area":"Ikeja","city":"Lagos","state":"Lagos","country_code":"NG","postal_code":null,"directions_note":null} and .data.stores[0].location.latitude == 6.604718 and (.data.stores[0].location.map_url | contains("6.604718"))'
 call "$BUYER" GET '/products?q=iphone%2013';   check "search 'iphone 13' finds IP13-128 only" 200 '[.data.products[].id] == ["IP13-128"]'
 check "buyer doesn't see the discount floor" 200 '.data.products[0] | has("min_price_naira") | not'
 check "price shown in naira" 200 '.data.products[0].price_naira == 650000 and .data.products[0].price_display == "₦650,000"'
@@ -60,12 +67,37 @@ call "$BUYER" GET '/products?store_id=abuja';  check "unknown store filter" 404 
 call "$BUYER" GET '/products?q=100%25';        check "LIKE wildcards are escaped" 200 '.data.products | length == 0'
 
 echo "== Owner: add_store"
-call "$SELLER" POST /stores '{"name":"Kola Gadgets Yaba","address":"3 Herbert Macaulay Way, Yaba, Lagos","opening_hours":"Mon to Sat, 9am to 7pm"}'
-check "add Yaba (id made from name)" 201 '.data.id == "yaba"'
-call "$SELLER" POST /stores '{"name":"Kola Gadgets Yaba","address":"3 Herbert Macaulay Way, Yaba, Lagos","opening_hours":"Mon to Sat"}'
+call "$SELLER" POST /stores '{"name":"Kola Gadgets Yaba","address":{"line1":"3 Herbert Macaulay Way","area":"Yaba","city":"Lagos","state":"Lagos"},"hours":[{"days":["mon","tue","wed","thu","fri"],"opens":"08:30","closes":"18:00"},{"days":["sat"],"opens":"10:00","closes":"16:00"}]}'
+check "add Yaba (id made from name)" 201 '.data.id == "yaba" and .data.address == "3 Herbert Macaulay Way, Yaba, Lagos" and .data.address_details.country_code == "NG" and .data.location.latitude == null and (.data.location.map_url | contains("Herbert%20Macaulay")) and .data.opening_hours == "Mon to Fri, 8:30am to 6pm; Sat, 10am to 4pm; Sun, closed"'
+for bad in '[]' '[{"days":["mon"],"opens":"9am","closes":"17:00"}]' '[{"days":["mon"],"opens":"18:00","closes":"09:00"}]' \
+           '[{"days":["mon","tue"],"opens":"09:00","closes":"17:00"},{"days":["tue"],"opens":"10:00","closes":"12:00"}]' \
+           '[{"days":["monday"],"opens":"09:00","closes":"17:00"}]'; do
+  call "$SELLER" POST /stores '{"name":"Kola Gadgets Ajah","address":{"line1":"1 Ajah Road","area":"Ajah","city":"Lagos","state":"Lagos"},"hours":'"$bad"'}'
+  check "bad hours refused: $bad" 400 '.error.code == "invalid_input"'
+done
+msg
+call "$SELLER" POST /stores '{"name":"Kola Gadgets Yaba","address":{"line1":"3 Herbert Macaulay Way","area":"Yaba","city":"Lagos","state":"Lagos"},"hours":[{"days":["mon","tue","wed","thu","fri"],"opens":"08:30","closes":"18:00"},{"days":["sat"],"opens":"10:00","closes":"16:00"}]}'
 check "duplicate store" 409 '.error.code == "store_exists"'
-call "$SELLER" POST /stores '{"name":"Surulere"}'; check "missing fields named" 400 '.error.message_for_agent | test("address is required") and test("opening_hours is required")'; msg
+call "$SELLER" POST /stores '{"name":"Surulere"}'; check "missing fields named" 400 '.error.message_for_agent | test("address is required") and test("hours is required")'; msg
 call "$BUYER" GET '/products?product_id=IP13-128'; check "new store has 0 stock lines" 200 '[.data.products[0].stores[] | select(.store_id=="yaba") | .available] == [0]'
+
+echo "== Owner: update_store"
+call "$BUYER" PATCH /stores/yaba '{"name":"Hacked"}';  check "buyer can't update a store" 403 '.error.code == "owner_only"'
+call "$SELLER" PATCH /stores/yaba '{}';                 check "empty update refused" 400 '.error.message_for_agent | test("at least one")'; msg
+call "$SELLER" PATCH /stores/abuja '{"name":"Kola Gadgets Abuja"}'; check "unknown store" 404 '.error.code == "store_not_found"'
+call "$SELLER" PATCH /stores/yaba '{"hours":[{"days":["sat"],"opens":"09:00","closes":"17:00"}]}'
+check "change Saturday only" 200 '.data.store.opening_hours == "Mon to Fri, 8:30am to 6pm; Sat, 9am to 5pm; Sun, closed" and .data.previous.opening_hours == "Mon to Fri, 8:30am to 6pm; Sat, 10am to 4pm; Sun, closed"'
+call "$SELLER" PATCH /stores/YABA '{"hours":[{"days":["sun"],"opens":"12:00","closes":"16:00"}],"closed_days":["mon"]}'
+check "open Sunday, close Monday (id is case-insensitive)" 200 '.data.store.opening_hours == "Mon, closed; Tue to Fri, 8:30am to 6pm; Sat, 9am to 5pm; Sun, 12pm to 4pm"'
+call "$SELLER" PATCH /stores/yaba '{"hours":[{"days":["mon"],"opens":"09:00","closes":"17:00"}],"closed_days":["mon"]}'
+check "same day in hours and closed_days" 400 '.error.message_for_agent | test("both")'
+call "$SELLER" PATCH /stores/yaba '{"hours":[{"days":["tue"],"opens":"17:00","closes":"09:00"}]}'; check "closes before opens" 400
+call "$SELLER" PATCH /stores/yaba '{"closed_days":["funday"]}'; check "unknown day" 400
+call "$SELLER" PATCH /stores/yaba '{"location":{"latitude":91,"longitude":3.4}}'; check "bad latitude" 400
+call "$SELLER" PATCH /stores/yaba '{"name":"Kola Gadgets Yaba Hub","address":{"line1":"5 Herbert Macaulay Way","directions_note":"Opposite the bus stop"},"location":{"latitude":6.5095,"longitude":3.3711}}'
+check "rename, move and pin, hours kept" 200 '.data.store.name == "Kola Gadgets Yaba Hub" and .data.previous.name == "Kola Gadgets Yaba" and .data.store.address == "5 Herbert Macaulay Way, Yaba, Lagos" and .data.store.address_details.directions_note == "Opposite the bus stop" and .data.store.location.latitude == 6.5095 and .data.store.opening_hours == .data.previous.opening_hours'
+call "$BUYER" GET /stores;                              check "list_stores shows the update" 200 '[.data.stores[] | select(.id=="yaba") | .name, .address, .location.longitude] == ["Kola Gadgets Yaba Hub","5 Herbert Macaulay Way, Yaba, Lagos",3.3711]'
+[ "$($PSQL -c "SELECT count(*) FROM events WHERE type='store_updated'")" = 3 ] && { PASS=$((PASS+1)); echo "  ok    each update is logged"; } || { FAILS=$((FAILS+1)); echo "  FAIL  store_updated events: $($PSQL -c "SELECT count(*) FROM events WHERE type='store_updated'")"; }
 
 echo "== Owner: add_product"
 call "$SELLER" POST /products '{"name":"iPhone 16","variant":"256GB","price_naira":1150000,"stock":[{"store_id":"ikeja","quantity":2},{"store_id":"lekki","quantity":1}]}'
@@ -189,9 +221,10 @@ $PSQL -c "UPDATE stock SET available = 2 WHERE product_id='S23-256' AND store_id
 for i in $(seq 1 10); do
   curl -s -o /dev/null -w '%{http_code}\n' -X POST -H "X-Api-Key: $BUYER" -H 'content-type: application/json' \
     -d "{\"product_id\":\"S23-256\",\"store_id\":\"lekki\",\"buyer_name\":\"Buyer $i\"}" "$API/orders" &
-done > /tmp/claude-501/race10.txt; wait
-won=$(grep -c 201 /tmp/claude-501/race10.txt); lost=$(grep -c 409 /tmp/claude-501/race10.txt)
+done > "$RACE_FILE"; wait
+won=$(grep -c 201 "$RACE_FILE"); lost=$(grep -c 409 "$RACE_FILE")
 [ "$won" = 2 ] && [ "$lost" = 8 ] && [ "$(stock S23-256 lekki)" = 0 ] \
   && { PASS=$((PASS+1)); echo "  ok    2 held, 8 refused, stock 0"; } \
   || { FAILS=$((FAILS+1)); echo "  FAIL  won $won, lost $lost, stock $(stock S23-256 lekki)"; }
 echo "Passed $PASS, failed $FAILS"
+[ "$FAILS" -eq 0 ]
