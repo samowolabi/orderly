@@ -7,9 +7,12 @@ import { fail } from "../utils/http";
 // Checked on every request, so a tricked agent still cannot use owner tools.
 export type Role = "buyer" | "seller";
 
+// Hashes API keys into fixed-length values for safe comparison.
 const digest = (value: string) => createHash("sha256").update(value).digest();
+// Compares API keys without leaking early mismatch timing.
 const same = (left: string, right: string) => timingSafeEqual(digest(left), digest(right));
 
+// Resolves an API key to its buyer or seller role.
 function roleFor(key: string): Role | null {
   const { BUYER_API_KEY, SELLER_API_KEY } = config();
   if (same(key, SELLER_API_KEY)) return "seller";
@@ -17,7 +20,9 @@ function roleFor(key: string): Role | null {
   return null;
 }
 
+// Builds middleware that accepts only the requested API roles.
 export function requireRole(...allowed: Role[]): RequestHandler {
+  // Authenticates the request and exposes its role to downstream handlers.
   return (request, response, next) => {
     const header = request.get("x-api-key") ?? request.get("authorization")?.replace(/^Bearer\s+/i, "");
     const role = header ? roleFor(header) : null;

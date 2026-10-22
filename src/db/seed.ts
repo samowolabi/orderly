@@ -4,6 +4,7 @@ import { pool, withTransaction } from "./pool";
 
 // Kola Gadgets: a made-up Lagos phone and gadget store. All data is fictional.
 
+// Converts seed prices from naira into stored kobo values.
 const naira = (n: number) => n * 100;
 
 type SeedStore = {
@@ -49,11 +50,13 @@ const products = [
   { id: "APL-20W", name: "Apple USB-C charger", variant: "20W", price: 28_000, floor: 25_000, stock: { ikeja: 12, lekki: 0 } },
 ];
 
+// Replaces existing data with the deterministic Kola Gadgets demo catalog.
 async function seed() {
   if (process.env.NODE_ENV === "production" && !process.argv.includes("--force")) {
     throw new Error("Seeding wipes all data. Refusing in production without --force.");
   }
 
+  // Rebuilds all demo rows atomically so partial seeds cannot remain.
   await withTransaction(async (db) => {
     await db.query("TRUNCATE events, orders, stock, products, store_hours, stores RESTART IDENTITY CASCADE");
     await db.query("ALTER SEQUENCE order_number_seq RESTART WITH 1001");
@@ -113,8 +116,10 @@ async function seed() {
 }
 
 seed()
+  // Makes seed failures visible to the shell.
   .catch((err) => {
     console.error(err);
     process.exitCode = 1;
   })
+  // Closes the database pool after seeding finishes.
   .finally(() => pool.end());

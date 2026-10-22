@@ -21,6 +21,7 @@ const ErrorBody = z
   })
   .openapi("Error");
 
+// Wraps a successful response schema in Orderly's standard envelope.
 function envelope<T extends z.ZodType>(data: T) {
   return z.object({ ok: z.literal(true), data, error: z.null() });
 }
@@ -29,6 +30,7 @@ const Failure = z
   .object({ ok: z.literal(false), data: z.null(), error: ErrorBody })
   .openapi("Failure");
 
+// Builds a documented failure response with the shared error schema.
 const failure = (description: string) => ({
   description,
   content: { "application/json": { schema: Failure } },
@@ -47,11 +49,13 @@ export const paymentErrorResponses = {
   503: failure("Paystack did not answer. Do not confirm anything."),
 };
 
+// Builds a documented JSON success response for a data schema.
 export const json = <T extends z.ZodType>(schema: T, description: string) => ({
   description,
   content: { "application/json": { schema: envelope(schema) } },
 });
 
+// Builds a JSON request-body definition for a schema.
 export const body = <T extends z.ZodType>(schema: T) => ({
   content: { "application/json": { schema } },
 });

@@ -8,6 +8,7 @@ import { orders } from "./routes/orders";
 import { webhooks } from "./routes/webhooks";
 import { ok } from "./utils/http";
 
+// Builds the Express application with infrastructure and Chord-facing routes.
 export function createApp() {
   const app = express();
 
@@ -15,12 +16,14 @@ export function createApp() {
   app.use(webhooks);
   app.use(express.json({ limit: "100kb" }));
 
+  // Confirms that the API can reach its database.
   app.get("/health", async (_req, res) => {
     await pool.query("SELECT 1");
     ok(res, { status: "up" });
   });
 
   // Public, so Chord can import it by URL. Holds no secrets.
+  // Serves a public OpenAPI document using the current request host as fallback.
   app.get("/openapi.json", (req, res) => {
     res.json(openApiDocument(config().PUBLIC_URL ?? `${req.protocol}://${req.get("host")}`));
   });

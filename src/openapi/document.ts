@@ -28,6 +28,7 @@ Use \`add_store\` and \`update_store\` for branches, addresses, map pins and ope
 Every response has \`{ ok, data, error }\`. When \`ok\` is false, follow \`error.message_for_agent\`. Payment verification also returns \`next_step\`; follow it exactly. All API money values are in naira, while Orderly stores and sends Paystack amounts in kobo internally.
 `.trim();
 
+// Generates the standalone OpenAPI document imported by Chord.
 export function openApiDocument(serverUrl?: string) {
   return new OpenApiGeneratorV3(registry.definitions).generateDocument({
     openapi: "3.0.3",

@@ -22,10 +22,12 @@ type Config = z.infer<typeof Env>;
 // Parsed on first use so the db scripts only need DATABASE_URL.
 let cached: Config | undefined;
 
+// Parses, validates and caches the process environment.
 export function config(): Config {
   if (!cached) {
     const parsed = Env.safeParse(process.env);
     if (!parsed.success) {
+      // Formats each environment validation issue for the startup error.
       const fields = parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`);
       throw new Error(`Invalid environment:\n  ${fields.join("\n  ")}`);
     }

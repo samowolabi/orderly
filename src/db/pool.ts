@@ -3,6 +3,7 @@ import pg from "pg";
 
 // Money columns are bigint (kobo). pg returns int8 as a string by default;
 // every value we store fits comfortably in a JS number.
+// Converts Postgres bigint values into safe JavaScript numbers for money fields.
 pg.types.setTypeParser(pg.types.builtins.INT8, (v) => Number(v));
 
 const connectionString = process.env.DATABASE_URL;
@@ -14,6 +15,7 @@ export const pool = new pg.Pool({
   ssl: /localhost|127\.0\.0\.1/.test(connectionString) ? false : { rejectUnauthorized: false },
 });
 
+// Runs a database operation inside a committed or rolled-back transaction.
 export async function withTransaction<T>(fn: (client: pg.PoolClient) => Promise<T>): Promise<T> {
   const client = await pool.connect();
   try {

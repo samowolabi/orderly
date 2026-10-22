@@ -1,6 +1,7 @@
 import { DAYS } from "../../utils/store-hours";
 import { z } from "../registry";
 
+// Builds a trimmed text schema with the requested maximum length.
 const Text = (max: number) => z.string().trim().min(2).max(max);
 const CountryCode = z.string().trim().toUpperCase().regex(/^[A-Z]{2}$/, "use a two-letter country code, e.g. NG");
 const Time = z
@@ -34,7 +35,11 @@ export const AddressPatch = z
     postal_code: AddressInput.shape.postal_code.unwrap().nullable().optional(),
     directions_note: AddressInput.shape.directions_note.unwrap().nullable().optional(),
   })
-  .refine((address) => Object.values(address).some((value) => value !== undefined), {
+  // Requires at least one address property in a patch.
+  .refine((address) => Object.values(address).some(
+    // Detects whether a patch value was supplied.
+    (value) => value !== undefined,
+  ), {
     message: "send at least one address field",
   });
 
@@ -54,10 +59,21 @@ export const HoursInput = z
     }),
   )
   .min(1)
-  .refine((groups) => groups.every((group) => group.closes > group.opens), {
+  // Rejects schedules whose closing time is not after opening time.
+  .refine((groups) => groups.every(
+    // Validates one opening-hours group.
+    (group) => group.closes > group.opens,
+  ), {
     message: "closes must be later than opens on the same day",
   })
-  .refine((groups) => new Set(groups.flatMap((group) => group.days)).size === groups.flatMap((group) => group.days).length, {
+  // Rejects schedules that define the same weekday more than once.
+  .refine((groups) => new Set(groups.flatMap(
+    // Collects the weekdays from one hours group.
+    (group) => group.days,
+  )).size === groups.flatMap(
+    // Collects weekdays again for the ungrouped length comparison.
+    (group) => group.days,
+  ).length, {
     message: "each day can appear only once",
   })
   .openapi({ description: "Open days and times, Lagos time. Days left out are closed." });
@@ -154,10 +170,21 @@ export const UpdateStoreBody = z
       example: ["sun"],
     }),
   })
-  .refine((input) => Object.values(input).some((value) => value !== undefined), {
+  // Requires a store patch to contain at least one change.
+  .refine((input) => Object.values(input).some(
+    // Detects whether a store field was supplied.
+    (value) => value !== undefined,
+  ), {
     message: "send at least one of name, address, location, hours or closed_days",
   })
-  .refine((input) => !input.closed_days?.some((day) => input.hours?.some((group) => group.days.includes(day))), {
+  // Prevents a weekday from being opened and closed in the same request.
+  .refine((input) => !input.closed_days?.some(
+    // Checks one explicitly closed weekday against the new hours.
+    (day) => input.hours?.some(
+      // Detects whether an hours group contains the closed weekday.
+      (group) => group.days.includes(day),
+    ),
+  ), {
     message: "a day can't be in both hours and closed_days",
     path: ["closed_days"],
   });
@@ -184,6 +211,7 @@ export const AddProductBody = z
       .default([])
       .openapi({ description: "Starting units per store. Stores left out start at 0." }),
   })
+  // Keeps a product's discount floor at or below its selling price.
   .refine((input) => input.min_price_naira === undefined || input.min_price_naira <= input.price_naira, {
     message: "min_price_naira can't be above price_naira",
     path: ["min_price_naira"],
@@ -197,6 +225,7 @@ export const UpdateStockBody = z
     set_to: z.number().int().min(0).max(10_000).optional()
       .openapi({ description: "Units physically on hand after a count, including ones held for unpaid orders" }),
   })
+  // Requires exactly one stock adjustment mode.
   .refine((input) => (input.change === undefined) !== (input.set_to === undefined), {
     message: "send exactly one of change or set_to",
   });
