@@ -11,13 +11,17 @@ import express from "express";
 
 type Tx = {
   reference: string;
+
   amount: number;
   currency: string;
+
   email: string;
+
   status: string;
   channel: string | null;
-  paid_at: string | null;
   gateway_response: string | null;
+
+  paid_at: string | null;
 };
 
 const PORT = Number(process.env.FAKE_PAYSTACK_PORT ?? 4010);

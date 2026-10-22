@@ -5,8 +5,20 @@ const LONG = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"
 const SHORT = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 export type Day = (typeof DAYS)[number];
-export type HourRow = { weekday: number; opens: string; closes: string };
-export type HoursInputValue = { days: Day[]; opens: string; closes: string }[];
+
+export type HourRow = {
+  weekday: number;
+
+  opens: string;
+  closes: string;
+};
+
+export type HoursInputValue = {
+  days: Day[];
+
+  opens: string;
+  closes: string;
+}[];
 
 // Expands grouped weekday input into one sorted database row per open day.
 export const toRows = (groups: HoursInputValue): HourRow[] =>

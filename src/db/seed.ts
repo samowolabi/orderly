@@ -10,8 +10,10 @@ const naira = (n: number) => n * 100;
 type SeedStore = {
   id: string;
   name: string;
+
   address: AddressInputValue;
   location: CoordinatesInputValue;
+
   hours: Parameters<typeof toRows>[0];
 };
 

@@ -15,26 +15,42 @@ type ProductRow = {
   id: string;
   name: string;
   variant: string | null;
+
   price_kobo: number;
   min_price_kobo: number;
-  stores: { store_id: string; store_name: string; available: number }[];
+
+  stores: {
+    store_id: string;
+    store_name: string;
+    available: number;
+  }[];
 };
 
-type StoreRow = { id: string; name: string; hours: HourRow[] } & AddressRow;
+type StoreRow = {
+  id: string;
+  name: string;
+
+  hours: HourRow[];
+} & AddressRow;
+
 type Role = "buyer" | "seller";
 
 type AddStoreInput = {
   id?: string;
   name: string;
+
   address: AddressInputValue;
   location?: CoordinatesInputValue;
+
   hours: HoursInputValue;
 };
 
 type UpdateStoreInput = {
   name?: string;
+
   address?: AddressPatchValue;
   location?: CoordinatesInputValue | null;
+
   hours?: HoursInputValue;
   closed_days?: (typeof DAYS)[number][];
 };
@@ -43,16 +59,30 @@ type AddProductInput = {
   id?: string;
   name: string;
   variant?: string;
+
   price_naira: number;
   min_price_naira?: number;
-  stock: { store_id: string; quantity: number }[];
+
+  stock: {
+    store_id: string;
+    quantity: number;
+  }[];
 };
 
-type UpdateStockInput = { store_id: string; change?: number; set_to?: number };
-type UpdatePriceInput = { price_naira: number; min_price_naira?: number };
+type UpdateStockInput = {
+  store_id: string;
+
+  change?: number;
+  set_to?: number;
+};
+
+type UpdatePriceInput = {
+  price_naira: number;
+  min_price_naira?: number;
+};
 
 // Loads active products and their store-level stock using optional filters.
-async function findProducts(db: Db, filters: { storeId?: string; words?: string[]; productId?: string }) {
+async function findProducts(db: Db, filters: { productId?: string; storeId?: string; words?: string[] }) {
   const { rows } = await db.query<ProductRow>(
     `SELECT p.id, p.name, p.variant, p.price_kobo, p.min_price_kobo,
             json_agg(json_build_object('store_id', s.id, 'store_name', s.name, 'available', st.available)
@@ -251,7 +281,7 @@ export async function updateStore(id: string, input: UpdateStoreInput) {
 }
 
 // Searches active products after expiring stale stock holds.
-export async function listProducts(filters: { store_id?: string; q?: string; product_id?: string }, role: Role) {
+export async function listProducts(filters: { product_id?: string; store_id?: string; q?: string }, role: Role) {
   await expireStaleOrders(pool);
   if (filters.store_id) await assertStore(pool, filters.store_id);
   const words = filters.q?.trim().split(/\s+/).filter(Boolean).map(escapeLike);

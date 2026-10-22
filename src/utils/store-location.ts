@@ -1,38 +1,48 @@
 export type AddressInputValue = {
   line1: string;
   line2?: string;
+
   area: string;
   city: string;
   state: string;
   country_code: string;
   postal_code?: string;
+
   directions_note?: string;
 };
 
 export type AddressPatchValue = {
   line1?: string;
   line2?: string | null;
+
   area?: string;
   city?: string;
   state?: string;
   country_code?: string;
   postal_code?: string | null;
+
   directions_note?: string | null;
 };
 
-export type CoordinatesInputValue = { latitude: number; longitude: number };
+export type CoordinatesInputValue = {
+  latitude: number;
+  longitude: number;
+};
 
 export type AddressRow = {
   address_line1: string;
   address_line2: string | null;
+
   area: string;
   city: string;
   state: string;
   country_code: string;
   postal_code: string | null;
+
+  directions_note: string | null;
+
   latitude: number | null;
   longitude: number | null;
-  directions_note: string | null;
 };
 
 // Joins normalized address columns into one readable address line.

@@ -11,13 +11,16 @@ export class InvalidPaymentPayload extends Error {
 }
 
 export type PaymentTransaction = {
-  status: string;
   reference: string;
+
   amount: number;
   currency: string;
+
+  status: string;
   channel: string | null;
-  paid_at: string | null;
   gateway_response: string | null;
+
+  paid_at: string | null;
 };
 
 export type PaymentWebhookEvent =

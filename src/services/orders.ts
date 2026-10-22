@@ -32,7 +32,9 @@ type PaymentOutcome =
 type CreateOrderInput = {
   product_id: string;
   store_id: string;
+
   quantity: number;
+
   buyer_name: string;
   buyer_email?: string;
 };
@@ -40,6 +42,7 @@ type CreateOrderInput = {
 type ListOrdersInput = {
   status?: OrderStatus;
   store_id?: string;
+
   period: "today" | "7d" | "30d" | "all";
   limit: number;
 };
@@ -165,7 +168,7 @@ const newReference = (orderId: string) => `${orderId}-${randomBytes(3).toString(
 
 // Initializes the payment processor and attaches its checkout link to an order.
 async function attachPaymentLink(
-  order: Pick<OrderRow, "id" | "amount_kobo" | "buyer_email" | "product_id" | "store_id">,
+  order: Pick<OrderRow, "id" | "product_id" | "store_id" | "amount_kobo" | "buyer_email">,
 ) {
   const reference = newReference(order.id);
   const { checkoutUrl } = await paymentProcessor.createCheckout({
