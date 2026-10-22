@@ -9,7 +9,7 @@ flowchart TB
   OC[Owner chat] --> OO
   CW[Customer on WhatsApp] --> OS
   subgraph Chord
-    OO[Orderly Owner<br/>8 owner tools]
+    OO[Orderly Owner<br/>9 owner tools]
     OS[Orderly Shop<br/>5 customer tools]
   end
   OO -- seller key --> API
@@ -32,13 +32,29 @@ The customer pays on Paystack's own page, so card details never touch the agent,
 | Hosting | Railway, always on | No cold starts while reviewers test |
 | AI teammates | Chord, two teammates | Conversations, tools, reminders and handover |
 
+## Application structure
+
+The API uses four layers:
+
+| Directory | Responsibility |
+| --- | --- |
+| `src/routes/` | Wires Express endpoints to role checks and controllers |
+| `src/controllers/` | Validates request data, calls a service and writes the HTTP response |
+| `src/services/` | Enforces business rules and owns database, stock and payment workflows |
+| `src/utils/` | Shared HTTP, currency, time, opening-hours and address helpers |
+| `src/openapi/` | Owns API schemas, path descriptions, the registry and document generation |
+| `src/middleware/` | Handles API-key roles, unknown routes and application errors |
+
+`src/db/` contains connection, migration and seed code. Services do not depend on Express request or response objects, which keeps the business workflows reusable and easier to test. OpenAPI does not import Express routes or controllers, so the specification can be generated independently.
+
 ## Data
 
-Five tables. Stores are rows, not fixed names, so an owner can run any number of them. Money is stored in kobo, which is what Paystack uses; the agents only ever see naira.
+Six tables. Stores are rows, not fixed names, so an owner can run any number of them. Addresses are structured and may include coordinates, so agents can quote them consistently and share a map link or WhatsApp pin. Opening hours are rows too, so the API can say whether a store is open now. Money is stored in kobo, which is what Paystack uses; the agents only ever see naira.
 
 | Table | Holds | Key columns |
 | --- | --- | --- |
-| stores | Each store or branch | id (e.g. ikeja), name, address, opening_hours, active |
+| stores | Each store or branch | id, name, structured address fields, optional latitude and longitude, active |
+| store_hours | When each store is open, Lagos time | store_id, weekday (1 = Monday), opens, closes; a day with no row is closed |
 | products | What the business sells | id (e.g. IP13-128), name, variant, price_kobo, min_price_kobo |
 | stock | Units per product per store | product_id, store_id, available (never below 0) |
 | orders | Each purchase | id (e.g. ORD-1042, also the Paystack reference), product_id, store_id, amount_kobo, buyer_name, status, payment_url, expires_at |
@@ -54,18 +70,21 @@ Each endpoint becomes one tool in Chord when the OpenAPI spec is imported. Every
 
 | Tool | Endpoint | Orderly Shop | Orderly Owner | What it does |
 | --- | --- | --- | --- | --- |
-| list_stores | `GET /stores` | Yes | Yes | Store names, addresses and opening hours |
+| list_stores | `GET /stores` | Yes | Yes | Store names, structured addresses, map links, opening hours and whether each is open now |
 | list_products | `GET /products` | Yes | Yes | Prices and stock at each store; filter by store |
 | create_order | `POST /orders` | Yes | No | Holds stock at the chosen store for 30 minutes and returns a Paystack link |
 | verify_payment | `POST /orders/{id}/verify` | Yes | No | Checks Paystack, confirms the order, returns the receipt |
 | get_receipt | `GET /orders/{id}/receipt` | Yes | Yes | The receipt for a paid order |
 | add_store | `POST /stores` | No | Yes | A new store or branch |
+| update_store | `PATCH /stores/{id}` | No | Yes | Change a store's name, structured address, map pin or opening hours |
 | add_product | `POST /products` | No | Yes | New product with stock at one or more stores |
 | update_stock | `POST /products/{id}/stock` | No | Yes | Change stock at one store |
 | update_price | `PATCH /products/{id}` | No | Yes | Change a price (the same at every store) |
 | list_orders | `GET /orders` | No | Yes | Orders by status and store, including handed-over ones |
 
 Chord's built-in tools cover the rest: `schedule_reminder` for the payment nudge and `handover_to_human` for escalation.
+
+`list_stores` always returns a clickable map URL. When latitude and longitude are present, Chord can also use them for a native WhatsApp location message if the channel exposes that message type. Otherwise it sends the address and map URL as text.
 
 ## Payment states
 
@@ -98,7 +117,7 @@ Both teammates exist with placeholder skills; the real skills go in once the API
 | Role | Sales assistant | Store operations assistant |
 | Autonomy | Act independently | Act independently |
 | Chat link business name | Kola Gadgets | Kola Gadgets (Owner) |
-| API tools | 5 customer tools | 8 owner tools |
+| API tools | 5 customer tools | 9 owner tools |
 | Built-in tools | schedule_reminder, handover_to_human | none yet |
 | Escalation triggers | Payment failed twice; paid twice; complaint; question it cannot answer; discount request | none |
 | Other | Credit budget | Credit budget; accepts requests from teammates |
@@ -131,8 +150,8 @@ The API enforces the rules, so a confused or tricked agent still can't break the
 
 About 5 hours of build, each step done before the next starts. Chord credits are only spent from step 4.
 
-1. **Database and seed data** (30 min): the five tables, Kola Gadgets' two stores and their products.
-2. **Endpoints** (1 hr): all ten, with Paystack test calls, tested with curl including the failure cases.
+1. **Database and seed data** (30 min): the six tables, Kola Gadgets' two stores and their products.
+2. **Endpoints** (1 hr): all eleven, with Paystack test calls, tested with curl including the failure cases.
 3. **Deploy and import** (30 min): Railway, generate the OpenAPI spec, import into Chord, assign tools and keys per teammate.
 4. **Orderly Shop skill** (1 hr): real skill, escalation triggers, full order test in the simulator.
 5. **Orderly Owner skill** (45 min): add stock by chat, then a customer buys it.

@@ -15,12 +15,23 @@ Read these first:
 - Paystack test mode only (`sk_test_...`)
 - Hosting: Railway, always on
 
+## Source layout
+- `src/routes/`: Express endpoint wiring and authorization
+- `src/controllers/`: request parsing and HTTP responses
+- `src/services/`: business rules, database workflows, stock holds and Paystack calls
+- `src/utils/`: shared HTTP, formatting and store address/hours helpers
+- `src/openapi/`: independent schemas, path descriptions, registry and document generation
+- `src/middleware/`: API-key authorization and Express error handling
+- `src/db/`: database connection, migrations and seed data
+
+Keep route modules thin. Controllers translate HTTP requests into service calls. Services enforce the business rules and must not depend on Express request or response objects. OpenAPI must not import routes or controllers.
+
 ## Demo business
-Kola Gadgets, a made-up Lagos phone and gadget store. Stores are rows in a `stores` table, so any number is supported; the seed data has two stores, Ikeja and Lekki.
+Kola Gadgets, a made-up Lagos phone and gadget store. Stores are rows in a `stores` table, so any number is supported; the seed data has two stores, Ikeja and Lekki. Addresses are structured, and both seed stores have coordinates plus a derived map URL for sharing with customers.
 
 ## Two Chord teammates
 - **Orderly Shop**: customer side, on the WhatsApp simulator. Tools: list_stores, list_products, create_order, verify_payment, get_receipt. Built-in: schedule_reminder, handover_to_human.
-- **Orderly Owner**: owner side, on the Chord direct line or an owner chat link. Tools: list_stores, list_products, get_receipt, add_store, add_product, update_stock, update_price, list_orders.
+- **Orderly Owner**: owner side, on the Chord direct line or an owner chat link. Tools: list_stores, list_products, get_receipt, add_store, update_store, add_product, update_stock, update_price, list_orders.
 
 ## Rules the API must enforce (not just the prompts)
 1. Never sell twice: hold stock atomically at order creation (`UPDATE stock SET available = available - qty WHERE available >= qty`), release after 30 minutes unpaid.
@@ -32,13 +43,13 @@ Kola Gadgets, a made-up Lagos phone and gadget store. Stores are rows in a `stor
 Every response has the shape `{ ok, data, error: { code, message_for_agent } }`. Money is stored in kobo; the agents only send and receive naira.
 
 ## Local dev
-- Postgres runs as a project-local cluster in `.pgdata/` (gitignored) on port 5440, user `orderly`, trust auth. The system Postgres on 5432 needs a password, and something else already uses 5433.
-- `npm run db:start` / `db:stop`, then `npm run db:reset` (migrate and reseed; the seed wipes all data).
+- Postgres: database `orderly`, owned by role `orderly`, in the local Postgres 18 on port 5433. The connection string is `DATABASE_URL` in `.env`.
+- First time: `npm run db:create` makes the role and database from `DATABASE_URL` (it asks once for the postgres superuser password), then `npm run db:reset` (migrate and reseed; the seed wipes all data).
 - `npm run dev` serves on :3000. `GET /health` checks the database.
 - Migrations are plain SQL in `migrations/`, applied in name order and tracked in `schema_migrations`.
 - Seed: Kola Gadgets, 2 stores, 9 products. `IP15P-256` has a single unit (Ikeja) for the last-unit race test.
 - API keys: send `X-Api-Key` (or `Authorization: Bearer`). Buyer key for Orderly Shop, seller key for Orderly Owner.
-- `npm run openapi -- <public url>` writes `openapi.json` for Chord (gitignored); the running API also serves it at `/openapi.json`. Each route registers its own spec entry in `src/routes/`, and `operationId` is the Chord tool name.
+- `npm run openapi -- <public url>` writes `openapi.json` for Chord (gitignored); the running API also serves it at `/openapi.json`. The independent `src/openapi/` module owns the spec, and each `operationId` is the Chord tool name.
 - Curl tests: `npm run fake-paystack` (a local stand-in on :4010 that can decline, fail or go down on demand), start the API with `PAYSTACK_BASE_URL=http://localhost:4010 npm run dev`, run `npm run db:seed`, then `npm run test:api`. Then repeat the happy path against real Paystack test mode.
 
 ## Build order

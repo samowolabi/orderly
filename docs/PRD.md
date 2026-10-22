@@ -37,7 +37,7 @@ These are the core features. Each one answers something the sellers raised.
 
 - **Add products by chat:** "Add iPhone 13, 128GB, ₦650,000, 2 at Ikeja, 1 at Lekki."
 - **Update stock per store:** "Add 3 more to Lekki."
-- **Add a store:** "We opened a new store in Yaba."
+- **Manage stores:** "We opened a new store in Yaba", "Lekki now closes at 8pm" or "Send me the Ikeja location."
 - **See orders:** "What sold today?" shows paid, pending and expired orders.
 
 **For the customer (Orderly Shop)**
