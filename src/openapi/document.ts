@@ -24,7 +24,7 @@ Use \`add_store\` and \`update_store\` for branches, addresses, map pins and ope
 
 ## Responses
 
-Every response has \`{ ok, data, error }\`. When \`ok\` is false, follow \`error.message_for_agent\`. Payment verification also returns \`next_step\`; follow it exactly. Every amount comes back as \`{ amount, currency, display }\`; quote \`display\` to customers. Send prices as plain numbers in the main unit of the currency shown by \`list_products\`, never in subunits.
+Every response has \`{ success, data, error }\`. When \`success\` is false, follow \`error.message_for_agent\`. Payment verification also returns \`next_step\`; follow it exactly. Every amount comes back as \`{ amount, currency, display }\`; quote \`display\` to customers. Send prices as plain numbers in the main unit of the currency shown by \`list_products\`, never in subunits.
 `.trim();
 
 // Generates the standalone OpenAPI document imported by Chord.

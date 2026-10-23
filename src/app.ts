@@ -6,7 +6,7 @@ import { openApiDocument } from "./openapi/document";
 import { catalog } from "./routes/catalog";
 import { orders } from "./routes/orders";
 import { webhooks } from "./routes/webhooks";
-import { ok } from "./utils/http";
+import { success } from "./utils/http";
 
 // Builds the Express application with infrastructure and Chord-facing routes.
 export function createApp() {
@@ -22,7 +22,7 @@ export function createApp() {
   // Confirms that the API can reach its database.
   app.get("/health", async (_req, res) => {
     await pool.query("SELECT 1");
-    ok(res, { status: "up" });
+    success(res, { status: "up" });
   });
 
   // Serves the OpenAPI document without a key so Chord can import it by URL; it holds no secrets.

@@ -1,28 +1,28 @@
 import type { Request, Response } from "express";
 import { CreateOrderBody, ListOrdersQuery, OrderParams } from "../openapi/schemas/orders";
 import * as orderService from "../services/orders";
-import { ok, parse } from "../utils/http";
+import { parse, success } from "../utils/http";
 
 // Validates an order request and returns its payment link.
 export async function createOrder(request: Request, response: Response) {
   const input = parse(CreateOrderBody, request.body);
-  ok(response, await orderService.createOrder(input), 201);
+  success(response, await orderService.createOrder(input), 201);
 }
 
 // Verifies an order payment and returns its current outcome.
 export async function verifyPayment(request: Request, response: Response) {
   const { id } = parse(OrderParams, request.params);
-  ok(response, await orderService.verifyPayment(id));
+  success(response, await orderService.verifyPayment(id));
 }
 
 // Returns the receipt for a confirmed order.
 export async function getReceipt(request: Request, response: Response) {
   const { id } = parse(OrderParams, request.params);
-  ok(response, await orderService.getReceipt(id));
+  success(response, await orderService.getReceipt(id));
 }
 
 // Validates owner filters and returns matching orders.
 export async function listOrders(request: Request, response: Response) {
   const input = parse(ListOrdersQuery, request.query);
-  ok(response, await orderService.listOrders(input));
+  success(response, await orderService.listOrders(input));
 }

@@ -63,11 +63,11 @@ stock() { $PSQL -c "SELECT available FROM stock WHERE product_id='$1' AND store_
 expire() { $PSQL -c "UPDATE orders SET expires_at = now() - interval '1 second' WHERE id='$1'"; }
 
 echo "== Infrastructure"
-call none GET /health;                       check "health checks the database" 200 '.ok == true and .data.status == "up"'
+call none GET /health;                       check "health checks the database" 200 '.success == true and .data.status == "up"'
 call none GET /openapi.json;                 check "OpenAPI exposes 10 Chord tools" 200 '([.paths[] | to_entries[]] | length) == 10 and (.paths | has("/products/{id}/stock") | not) and .paths["/stores"].get.operationId == "list_stores" and (.paths | has("/webhooks/paystack") | not)'
 
 echo "== Auth and roles"
-call none GET /stores;                         check "no key is refused" 401 '.ok == false and .error.code == "unauthorized"'
+call none GET /stores;                         check "no key is refused" 401 '.success == false and .error.code == "unauthorized"'
 call wrong-key-0000000000 GET /stores;         check "wrong key is refused" 401
 call "$BUYER" PATCH /products/IP13-128 '{"price":1}'; check "buyer can't change a price" 403 '.error.code == "owner_only"'; msg
 call "$BUYER" POST /stores '{"name":"Hack","address":{"line1":"1 Fake Road","area":"Ikeja","city":"Lagos","state":"Lagos"},"hours":[{"days":["mon","tue","wed","thu","fri"],"opens":"08:30","closes":"18:00"},{"days":["sat"],"opens":"10:00","closes":"16:00"}]}'; check "buyer can't add a store" 403
@@ -213,9 +213,9 @@ done > /tmp/claude-501/race-codes.txt; wait
 codes=$(sort /tmp/claude-501/race-codes.txt | tr '\n' ' ')
 [ "$codes" = "201 409 " ] && { PASS=$((PASS+1)); echo "  ok    one 201, one 409 ($codes)"; } || { FAILS=$((FAILS+1)); echo "  FAIL  race codes: $codes"; }
 [ "$(stock IP15P-256 ikeja)" = "0" ] && { PASS=$((PASS+1)); echo "  ok    stock is 0, not negative"; } || { FAILS=$((FAILS+1)); echo "  FAIL  stock: $(stock IP15P-256 ikeja)"; }
-RACE=$(jq -r 'select(.ok) | .data.order_id' /tmp/claude-501/race-*.json)
-[ "$(jq -r 'select(.ok|not) | .error.code' /tmp/claude-501/race-*.json)" = "reserved" ] && { PASS=$((PASS+1)); echo "  ok    loser is told the unit is reserved"; } || { FAILS=$((FAILS+1)); echo "  FAIL  loser code: $(jq -r 'select(.ok|not) | .error.code' /tmp/claude-501/race-*.json)"; }
-jq -r 'select(.ok|not) | .error.message_for_agent' /tmp/claude-501/race-*.json | sed 's/^/        > /'
+RACE=$(jq -r 'select(.success) | .data.order_id' /tmp/claude-501/race-*.json)
+[ "$(jq -r 'select(.success|not) | .error.code' /tmp/claude-501/race-*.json)" = "reserved" ] && { PASS=$((PASS+1)); echo "  ok    loser is told the unit is reserved"; } || { FAILS=$((FAILS+1)); echo "  FAIL  loser code: $(jq -r 'select(.success|not) | .error.code' /tmp/claude-501/race-*.json)"; }
+jq -r 'select(.success|not) | .error.message_for_agent' /tmp/claude-501/race-*.json | sed 's/^/        > /'
 
 echo "== Late payment, item gone: paid_no_stock"
 expire "$RACE"
@@ -262,7 +262,7 @@ echo "== Amount mismatch: never confirmed"
 c20=$(stock CAMON20-256 ikeja)
 call "$BUYER" POST /orders '{"product_id":"CAMON20-256","store_id":"ikeja","buyer_name":"Gbenga"}'; O5=$(jq -r .data.order_id <<<"$BODY")
 pay "$O5" '{"outcome":"success","amount":100}'
-call "$BUYER" POST "/orders/$O5/verify";      check "wrong amount is refused" 409 '.ok == false and .error.code == "amount_mismatch" and (.error.message_for_agent | test("₦1,"))'; msg
+call "$BUYER" POST "/orders/$O5/verify";      check "wrong amount is refused" 409 '.success == false and .error.code == "amount_mismatch" and (.error.message_for_agent | test("₦1,"))'; msg
 call "$BUYER" GET "/orders/$O5/receipt";      check "no receipt for it" 409
 [ "$(stock CAMON20-256 ikeja)" = "$c20" ] && { PASS=$((PASS+1)); echo "  ok    unit released"; } || { FAILS=$((FAILS+1)); echo "  FAIL  stock: $(stock CAMON20-256 ikeja)"; }
 

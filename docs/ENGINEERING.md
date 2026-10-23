@@ -72,7 +72,7 @@ Order status is one of: `pending_payment`, `paid`, `failed`, `expired`, `paid_no
 
 ## API endpoints
 
-Each endpoint becomes one tool in Chord when the OpenAPI spec is imported. Every response looks the same: `{ ok, data, error: { code, message_for_agent } }`.
+Each endpoint becomes one tool in Chord when the OpenAPI spec is imported. Every response looks the same: `{ success, data, error: { code, message_for_agent } }`.
 
 | Tool | Endpoint | Orderly Shop | Orderly Owner | What it does |
 | --- | --- | --- | --- | --- |

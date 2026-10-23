@@ -28,11 +28,11 @@ const ErrorBody = z
 
 // Wraps a successful response schema in Orderly's standard envelope.
 function envelope<T extends z.ZodType>(data: T) {
-  return z.object({ ok: z.literal(true), data, error: z.null() });
+  return z.object({ success: z.literal(true), data, error: z.null() });
 }
 
 const Failure = z
-  .object({ ok: z.literal(false), data: z.null(), error: ErrorBody })
+  .object({ success: z.literal(false), data: z.null(), error: ErrorBody })
   .openapi("Failure");
 
 // Builds a documented failure response with the shared error schema.

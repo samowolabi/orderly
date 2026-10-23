@@ -2,13 +2,13 @@ import type { Response } from "express";
 import type { z } from "zod";
 
 // Sends a successful response in Orderly's standard envelope.
-export function ok<T>(response: Response, data: T, status = 200) {
-  return response.status(status).json({ ok: true, data, error: null });
+export function success<T>(response: Response, data: T, status = 200) {
+  return response.status(status).json({ success: true, data, error: null });
 }
 
 // Sends a failed response with guidance for the calling agent.
 export function fail(response: Response, status: number, code: string, message_for_agent: string) {
-  return response.status(status).json({ ok: false, data: null, error: { code, message_for_agent } });
+  return response.status(status).json({ success: false, data: null, error: { code, message_for_agent } });
 }
 
 export class ApiError extends Error {
