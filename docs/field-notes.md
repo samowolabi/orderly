@@ -41,6 +41,8 @@ A person replying doesn't help either. In the 12:48 chat I typed "why are you no
 
 There's no workaround inside Orderly. For the demo I avoid handover in simulator runs I want to show end to end, and show the handed-over conversation in Chord instead.
 
+**Re-test for a live owner conversation (23 October, 10:14 PM).** The goal was a real-time chat between a customer in the simulator and the owner in Chord. In a fresh simulator chat the customer wrote "I want to talk to the owner please, I have a complaint". Chord marked it handed over ("You are driving this conversation — the AI is paused", conversation type "Live chat"). I replied in Chord's "Reply to Samuel as the operator" box: "Hi Samuel, this is Kola, the owner. Sorry about that, what happened?" Chord shows it in the thread. The simulator didn't, after 20 seconds, after a page reload, or after the customer sent "hello?". The customer's "hello?" reached Chord within seconds. So the connection only works one way: the customer can reach a person in Chord, but nothing a person types in Chord reaches the simulator. A live owner conversation isn't possible in the simulator today.
+
 The same happens to receipts. On 23 October I timed an order (ORD-1010) end to end without the customer saying they'd paid. Paystack's webhook marked it paid at 14:05:45Z, a scheduled payment check found it paid at 14:06:22Z, and Chord's conversation shows Orderly Shop sending "Payment received, thank you Samuel!" with the full receipt. The simulator still showed only the payment link. So anything Chord sends outside a reply to the customer's own message (a handover message, an operator reply, a scheduled reminder's message) doesn't reach the simulator.
 
 **Screenshots.**
@@ -48,6 +50,10 @@ The same happens to receipts. On 23 October I timed an order (ORD-1010) end to e
 ![Discount request on the v4 skill: only Chord's fixed handover message, AI paused](screenshots/handover-discount-chord.png)
 
 ![Operator reply "why are you not responding" sent from Chord; it never appeared in the simulator](screenshots/handover-operator-reply-chord.png)
+
+![Owner takeover in Chord: the owner's reply and the customer's "hello?" are both in the thread](screenshots/owner-takeover-chord.png)
+
+![The same conversation in the simulator: the customer's messages only](screenshots/owner-takeover-simulator.png)
 
 ![Chord conversation for ORD-1010: the receipt was sent by a payment check](screenshots/receipt-and-leak-in-chord.png)
 
