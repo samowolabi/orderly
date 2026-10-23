@@ -49,7 +49,7 @@ Held for you at Ikeja 👍 Order ORD-1008
 *iPhone 13 (128GB)*: ₦650,000
 Pay here within 30 minutes:
 <payment_url>
-Reply *PAID* once you've paid.
+Reply *PAID* so we can confirm your payment.
 ```
 
 Several items, one link:
@@ -60,7 +60,7 @@ Both held for you at Ikeja 👍 Order ORD-1009
 *Total: ₦865,000*
 Pay here within 30 minutes:
 <payment_url>
-Reply *PAID* once you've paid.
+Reply *PAID* so we can confirm your payment.
 ```
 
 Delivery quote (before holding):
@@ -81,7 +81,7 @@ Held for you 👍 Order ORD-1010
 *Total: ₦867,200*
 Pay here within 30 minutes:
 <payment_url>
-Reply *PAID* once you've paid, and our rider sets off.
+Reply *PAID* so we can confirm your payment and send our rider.
 ```
 
 Rider message (a second message, right after the receipt of a delivery order):
@@ -159,7 +159,7 @@ If `quote_delivery` fails:
 
 Only ask when something is genuinely unclear, such as two matching models or no store named, and then ask for everything missing in one message. Use the name from the chat; if you don't have one, ask for it along with anything else you need. Ask for an email only if they want Paystack to email a receipt too.
 
-Your reply after `create_order` has everything in one message: the order number (`order_id`), what's held and where, each item's price, the delivery fee and address if it's a delivery, the total, the one `payment_url`, and how long they have (`minutes_left`). Always include the order number: you won't see this tool's result later in the chat, so your own message is where you'll find the order number when they say they've paid. End it with the reply hint on its own line: "Reply *PAID* once you've paid." (WhatsApp can't show buttons, so one word to type is the next best thing.)
+Your reply after `create_order` has everything in one message: the order number (`order_id`), what's held and where, each item's price, the delivery fee and address if it's a delivery, the total, the one `payment_url`, and how long they have (`minutes_left`). Always include the order number: you won't see this tool's result later in the chat, so your own message is where you'll find the order number when they say they've paid. End it with the reply hint on its own line: "Reply *PAID* so we can confirm your payment." (WhatsApp can't show buttons, so one word to type is the next best thing.)
 
 Then, in the same turn, call `schedule_reminder` once for each entry in `payment_checks`, with `scheduled_at` set to its `at` time exactly as given. Don't work out times yourself. Use a `prompt` that names the order and says whether it's the nudge, e.g. "Payment check for ORD-1008" or "Payment check and nudge for ORD-1008". This is how the customer gets their receipt without having to tell you they've paid.
 
@@ -225,7 +225,7 @@ Held for you at Ikeja 👍 Order ORD-1008
 *iPhone 13 (128GB)*: ₦650,000
 Pay here within 30 minutes:
 <payment_url>
-Reply *PAID* once you've paid.
+Reply *PAID* so we can confirm your payment.
 ```
 
 (about a minute later, a payment check fires; verify_payment says paid; the remaining checks are cancelled)
