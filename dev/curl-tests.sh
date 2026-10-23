@@ -39,6 +39,11 @@ check() {
     FAILS=$((FAILS+1)); printf '  FAIL  %s (HTTP %s, wanted %s)\n        %s\n' "$name" "$STATUS" "$want" "$(head -c 400 <<<"$BODY")"
   fi
 }
+# Checks that two values match, e.g. a stock level before and after.
+eq() {
+  if [ "$2" = "$3" ]; then PASS=$((PASS+1)); printf '  ok    %s\n' "$1"
+  else FAILS=$((FAILS+1)); printf '  FAIL  %s (got %s, wanted %s)\n' "$1" "$2" "$3"; fi
+}
 # Prints agent guidance from the last API response.
 msg() { jq -r '.error.message_for_agent // .data.next_step // empty' <<<"$BODY" | sed 's/^/        > /'; }
 # Marks the newest fake transaction for an order with the requested outcome.
@@ -179,7 +184,7 @@ call "$BUYER" PATCH /products/IPHONE-16-256GB '{"active":false}';               
 echo "== Happy path: order, 'I paid' too early, pay, verify, receipt"
 before=$(stock IP13-128 ikeja)
 call "$BUYER" POST /orders '{"product_id":"ip13-128","store_id":"Ikeja","buyer_name":"Tunde Bakare"}'
-check "create_order" 201 '.data.status == "pending_payment" and (.data.payment_url | startswith("http")) and .data.minutes_left == 30 and .data.amount == {"amount":650000,"currency":"NGN","display":"₦650,000"} and .data.unit_price.amount == 650000'
+check "create_order" 201 '.data.status == "pending_payment" and (.data.payment_url | startswith("http")) and .data.minutes_left == 30 and .data.amount == {"amount":650000,"currency":"NGN","display":"₦650,000"} and .data.items == [{"product":{"id":"IP13-128","name":"iPhone 13","variant":"128GB"},"quantity":1,"unit_price":{"amount":650000,"currency":"NGN","display":"₦650,000"},"amount":{"amount":650000,"currency":"NGN","display":"₦650,000"}}]'
 O1=$(jq -r .data.order_id <<<"$BODY"); echo "        order $O1"
 check "payment checks: 20s, doubling, last a minute before expiry, one nudge" 201 '(.data.created_at | sub("\\.[0-9]+Z$"; "Z") | fromdate) as $t0 | (.data.expires_at | sub("\\.[0-9]+Z$"; "Z") | fromdate) as $end | [.data.payment_checks[].at | sub("\\.[0-9]+Z$"; "Z") | fromdate - $t0] == [20, 40, 80, 160, 320, 640, 1280, ($end - $t0 - 60)] and ([.data.payment_checks[] | select(.nudge)] | length == 1) and (.data.payment_checks[6].nudge)'
 jq -r '.data.payment_checks[] | "        | \(.at)\(if .nudge then "  nudge" else "" end)"' <<<"$BODY"
@@ -201,6 +206,51 @@ LOOSE="%23$(tr '[:upper:]' '[:lower:]' <<<"$O1" | sed 's/-/%20/')"
 call "$BUYER" POST "/orders/$LOOSE/verify";   check "order number typed loosely (#ord 1001)" 200 '.data.order.order_id == "'"$O1"'"'
 call "$BUYER" POST "/orders/${O1}-ffffff/verify"; check "unknown reference" 404 '.error.code == "order_not_found" and (.error.message_for_agent | test("Never guess"))'; msg
 [ "$(stock IP13-128 ikeja)" = "$((before-1))" ] && { PASS=$((PASS+1)); echo "  ok    stock stays sold after payment"; } || { FAILS=$((FAILS+1)); echo "  FAIL  stock changed after payment"; }
+
+echo "== Several items, one order, one payment link"
+ip14=$(stock IP14-128 ikeja); anker=$(stock ANKER-20K ikeja)
+call "$BUYER" POST /orders '{"items":[{"product_id":"ip14-128"},{"product_id":"ANKER-20K","quantity":2}],"store_id":"ikeja","buyer_name":"Ngozi"}'
+check "two products in one order" 201 '(.data.items | length) == 2 and .data.items[1].quantity == 2 and .data.items[1].amount.amount == 90000 and .data.amount.amount == 910000 and (.data.payment_url | startswith("http"))'
+OM=$(jq -r .data.order_id <<<"$BODY")
+eq "iPhone 14 held" "$(stock IP14-128 ikeja)" "$((ip14-1))"
+eq "two power banks held" "$(stock ANKER-20K ikeja)" "$((anker-2))"
+pay "$OM"
+call "$BUYER" POST "/orders/$OM/verify"
+check "one payment confirms the whole order" 200 '.data.outcome == "paid" and (.data.receipt.items | length) == 2 and .data.receipt.total.amount == 910000'
+check "receipt lists each line and the total" 200 '(.data.receipt.text | test("iPhone 14 \\(128GB\\): ₦820,000")) and (.data.receipt.text | test("x2: ₦90,000")) and (.data.receipt.text | test("Total paid: ₦910,000"))'
+jq -r .data.receipt.text <<<"$BODY" | sed 's/^/        | /'
+
+echo "== Several items: all or nothing"
+ip14=$(stock IP14-128 ikeja)
+call "$BUYER" POST /orders '{"items":[{"product_id":"IP14-128"},{"product_id":"AIRPODS-PRO2"}],"store_id":"ikeja","buyer_name":"Obi"}'
+check "one item short: nothing is held" 409 '.error.code == "out_of_stock" and (.error.message_for_agent | test("Nothing in this order was held")) and (.error.message_for_agent | test("AirPods"))'; msg
+eq "iPhone 14 not held" "$(stock IP14-128 ikeja)" "$ip14"
+call "$BUYER" POST /orders '{"items":[{"product_id":"IP14-128"}],"product_id":"ANKER-20K","store_id":"ikeja","buyer_name":"A"}'; check "items and product_id together" 400; msg
+call "$BUYER" POST /orders '{"store_id":"ikeja","buyer_name":"A"}'; check "neither items nor product_id" 400
+call "$BUYER" POST /orders '{"items":[],"store_id":"ikeja","buyer_name":"A"}'; check "empty items" 400
+call "$BUYER" POST /orders '{"items":[{"product_id":"ANKER-20K"},{"product_id":"anker-20k"}],"store_id":"ikeja","buyer_name":"Pat"}'
+check "the same product twice becomes one line of 2" 201 '(.data.items | length) == 1 and .data.items[0].quantity == 2 and .data.amount.amount == 90000'
+
+echo "== Several items: expiry and late payment"
+ip14=$(stock IP14-128 ikeja); anker=$(stock ANKER-20K ikeja)
+call "$BUYER" POST /orders '{"items":[{"product_id":"IP14-128"},{"product_id":"ANKER-20K"}],"store_id":"ikeja","buyer_name":"Rita"}'; OL=$(jq -r .data.order_id <<<"$BODY")
+expire "$OL"
+call "$BUYER" POST "/orders/$OL/verify";      check "unpaid after the hold ran out" 200 '.data.outcome == "expired"'
+eq "expiry returns the iPhone" "$(stock IP14-128 ikeja)" "$ip14"
+eq "expiry returns the power bank" "$(stock ANKER-20K ikeja)" "$anker"
+pay "$OL"
+call "$BUYER" POST "/orders/$OL/verify";      check "late payment re-holds every line" 200 '.data.outcome == "paid_late_reheld" and (.data.receipt.items | length) == 2'
+eq "iPhone re-held" "$(stock IP14-128 ikeja)" "$((ip14-1))"
+eq "power bank re-held" "$(stock ANKER-20K ikeja)" "$((anker-1))"
+anker=$(stock ANKER-20K ikeja)
+call "$BUYER" POST /orders '{"items":[{"product_id":"ANKER-20K"},{"product_id":"IP14-128"}],"store_id":"ikeja","buyer_name":"Sade"}'; OG=$(jq -r .data.order_id <<<"$BODY")
+expire "$OG"
+call "$BUYER" POST "/orders/$OG/verify";      check "this one expires too" 200 '.data.outcome == "expired"'
+ip14_left=$(stock IP14-128 ikeja); $PSQL -c "UPDATE stock SET available = 0 WHERE product_id='IP14-128' AND store_id='ikeja'"
+pay "$OG"
+call "$BUYER" POST "/orders/$OG/verify";      check "late payment, one line gone: paid_no_stock" 200 '.data.outcome == "paid_no_stock" and .data.receipt == null'; msg
+eq "power bank not re-held when the iPhone is gone" "$(stock ANKER-20K ikeja)" "$anker"
+$PSQL -c "UPDATE stock SET available = $ip14_left WHERE product_id='IP14-128' AND store_id='ikeja'"
 
 echo "== Bad order input"
 call "$BUYER" POST /orders '{"product_id":"IP13-128","store_id":"ikeja"}'; check "missing buyer_name" 400 '.error.message_for_agent | test("buyer_name is required")'; msg
@@ -292,7 +342,8 @@ mode '{"initialize":"ok"}'
 [ "$(stock ANKER-20K ikeja)" = "$anker" ] && { PASS=$((PASS+1)); echo "  ok    held unit released after link failure"; } || { FAILS=$((FAILS+1)); echo "  FAIL  stock: $(stock ANKER-20K ikeja)"; }
 
 echo "== Owner: list_orders"
-call "$SELLER" GET /orders;                   check "today's orders and summary" 200 '.data.period == "today" and .data.summary.counts.paid == 3 and .data.summary.paid_totals == [{"amount":1640000,"currency":"NGN","display":"₦1,640,000"}]'
+call "$SELLER" GET /orders;                   check "today's orders and summary" 200 '.data.period == "today" and .data.summary.counts.paid == 5 and .data.summary.paid_totals == [{"amount":3415000,"currency":"NGN","display":"₦3,415,000"}]'
+check "list_orders shows each order's lines" 200 '[.data.orders[] | select(.order_id == "'"$OM"'") | .items[].product.id] == ["IP14-128", "ANKER-20K"]'
 jq -c '.data.summary' <<<"$BODY" | sed 's/^/        /'
 check "paid_no_stock and mismatch need attention" 200 '[.data.needs_attention[].order_id] | contains(["'"$RACE"'", "'"$O5"'"])'
 call "$SELLER" GET '/orders?status=paid&store_id=lekki'; check "filter by status and store" 200 '[.data.orders[] | .status, .store.id] | unique == ["lekki","paid"]'

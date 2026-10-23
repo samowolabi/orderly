@@ -17,12 +17,24 @@ export async function holdStock(db: Db, productId: string, storeId: string, quan
   return rowCount === 1;
 }
 
-// Returns previously held units to a store's available stock.
-async function releaseStock(db: Db, productId: string, storeId: string, quantity: number) {
+export type HoldItem = { product_id: string; quantity: number };
+
+// Holds every line of an order at one store, or none of them. Returns the first line that
+// couldn't be held; the caller must roll back its transaction (or savepoint) when it does.
+export async function holdItems(db: Db, storeId: string, items: HoldItem[]): Promise<HoldItem | null> {
+  for (const item of items) {
+    if (!(await holdStock(db, item.product_id, storeId, item.quantity))) return item;
+  }
+  return null;
+}
+
+// Returns an order's held units to its store's available stock.
+async function releaseOrderStock(db: Db, orderId: string, storeId: string) {
   await db.query(
-    `UPDATE stock SET available = available + $3, updated_at = now()
-     WHERE product_id = $1 AND store_id = $2`,
-    [productId, storeId, quantity],
+    `UPDATE stock st SET available = st.available + i.quantity, updated_at = now()
+     FROM order_items i
+     WHERE i.order_id = $1 AND st.product_id = i.product_id AND st.store_id = $2`,
+    [orderId, storeId],
   );
 }
 
@@ -32,14 +44,17 @@ export async function expireStaleOrders(db: Db): Promise<number> {
     WITH expired AS (
       UPDATE orders SET status = 'expired', updated_at = now()
       WHERE status = 'pending_payment' AND expires_at <= now()
-      RETURNING id, product_id, store_id, quantity
+      RETURNING id, store_id
+    ), lines AS (
+      SELECT e.id, e.store_id, i.product_id, i.quantity
+      FROM expired e JOIN order_items i ON i.order_id = e.id
     ), restocked AS (
-      UPDATE stock st SET available = st.available + e.qty, updated_at = now()
-      FROM (SELECT product_id, store_id, sum(quantity)::int AS qty FROM expired GROUP BY 1, 2) e
-      WHERE st.product_id = e.product_id AND st.store_id = e.store_id
+      UPDATE stock st SET available = st.available + l.qty, updated_at = now()
+      FROM (SELECT product_id, store_id, sum(quantity)::int AS qty FROM lines GROUP BY 1, 2) l
+      WHERE st.product_id = l.product_id AND st.store_id = l.store_id
     )
     INSERT INTO events (order_id, type, detail)
-    SELECT id, 'hold_expired', jsonb_build_object('released', quantity) FROM expired
+    SELECT id, 'hold_expired', jsonb_build_object('released', sum(quantity)) FROM lines GROUP BY id
   `);
   return rowCount ?? 0;
 }
@@ -48,11 +63,15 @@ export async function expireStaleOrders(db: Db): Promise<number> {
 // units, or null when the store couldn't cover it even then.
 export async function whenStockFrees(db: Db, productId: string, storeId: string, quantity: number): Promise<Date | null> {
   const { rows } = await db.query<{ available: number; quantity: number | null; expires_at: Date | null }>(
-    `SELECT st.available, o.quantity, o.expires_at
+    `SELECT st.available, held.quantity, held.expires_at
      FROM stock st
-     LEFT JOIN orders o ON o.product_id = st.product_id AND o.store_id = st.store_id AND o.status = 'pending_payment'
+     LEFT JOIN LATERAL (
+       SELECT i.quantity, o.expires_at
+       FROM order_items i JOIN orders o ON o.id = i.order_id
+       WHERE i.product_id = st.product_id AND o.store_id = st.store_id AND o.status = 'pending_payment'
+     ) held ON true
      WHERE st.product_id = $1 AND st.store_id = $2
-     ORDER BY o.expires_at`,
+     ORDER BY held.expires_at`,
     [productId, storeId],
   );
 
@@ -70,10 +89,10 @@ export async function failOrder(db: Db, orderId: string, reason: string, detail:
   const { rows } = await db.query(
     `UPDATE orders SET status = 'failed', failure_reason = $2, updated_at = now()
      WHERE id = $1 AND status = 'pending_payment'
-     RETURNING product_id, store_id, quantity`,
+     RETURNING store_id`,
     [orderId, reason],
   );
   const held = rows[0];
-  if (held) await releaseStock(db, held.product_id, held.store_id, held.quantity);
-  await logEvent(db, orderId, "order_failed", { reason, released: held ? held.quantity : 0, ...detail });
+  if (held) await releaseOrderStock(db, orderId, held.store_id);
+  await logEvent(db, orderId, "order_failed", { reason, released: Boolean(held), ...detail });
 }

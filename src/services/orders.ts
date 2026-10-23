@@ -11,7 +11,7 @@ import { formatLocalClock, formatLocalTime } from "../utils/format";
 import { ApiError } from "../utils/http";
 import { formatMoney, moneyView } from "../utils/money";
 import { formatAddress, type AddressRow } from "../utils/store-location";
-import { expireStaleOrders, failOrder, holdStock, logEvent, whenStockFrees, type Db } from "./stock";
+import { expireStaleOrders, failOrder, holdItems, logEvent, whenStockFrees, type Db, type HoldItem } from "./stock";
 
 const MAX_DECLINES = 3;
 const IN_PROGRESS = new Set(["ongoing", "pending", "processing", "queued"]);
@@ -30,11 +30,13 @@ type PaymentOutcome =
   | "failed"
   | "handed_over";
 
+// Either items, or product_id and quantity for a single product (the schema allows one form).
 type CreateOrderInput = {
-  product_id: string;
-  store_id: string;
+  items?: { product_id: string; quantity: number }[];
+  product_id?: string;
+  quantity?: number;
 
-  quantity: number;
+  store_id: string;
 
   buyer_name: string;
   buyer_email?: string;
@@ -48,18 +50,22 @@ type ListOrdersInput = {
   limit: number;
 };
 
-type OrderRow = {
-  id: string;
-
+type ItemRow = {
   product_id: string;
   product_name: string;
   product_variant: string | null;
 
-  store_id: string;
-  store_name: string;
-
   quantity: number;
   unit_price_subunit: number;
+  amount_subunit: number;
+};
+
+// An order as stored, without its lines.
+type OrderBase = {
+  id: string;
+
+  store_id: string;
+
   amount_subunit: number;
   currency: string;
 
@@ -78,7 +84,9 @@ type OrderRow = {
   expires_at: Date;
   paid_at: Date | null;
   created_at: Date;
-} & AddressRow;
+};
+
+type OrderRow = OrderBase & { store_name: string; items: ItemRow[] } & AddressRow;
 
 type VerifyResult =
   | { outcome: PaymentOutcome }
@@ -86,19 +94,31 @@ type VerifyResult =
   | { outcome: "amount_mismatch"; paidSubunits: number; currency: string };
 
 const ORDER_SELECT = `
-  SELECT o.*, p.name AS product_name, p.variant AS product_variant,
-         s.name AS store_name, s.address_line1, s.address_line2, s.area, s.city, s.state,
+  SELECT o.*, s.name AS store_name, s.address_line1, s.address_line2, s.area, s.city, s.state,
          s.country_code, s.postal_code, s.latitude, s.longitude, s.directions_note
   FROM orders o
-  JOIN products p ON p.id = o.product_id
   JOIN stores s ON s.id = o.store_id`;
+
+// Attaches each order's lines, in the order the customer asked for them.
+async function withItems(db: Db, orders: Omit<OrderRow, "items">[]): Promise<OrderRow[]> {
+  if (!orders.length) return [];
+  const { rows } = await db.query<ItemRow & { order_id: string }>(
+    `SELECT i.order_id, i.product_id, p.name AS product_name, p.variant AS product_variant,
+            i.quantity, i.unit_price_subunit, i.amount_subunit
+     FROM order_items i JOIN products p ON p.id = i.product_id
+     WHERE i.order_id = ANY($1::text[])
+     ORDER BY i.order_id, i.line`,
+    [orders.map((order) => order.id)],
+  );
+  return orders.map((order) => ({ ...order, items: rows.filter((item) => item.order_id === order.id) }));
+}
 
 // Loads one order with the product and store fields needed by API views.
 // Finds an order by its number or by any payment reference made for it, since customers
 // often quote the reference from Paystack's receipt (ORD-1008-2678d7) instead of ORD-1008.
 // The id arrives uppercased, and references have a lowercase suffix, so they match case-insensitively.
 async function loadOrder(db: Db, id: string): Promise<OrderRow> {
-  const { rows } = await db.query<OrderRow>(
+  const { rows } = await db.query<Omit<OrderRow, "items">>(
     `${ORDER_SELECT}
      WHERE o.id = $1 OR EXISTS (SELECT 1 FROM unnest(o.payment_references) AS ref WHERE upper(ref) = $1)`,
     [id],
@@ -110,12 +130,12 @@ async function loadOrder(db: Db, id: string): Promise<OrderRow> {
       `No order or payment reference ${id}. Ask the customer for the order number (like ORD-1008) or the payment reference on their receipt. Never guess one.`,
     );
   }
-  return rows[0];
+  return (await withItems(db, rows))[0]!;
 }
 
-// Formats an order's product name with its optional variant.
-const itemName = (order: OrderRow) =>
-  order.product_variant ? `${order.product_name} (${order.product_variant})` : order.product_name;
+// Formats a product name with its optional variant.
+const itemName = (item: Pick<ItemRow, "product_name" | "product_variant">) =>
+  item.product_variant ? `${item.product_name} (${item.product_variant})` : item.product_name;
 
 // Times the shop agent should check for payment while an order waits: the first after
 // PAYMENT_CHECK_FIRST_SECONDS, then doubling, plus a last check a minute before the hold ends.
@@ -140,10 +160,13 @@ function orderView(order: OrderRow) {
   return {
     order_id: order.id,
     status: order.status,
-    product: { id: order.product_id, name: order.product_name, variant: order.product_variant },
     store: { id: order.store_id, name: order.store_name },
-    quantity: order.quantity,
-    unit_price: moneyView(order.unit_price_subunit, order.currency),
+    items: order.items.map((item) => ({
+      product: { id: item.product_id, name: item.product_name, variant: item.product_variant },
+      quantity: item.quantity,
+      unit_price: moneyView(item.unit_price_subunit, order.currency),
+      amount: moneyView(item.amount_subunit, order.currency),
+    })),
     amount: moneyView(order.amount_subunit, order.currency),
     buyer_name: order.buyer_name,
     payment_url: pending ? order.payment_url : null,
@@ -166,13 +189,19 @@ function receiptView(order: OrderRow) {
   const reference = order.paid_reference ?? order.payment_references.at(-1) ?? order.id;
   const storeAddress = formatAddress(order, config().BUSINESS_COUNTRY);
   const total = formatMoney(order.amount_subunit, order.currency);
-  const unitPrice = formatMoney(order.unit_price_subunit, order.currency);
+  // One unit of one product needs no price line; otherwise each line shows its quantity and amount.
+  const single = order.items.length === 1 && order.items[0]!.quantity === 1;
+  const itemLines = order.items.map((item) =>
+    single
+      ? itemName(item)
+      : `${itemName(item)}${item.quantity > 1 ? ` x${item.quantity}` : ""}: ${formatMoney(item.amount_subunit, order.currency)}`,
+  );
   // WhatsApp bolds text between single asterisks, so the header and total stand out on a phone.
   const lines = [
     `*${business} receipt* ${order.id}`,
     `${order.store_name}, ${storeAddress}`,
     "",
-    order.quantity === 1 ? itemName(order) : `${itemName(order)} x${order.quantity} at ${unitPrice} each`,
+    ...itemLines,
     `*Total paid: ${total}*`,
     "",
     `Paid ${formatLocalTime(paidAt)}${order.payment_channel ? ` by ${channelLabel(order.payment_channel)}` : ""}`,
@@ -184,9 +213,12 @@ function receiptView(order: OrderRow) {
     receipt_number: order.id,
     business,
     store: { name: order.store_name, address: storeAddress },
-    item: itemName(order),
-    quantity: order.quantity,
-    unit_price: moneyView(order.unit_price_subunit, order.currency),
+    items: order.items.map((item) => ({
+      item: itemName(item),
+      quantity: item.quantity,
+      unit_price: moneyView(item.unit_price_subunit, order.currency),
+      amount: moneyView(item.amount_subunit, order.currency),
+    })),
     total: moneyView(order.amount_subunit, order.currency),
     buyer_name: order.buyer_name,
     paid_at: paidAt.toISOString(),
@@ -219,7 +251,7 @@ const newReference = (orderId: string) => `${orderId}-${randomBytes(3).toString(
 
 // Initializes the payment processor and attaches its checkout link to an order.
 async function attachPaymentLink(
-  order: Pick<OrderRow, "id" | "product_id" | "store_id" | "amount_subunit" | "currency" | "buyer_name" | "buyer_email">,
+  order: Pick<OrderRow, "id" | "store_id" | "amount_subunit" | "currency" | "buyer_name" | "buyer_email">,
 ) {
   const reference = newReference(order.id);
   const { checkoutUrl } = await paymentProcessor.createCheckout({
@@ -227,7 +259,7 @@ async function attachPaymentLink(
     amountSubunits: order.amount_subunit,
     currency: order.currency,
     email: order.buyer_email ?? placeholderEmail(order.buyer_name, order.id),
-    metadata: { order_id: order.id, product_id: order.product_id, store_id: order.store_id },
+    metadata: { order_id: order.id, store_id: order.store_id },
   });
   await pool.query(
     `UPDATE orders SET payment_url = $2, payment_references = array_append(payment_references, $3), updated_at = now()
@@ -237,69 +269,103 @@ async function attachPaymentLink(
   await logEvent(pool, order.id, "payment_link_created", { reference });
 }
 
+// Turns either request form into order lines, adding up repeats of the same product.
+function requestedItems(input: CreateOrderInput): HoldItem[] {
+  const requested = input.items ?? [{ product_id: input.product_id!, quantity: input.quantity ?? 1 }];
+  const merged = new Map<string, number>();
+  for (const item of requested) merged.set(item.product_id, (merged.get(item.product_id) ?? 0) + item.quantity);
+  return [...merged].map(([product_id, quantity]) => ({ product_id, quantity }));
+}
+
 // Holds stock, creates an order and attaches its first payment link.
 export async function createOrder(input: CreateOrderInput) {
   await expireStaleOrders(pool);
+  const items = requestedItems(input);
 
-  // Holds stock and inserts the order in one transaction.
+  // Holds every line and inserts the order in one transaction, so it's all or nothing.
   const order = await withTransaction(async (db) => {
-    const product = (await db.query("SELECT id FROM products WHERE id = $1 AND active", [input.product_id])).rows[0];
-    if (!product) {
-      throw new ApiError(404, "product_not_found", `No product ${input.product_id}. Call list_products to find the right id.`);
+    const { rows: products } = await db.query<{
+      id: string;
+      name: string;
+      variant: string | null;
+      price_subunit: number;
+      currency: string;
+    }>("SELECT id, name, variant, price_subunit, currency FROM products WHERE id = ANY($1::text[]) AND active", [
+      items.map((item) => item.product_id),
+    ]);
+    const productOf = new Map(products.map((product) => [product.id, product]));
+    const unknown = items.find((item) => !productOf.has(item.product_id));
+    if (unknown) {
+      throw new ApiError(404, "product_not_found", `No product ${unknown.product_id}. Call list_products to find the right id.`);
+    }
+    // One payment link has one currency, so an order can't mix them.
+    if (new Set(products.map((product) => product.currency)).size > 1) {
+      throw new ApiError(
+        400,
+        "invalid_input",
+        "These products are priced in different currencies, so they can't be paid with one link. Make a separate order for each currency.",
+      );
     }
     const store = (await db.query<{ id: string; name: string }>("SELECT id, name FROM stores WHERE id = $1 AND active", [input.store_id])).rows[0];
     if (!store) throw new ApiError(404, "store_not_found", `No store ${input.store_id}. Call list_stores for the right id.`);
 
-    if (!(await holdStock(db, input.product_id, input.store_id, input.quantity))) {
+    const short = await holdItems(db, input.store_id, items);
+    if (short) {
+      const product = productOf.get(short.product_id)!;
+      const name = itemName({ product_name: product.name, product_variant: product.variant });
       const { rows: elsewhere } = await db.query<{ name: string; available: number }>(
         `SELECT s.name, st.available FROM stock st JOIN stores s ON s.id = st.store_id
          WHERE st.product_id = $1 AND st.store_id <> $2 AND s.active AND st.available >= $3
          ORDER BY st.available DESC`,
-        [input.product_id, input.store_id, input.quantity],
+        [short.product_id, input.store_id, short.quantity],
       );
       const otherStores = elsewhere.map(
         // Formats one alternative store and its available quantity.
         (candidate) => `${candidate.name} (${candidate.available})`,
       ).join(", ");
+      // The transaction rolls back, so the order's other lines aren't held either.
+      const nothingHeld = items.length > 1 ? ` Nothing in this order was held. Offer the rest without ${name}, or another store.` : "";
 
       // Held units may come back, so say when instead of calling the item sold out.
-      const freeAt = await whenStockFrees(db, input.product_id, input.store_id, input.quantity);
+      const freeAt = await whenStockFrees(db, short.product_id, input.store_id, short.quantity);
       if (freeAt) {
         throw new ApiError(
           409,
           "reserved",
-          `${input.product_id} at ${store.name} is reserved for other customers who haven't paid yet. If they don't pay, it comes back at about ${formatLocalClock(freeAt)}. Tell the customer, and offer to try again then${otherStores ? `, or offer ${otherStores} now` : ""}.`,
+          `${name} at ${store.name} is reserved for other customers who haven't paid yet. If they don't pay, it comes back at about ${formatLocalClock(freeAt)}. Tell the customer, and offer to try again then${otherStores ? `, or offer ${otherStores} now` : ""}.${nothingHeld}`,
         );
       }
 
       const hint = otherStores
         ? `It is available at ${otherStores}. Offer that store instead.`
         : "It is sold out at every store. Say so honestly and offer something similar from list_products.";
-      throw new ApiError(
-        409,
-        "out_of_stock",
-        `Not enough ${input.product_id} at ${store.name} for ${input.quantity}. ${hint}`,
-      );
+      throw new ApiError(409, "out_of_stock", `Not enough ${name} at ${store.name} for ${short.quantity}. ${hint}${nothingHeld}`);
     }
 
-    // Price and currency both come from the product row, never from the request.
-    const { rows } = await db.query<{ id: string; amount_subunit: number; currency: string }>(
-      `INSERT INTO orders (
-         product_id, store_id, quantity, unit_price_subunit, amount_subunit, currency, buyer_name, buyer_email, expires_at
-       )
-       SELECT p.id, $2, $3::int, p.price_subunit, p.price_subunit * $3::int, p.currency, $4, $5,
-              now() + make_interval(mins => $6::int)
-       FROM products p WHERE p.id = $1
-       RETURNING id, amount_subunit, currency`,
-      [input.product_id, input.store_id, input.quantity, input.buyer_name, input.buyer_email ?? null, config().HOLD_MINUTES],
-    );
-    const created = rows[0]!;
-    await logEvent(db, created.id, "order_created", {
-      held: input.quantity,
-      amount_subunit: created.amount_subunit,
-      currency: created.currency,
+    // Prices and currency come from the product rows, never from the request.
+    const currency = products[0]!.currency;
+    const lines = items.map((item, index) => {
+      const unit = productOf.get(item.product_id)!.price_subunit;
+      return { ...item, line: index + 1, unit_price_subunit: unit, amount_subunit: unit * item.quantity };
     });
-    return created;
+    const amount = lines.reduce((total, line) => total + line.amount_subunit, 0);
+
+    const { rows } = await db.query<{ id: string }>(
+      `INSERT INTO orders (store_id, amount_subunit, currency, buyer_name, buyer_email, expires_at)
+       VALUES ($1, $2, $3, $4, $5, now() + make_interval(mins => $6::int))
+       RETURNING id`,
+      [input.store_id, amount, currency, input.buyer_name, input.buyer_email ?? null, config().HOLD_MINUTES],
+    );
+    const id = rows[0]!.id;
+    for (const line of lines) {
+      await db.query(
+        `INSERT INTO order_items (order_id, line, product_id, quantity, unit_price_subunit, amount_subunit)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [id, line.line, line.product_id, line.quantity, line.unit_price_subunit, line.amount_subunit],
+      );
+    }
+    await logEvent(db, id, "order_created", { items, amount_subunit: amount, currency });
+    return { id, amount_subunit: amount, currency };
   });
 
   try {
@@ -309,18 +375,17 @@ export async function createOrder(input: CreateOrderInput) {
       currency: order.currency,
       buyer_name: input.buyer_name,
       buyer_email: input.buyer_email ?? null,
-      product_id: input.product_id,
       store_id: input.store_id,
     });
   } catch (error) {
     if (!(error instanceof PaymentProcessorUnavailable)) throw error;
     console.error(`[paystack] ${order.id}: ${error.message}`);
-    // Releases the held stock if Paystack cannot create a link.
+    // Releases every held line if Paystack cannot create a link.
     await withTransaction((db) => failOrder(db, order.id, "payment_link_failed", { error: error.message }));
     throw new ApiError(
       502,
       "payment_link_failed",
-      "Paystack could not make a payment link, so the item was released and nothing was charged. Apologise and offer to try again. If it fails a second time, hand over to a person.",
+      "Paystack could not make a payment link, so the items were released and nothing was charged. Apologise and offer to try again. If it fails a second time, hand over to a person.",
     );
   }
 
@@ -335,9 +400,9 @@ function nextStep(outcome: PaymentOutcome, order: OrderRow): string {
     case "already_paid":
       return "This order was already confirmed. Send the receipt text again if they need it. Then cancel any payment reminders still scheduled for this order.";
     case "paid_late_reheld":
-      return "The payment came in after the hold ran out, but the item was still in stock, so the order is confirmed. Send the receipt text. Then cancel any payment reminders still scheduled for this order.";
+      return "The payment came in after the hold ran out, but everything was still in stock, so the order is confirmed. Send the receipt text. Then cancel any payment reminders still scheduled for this order.";
     case "paid_no_stock":
-      return "The customer paid after the hold ran out and the item has since sold out. Tell them honestly, say the owner will refund them in full, and hand over to a person. Then cancel any payment reminders still scheduled for this order.";
+      return "The customer paid after the hold ran out and something in the order has since sold out. Tell them honestly, say the owner will refund them in full, and hand over to a person. Then cancel any payment reminders still scheduled for this order.";
     case "not_paid_yet":
       return `Paystack has no payment for this order yet. If the customer says they paid, tell them politely it hasn't come through and resend the payment link. ${orderView(order).minutes_left} minute(s) left on the hold.`;
     case "payment_processing":
@@ -390,7 +455,7 @@ async function verifyOrder(order: OrderRow): Promise<VerifyResult> {
 
   // Locks the order before applying the verified payment state.
   return withTransaction(async (db): Promise<VerifyResult> => {
-    const { rows } = await db.query<OrderRow>("SELECT * FROM orders WHERE id = $1 FOR UPDATE", [order.id]);
+    const { rows } = await db.query<OrderBase>("SELECT * FROM orders WHERE id = $1 FOR UPDATE", [order.id]);
     const current = rows[0]!;
 
     if (paid) {
@@ -416,7 +481,7 @@ async function verifyOrder(order: OrderRow): Promise<VerifyResult> {
 }
 
 // Applies one verified successful transaction without double-selling stock.
-async function confirmSuccessfulPayment(db: Db, order: OrderRow, transaction: PaymentTransaction): Promise<VerifyResult> {
+async function confirmSuccessfulPayment(db: Db, order: OrderBase, transaction: PaymentTransaction): Promise<VerifyResult> {
   if (order.status === "paid") return { outcome: "already_paid" };
   if (order.status === "paid_no_stock" || order.status === "handed_over") return { outcome: order.status };
 
@@ -451,7 +516,15 @@ async function confirmSuccessfulPayment(db: Db, order: OrderRow, transaction: Pa
   let outcome: PaymentOutcome = "paid";
 
   if (order.status !== "pending_payment") {
-    const reheld = await holdStock(db, order.product_id, order.store_id, order.quantity);
+    // Re-holds every line or none: a savepoint undoes the lines held before one ran short.
+    const { rows: lines } = await db.query<HoldItem>(
+      "SELECT product_id, quantity FROM order_items WHERE order_id = $1 ORDER BY line",
+      [order.id],
+    );
+    await db.query("SAVEPOINT rehold");
+    const short = await holdItems(db, order.store_id, lines);
+    await db.query(short ? "ROLLBACK TO SAVEPOINT rehold" : "RELEASE SAVEPOINT rehold");
+    const reheld = !short;
     status = reheld ? "paid" : "paid_no_stock";
     outcome = reheld ? "paid_late_reheld" : "paid_no_stock";
   }
@@ -483,7 +556,7 @@ export async function processPaymentWebhook(webhook: PaymentWebhookEvent) {
 
   // Locks the referenced order while applying the idempotent confirmation.
   return withTransaction(async (db) => {
-    const { rows } = await db.query<OrderRow>(
+    const { rows } = await db.query<OrderBase>(
       `SELECT * FROM orders
        WHERE payment_references @> ARRAY[$1]::text[]
        LIMIT 1
@@ -563,7 +636,7 @@ export async function listOrders(input: ListOrdersInput) {
   const timeZone = config().BUSINESS_TIMEZONE;
 
   const [list, summary] = await Promise.all([
-    pool.query<OrderRow>(
+    pool.query<Omit<OrderRow, "items">>(
       `${ORDER_SELECT} WHERE ${inPeriod} AND ($4::text IS NULL OR o.status = $4)
        ORDER BY o.created_at DESC LIMIT $5`,
       [input.period, timeZone, input.store_id ?? null, input.status ?? null, input.limit],
@@ -604,11 +677,11 @@ export async function listOrders(input: ListOrdersInput) {
       status: row.status,
       reason:
         row.status === "paid_no_stock"
-          ? "Paid after the hold ran out and the item sold out: refund the customer"
+          ? "Paid after the hold ran out and something in the order sold out: refund the customer"
           : row.status === "handed_over"
             ? "Handed to a person"
             : "Paystack amount did not match the order: check and refund if needed",
     })),
-    orders: list.rows.map(orderView),
+    orders: (await withItems(pool, list.rows)).map(orderView),
   };
 }

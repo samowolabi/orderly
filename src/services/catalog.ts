@@ -478,8 +478,8 @@ async function applyStockChange(db: Db, productId: string, input: StockChangeInp
   await assertStore(db, input.store_id);
   const { rows } = await db.query<{ available: number; held: number }>(
     `SELECT st.available,
-            coalesce((SELECT sum(quantity) FROM orders o
-                      WHERE o.product_id = st.product_id AND o.store_id = st.store_id
+            coalesce((SELECT sum(i.quantity) FROM order_items i JOIN orders o ON o.id = i.order_id
+                      WHERE i.product_id = st.product_id AND o.store_id = st.store_id
                         AND o.status = 'pending_payment'), 0)::int AS held
      FROM stock st WHERE st.product_id = $1 AND st.store_id = $2
      FOR UPDATE`,

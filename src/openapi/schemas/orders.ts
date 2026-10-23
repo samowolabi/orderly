@@ -10,11 +10,16 @@ export const Order = z
   .object({
     order_id: z.string().openapi({ example: "ORD-1001" }),
     status: OrderStatus,
-    product: z.object({ id: z.string(), name: z.string(), variant: z.string().nullable() }),
     store: z.object({ id: z.string(), name: z.string() }),
-    quantity: z.number().int(),
-    unit_price: Money,
-    amount: Money,
+    items: z.array(
+      z.object({
+        product: z.object({ id: z.string(), name: z.string(), variant: z.string().nullable() }),
+        quantity: z.number().int(),
+        unit_price: Money,
+        amount: Money,
+      }),
+    ),
+    amount: Money.openapi({ description: "Total for the whole order, paid with one link" }),
     buyer_name: z.string(),
     payment_url: z.string().nullable().openapi({ description: "Paystack page to pay on. Only set while waiting for payment." }),
     expires_at: Timestamp.openapi({ description: "When the hold ends" }),
@@ -41,9 +46,14 @@ export const ReceiptFields = z.object({
   receipt_number: z.string(),
   business: z.string(),
   store: z.object({ name: z.string(), address: z.string() }),
-  item: z.string().openapi({ example: "iPhone 13 (128GB)" }),
-  quantity: z.number().int(),
-  unit_price: Money,
+  items: z.array(
+    z.object({
+      item: z.string().openapi({ example: "iPhone 13 (128GB)" }),
+      quantity: z.number().int(),
+      unit_price: Money,
+      amount: Money,
+    }),
+  ),
   total: Money,
   buyer_name: z.string(),
   paid_at: Timestamp,
@@ -55,13 +65,33 @@ export const ReceiptFields = z.object({
 
 export const Receipt = ReceiptFields.openapi("Receipt");
 
-export const CreateOrderBody = z.object({
-  product_id: z.string().trim().toUpperCase().min(1).openapi({ description: "From list_products", example: "IP13-128" }),
-  store_id: z.string().trim().toLowerCase().min(1).openapi({ description: "Store the customer will collect from", example: "ikeja" }),
-  quantity: z.number().int().min(1).max(10).default(1),
-  buyer_name: z.string().trim().min(1).max(100).openapi({ example: "Tunde Bakare" }),
-  buyer_email: z.email().optional().openapi({ description: "For the Paystack receipt. Leave out if the customer didn't give one." }),
-});
+const ProductId = z.string().trim().toUpperCase().min(1).openapi({ description: "From list_products", example: "IP13-128" });
+const Quantity = z.number().int().min(1).max(10);
+
+export const CreateOrderBody = z
+  .object({
+    items: z
+      .array(z.object({ product_id: ProductId, quantity: Quantity.default(1) }))
+      .min(1)
+      .max(10)
+      .optional()
+      .openapi({
+        description:
+          "Everything the customer wants from this store, held together and paid with one link. Use this, or product_id for a single product.",
+        example: [
+          { product_id: "IP14-128", quantity: 1 },
+          { product_id: "ANKER-20K", quantity: 1 },
+        ],
+      }),
+    product_id: ProductId.optional().openapi({ description: "A single product. Leave out when sending items." }),
+    quantity: Quantity.optional().openapi({ description: "With product_id. Defaults to 1." }),
+    store_id: z.string().trim().toLowerCase().min(1).openapi({ description: "Store the customer will collect from", example: "ikeja" }),
+    buyer_name: z.string().trim().min(1).max(100).openapi({ example: "Tunde Bakare" }),
+    buyer_email: z.email().optional().openapi({ description: "For the Paystack receipt. Leave out if the customer didn't give one." }),
+  })
+  .refine((input) => (input.items === undefined) !== (input.product_id === undefined), {
+    message: "send items, or product_id for a single product, not both",
+  });
 
 export const OrderParams = z.object({
   // Customers type order numbers loosely in chat ("#ord 1008", "Ord_1008-2678D7"), so this

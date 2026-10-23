@@ -53,7 +53,7 @@ The API is split into focused modules:
 
 ## Data
 
-Six tables. Stores are rows, not fixed names, so an owner can run any number of them. Addresses are structured and may include coordinates, so agents can quote them consistently and share a map link or WhatsApp pin. Opening hours are rows too, so the API can say whether a store is open now. Money is stored as integer subunits (kobo for NGN), which is what Paystack expects, always next to its ISO 4217 currency code. New products are priced in `BUSINESS_CURRENCY` (default NGN), an order copies its product's currency, and payment checks compare Paystack's currency to the order's. Only `src/utils/money.ts` knows how big a currency's subunit is; the API returns every amount as `{ amount, currency, display }` in the main unit.
+Seven tables. Stores are rows, not fixed names, so an owner can run any number of them. Addresses are structured and may include coordinates, so agents can quote them consistently and share a map link or WhatsApp pin. Opening hours are rows too, so the API can say whether a store is open now. Money is stored as integer subunits (kobo for NGN), which is what Paystack expects, always next to its ISO 4217 currency code. New products are priced in `BUSINESS_CURRENCY` (default NGN), an order copies its products' currency (one currency per order), and payment checks compare Paystack's currency to the order's. Only `src/utils/money.ts` knows how big a currency's subunit is; the API returns every amount as `{ amount, currency, display }` in the main unit.
 
 | Table | Holds | Key columns |
 | --- | --- | --- |
@@ -61,7 +61,8 @@ Six tables. Stores are rows, not fixed names, so an owner can run any number of 
 | store_hours | When each store is open, in `BUSINESS_TIMEZONE` | store_id, weekday (1 = Monday), opens, closes; a day with no row is closed |
 | products | What the business sells | id (e.g. IP13-128), name, variant, price_subunit, min_price_subunit, currency |
 | stock | Units per product per store | product_id, store_id, available (never below 0) |
-| orders | Each purchase | id (e.g. ORD-1042), product_id, store_id, amount_subunit, currency, buyer_name, status, payment_references, paid_reference, expires_at |
+| orders | Each purchase: one store, one payment link | id (e.g. ORD-1042), store_id, amount_subunit (the total), currency, buyer_name, status, payment_references, paid_reference, expires_at |
+| order_items | The lines of an order | order_id, line, product_id, quantity, unit_price_subunit, amount_subunit |
 | events | A log of everything that happened | order_id, type, detail, created_at |
 
 The demo seeds Kola Gadgets with two stores, Ikeja and Lekki; the owner can add more by chat. When a new store omits `location`, or a store's address changes without one, the API geocodes the structured address (Google when `GOOGLE_MAPS_API_KEY` is set, otherwise Geoapify). Vague matches give no pin rather than a wrong one: Google's `APPROXIMATE` results and Geoapify matches below 0.5 confidence are dropped, and the map link then searches the address. Explicit coordinates always win, and `location: null` deliberately stores no pin.
@@ -78,7 +79,7 @@ Each endpoint becomes one tool in Chord when the OpenAPI spec is imported. Every
 | --- | --- | --- | --- | --- |
 | list_stores | `GET /stores` | Yes | Yes | Store names, structured addresses, map links, opening hours and whether each is open now |
 | list_products | `GET /products` | Yes | Yes | Prices and stock at each store; filter by store |
-| create_order | `POST /orders` | Yes | No | Holds stock at the chosen store for 30 minutes and returns a Paystack link |
+| create_order | `POST /orders` | Yes | No | Holds one or more items at the chosen store for 30 minutes (all or nothing) and returns one Paystack link for the total |
 | verify_payment | `POST /orders/{id}/verify` | Yes | No | Checks Paystack, confirms the order, returns the receipt |
 | get_receipt | `GET /orders/{id}/receipt` | Yes | Yes | The receipt for a paid order |
 | add_store | `POST /stores` | No | Yes | A new store or branch, with automatic address geocoding when no location is supplied |
