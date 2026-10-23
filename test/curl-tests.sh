@@ -283,6 +283,12 @@ check "one order, each item held at its own store, one link" 201 '.data.store.id
 ODM=$(jq -r .data.order_id <<<"$BODY")
 pay "$ODM"
 call "$BUYER" POST "/orders/$ODM/verify"; check "the multi-store delivery is paid" 200 '.data.outcome == "paid"'
+call "$SELLER" PATCH /stores/yaba '{"location":null}'; check "take Yaba's map pin away" 200 '.data.store.location.latitude == null'
+call "$SELLER" POST /products '{"products":[{"name":"Nokia 105","price":15000,"stock":[{"store_id":"yaba","quantity":2}]}]}'
+check "a phone stocked only at Yaba, which has no map pin" 201 '.data.products[0].stores[] | select(.store_id == "yaba") | .available == 2'
+NOKIA=$(jq -r .data.products[0].id <<<"$BODY")
+call "$BUYER" POST /delivery/quote '{"items":[{"product_id":"'"$NOKIA"'"}],"address":"'"$LEKKI_ADDR"'","phone":"08031234567"}'
+check "stock at a store without a pin still counts: delivered from Lekki, brought over from Yaba" 201 '.data.store.id == "lekki" and ([.data.brought_from[].id] == ["yaba"]) and .data.minutes > 22'; msg
 call "$BUYER" POST /delivery/quote '{"items":[{"product_id":"IP15P-256","quantity":2}],"address":"'"$LEKKI_ADDR"'","phone":"08031234567"}'
 check "not enough anywhere" 409 '.error.code == "out_of_stock" and (.error.message_for_agent | test("any store"))'; msg
 call "$BUYER" POST /delivery/quote '{"items":[{"product_id":"ANKER-20K"}],"address":"5 Nowhere Close","phone":"08031234567"}'

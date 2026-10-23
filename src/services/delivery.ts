@@ -103,23 +103,30 @@ export async function deliverySettings(input: SettingsInput) {
   return settingsView({ ...next, set_by_owner: true });
 }
 
-// What each store with a map pin has of the wanted products.
+type StockedStore = { id: string; name: string; latitude: number | null; longitude: number | null; has: Map<string, number> };
+
+// What every open store has of the wanted products. A store without a map pin can still
+// supply items for a delivery; only the store the rider leaves from needs a pin.
 async function stockByStore(db: Db, items: HoldItem[]) {
-  const { rows } = await db.query<CandidateStore & { product_id: string; available: number }>(
+  const { rows } = await db.query<Omit<StockedStore, "has"> & { product_id: string | null; available: number | null }>(
     `SELECT s.id, s.name, s.latitude, s.longitude, st.product_id, st.available
-     FROM stores s JOIN stock st ON st.store_id = s.id
-     WHERE s.active AND s.latitude IS NOT NULL AND st.product_id = ANY($1::text[]) AND st.available > 0
+     FROM stores s
+     LEFT JOIN stock st ON st.store_id = s.id AND st.product_id = ANY($1::text[]) AND st.available > 0
+     WHERE s.active
      ORDER BY s.id`,
     [items.map((item) => item.product_id)],
   );
-  const stores = new Map<string, CandidateStore & { has: Map<string, number> }>();
+  const stores = new Map<string, StockedStore>();
   for (const row of rows) {
     const store = stores.get(row.id) ?? { id: row.id, name: row.name, latitude: row.latitude, longitude: row.longitude, has: new Map() };
-    store.has.set(row.product_id, row.available);
+    if (row.product_id) store.has.set(row.product_id, row.available!);
     stores.set(row.id, store);
   }
   return [...stores.values()];
 }
+
+// A store the rider can leave from: it has a map pin.
+const isPinned = (store: StockedStore): store is StockedStore & CandidateStore => store.latitude !== null && store.longitude !== null;
 
 // Which store each product is held at when a delivery leaves from `from`: there if it has
 // enough, otherwise the store with the most of it, to be brought over before the rider leaves.
@@ -173,15 +180,19 @@ export async function quoteDelivery(input: QuoteInput) {
       `${name} isn't in stock at any store right now, so it can't be delivered. Say so, and offer to deliver the rest or something similar from list_products.`,
     );
   }
-  const plans = stores
-    .filter((store) => (input.store_id ? store.id === input.store_id : true))
-    .map((store) => ({ store, item_stores: assignStores(store, items, stores)! }))
-    .filter((plan) => plan.item_stores);
+  // The rider leaves from a pinned store: the one asked for, else any that holds some of the
+  // items, else any pinned store at all (everything is brought over to it first).
+  const pinned = stores.filter(isPinned);
+  const holding = pinned.filter((store) => items.some((item) => store.has.has(item.product_id)));
+  const dispatchFrom = input.store_id ? pinned.filter((store) => store.id === input.store_id) : holding.length ? holding : pinned;
+  const plans = dispatchFrom.map((store) => ({ store, item_stores: assignStores(store, items, stores)! }));
   if (!plans.length) {
     throw new ApiError(
       422,
       "no_route",
-      `${input.store_id} has none of these items, or no map pin to deliver from. Leave out store_id to deliver from the nearest store, or offer pickup.`,
+      input.store_id
+        ? `${input.store_id} has no map pin to deliver from. Leave out store_id to deliver from the nearest store, or offer pickup.`
+        : "No store has a map pin to deliver from. Offer pickup.",
     );
   }
 
