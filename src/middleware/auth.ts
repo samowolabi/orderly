@@ -35,6 +35,8 @@ export function requireRole(...allowed: Role[]): RequestHandler {
         "The API key is missing or wrong. This is a setup problem: hand over to a person.",
       );
     }
+    // Recorded before the permission check, so a refused call still logs which key tried it.
+    response.locals.role = role;
     if (!allowed.includes(role)) {
       return fail(
         response,
@@ -44,7 +46,6 @@ export function requireRole(...allowed: Role[]): RequestHandler {
       );
     }
 
-    response.locals.role = role;
     next();
   };
 }

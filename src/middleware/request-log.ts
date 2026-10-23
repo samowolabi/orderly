@@ -28,8 +28,8 @@ function toolFor(method: string, routePath: string | undefined, path: string) {
   return PATTERNS.find((entry) => entry.method === method && entry.pattern.test(path))?.tool ?? "unknown";
 }
 
-// Uptime pings would drown out the tool calls.
-const QUIET_PATHS = new Set(["/health"]);
+// Uptime pings and the host's root probes would drown out the tool calls.
+const QUIET_PATHS = new Set(["/health", "/"]);
 
 // Writes one line per request: time, tool, key role, status, duration and any
 // error code or payment outcome. Never keys, bodies, names or contact details.
