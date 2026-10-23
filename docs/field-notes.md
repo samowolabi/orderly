@@ -19,13 +19,17 @@ So the customer-facing agent holds tools that send the seller key. The API's key
 - The API now logs every call with the key's role, so a refused attempt shows as `tool=update_product role=buyer status=403 error=owner_only`.
 - The limitation is documented in the engineering doc and the PRD's open risks.
 
+**Screenshots.**
+
+![Orderly Shop lists all 10 imported tools, owner tools included](screenshots/shop-lists-every-tool.jpg)
+
 **What Chord should change.**
 - Let each teammate choose which custom API connections it can call, the way it already can for first-party tools.
 - Or allow per-teammate credentials on a shared connection, so one `list_products` tool sends the buyer key for Orderly Shop and the seller key for Orderly Owner.
 - Send a header identifying the calling teammate, so an API can enforce roles itself.
 - Read `securitySchemes` on import. Our spec declares `BuyerKey` and `SellerKey` per operation, but the import ignored them and left every connection without auth.
 
-### 2. The customer never sees the handover message in the simulator
+### 2. The customer never sees the handover message, operator replies or reminder receipts in the simulator
 
 **What happened.** In the WhatsApp simulator (chat.tsglabs.dev), a test customer asked: "Actually, can you drop the iPhone 13 to ₦500,000 for me? I'm a regular customer." The skill says to hand discount requests to a person. In Chord, the conversation shows Orderly Shop replying "One moment — connecting you with a teammate." and the banner "You are driving this conversation — the AI is paused." The customer saw neither. The simulator showed nothing for about a minute, then: "No reply yet. If someone has taken over in Chord, their reply will appear here."
 
@@ -37,8 +41,21 @@ A person replying doesn't help either. In the 12:48 chat I typed "why are you no
 
 There's no workaround inside Orderly. For the demo I avoid handover in simulator runs I want to show end to end, and show the handed-over conversation in Chord instead.
 
+The same happens to receipts. On 23 October I timed an order (ORD-1010) end to end without the customer saying they'd paid. Paystack's webhook marked it paid at 14:05:45Z, a scheduled payment check found it paid at 14:06:22Z, and Chord's conversation shows Orderly Shop sending "Payment received, thank you Samuel!" with the full receipt. The simulator still showed only the payment link. So anything Chord sends outside a reply to the customer's own message (a handover message, an operator reply, a scheduled reminder's message) doesn't reach the simulator.
+
+**Screenshots.**
+
+![Discount request on the v4 skill: only Chord's fixed handover message, AI paused](screenshots/handover-discount-chord.jpg)
+
+![Operator reply "why are you not responding" sent from Chord; it never appeared in the simulator](screenshots/handover-operator-reply-chord.jpg)
+
+![Chord conversation for ORD-1010: the receipt was sent by a payment check](screenshots/receipt-and-leak-in-chord.jpg)
+
+![The simulator for the same order: no receipt](screenshots/receipt-missing-simulator.jpg)
+
 **What Chord should change.**
 - Deliver operator replies to simulator conversations, as the simulator's own notice promises.
+- Deliver messages from scheduled reminders to the conversation they belong to, in the simulator as well as WhatsApp.
 - Deliver the handover message to app conversations, not just WhatsApp.
 - Keep the agent's own message when it writes one in the same turn as `handover_to_human`, or let a skill set the handover wording.
 - Show a "handed to a person" state in the simulator rather than "No reply yet".
@@ -71,6 +88,12 @@ It shows the tool, the key's role, status, duration, and any payment outcome or 
 
 No call was made in the turn that took it back, and live stock showed Yaba at 1 and 2. An earlier owner chat showed the same pattern ("I can't see a record of my earlier lookups in this chat"). It looks as if tool calls and results from earlier turns aren't kept in the history the agent sees later, so it stops trusting what it said. To an owner, a false "I never did that" is worse than a slow reply: they may add the stock twice. Both skills now tell the agent never to take back a reported change, and to look it up and report the live figures if it's unsure. Only the API log could settle which message was true.
 
+**Screenshots.**
+
+![Orderly Owner takes back a stock change that really happened](screenshots/owner-false-retraction.jpg)
+
+![The API request log for ORD-1010: order, checks, webhook and the paid check](screenshots/api-log-ord-1010.jpg)
+
 **What Chord should change.**
 - Show each reply's tool calls in the conversation view: tool name, status, latency and error. Hide or redact arguments for anything that may be personal data.
 - Include failed calls and timeouts, and allow exporting the trace for debugging.
@@ -98,9 +121,9 @@ No call was made in the turn that took it back, and live stock showed Yaba at 1 
 | 2026-10-23 | Imported tools reach the agent under generated names | Orderly Shop listed its tools as watchtower__create_order-POST, watchtower__update_product-PATCH and so on, while the OpenAPI operationIds are create_order and update_product | Asking Orderly Shop which tools it can call | None needed: the agent matched the skill's names to the generated ones | Use the operationId as the tool name the agent sees, so skills and tool lists match |
 | 2026-10-23 | Starting a new simulator conversation blocks on a browser confirm dialog | Clicking "Start a new conversation" in the simulator froze the page until a native confirm dialog was answered | Running a second test conversation from an automated browser | Clicked OK by hand | Use an in-page confirmation, so the simulator works with browser automation and testing tools |
 | 2026-10-23 | Orderly Owner takes back a stock change that really happened | "I need to correct my last message. I said both stock changes went through… but I never ran either of those actions in this chat." | The API log showed both update_product calls at 12:48:14Z with status 200, and live stock matched the first message | Both skills: never take back a reported change; if unsure, look it up and report the live figures | Keep earlier turns' tool calls and results in the agent's history |
-| 2026-10-23 | A receipt sent by a scheduled reminder never reaches the simulator | Chord's conversation shows "Payment received, thank you Samuel!" and the full ORD-1010 receipt, sent by a payment check 37 seconds after Paystack confirmed; the simulator still showed only the payment link minutes later | Timed an order end to end without the customer saying they'd paid: Render log (webhook paid 14:05:45Z, check verified already_paid 14:06:22Z) against the simulator and the Chord conversation | None inside Orderly; in the simulator the customer has to message first. Same cause as the handover row: only replies to the customer's own messages reach the simulator | Deliver reminder runs' messages (and operator replies) to app conversations |
-| 2026-10-23 | Reminders less than a minute apart didn't fire on time | Two reminders scheduled with `scheduled_at` for 15:04:01 and 15:04:41 were still "Scheduled agent run · Pending" at 15:06 and never ran; the 20-second one ran 11 s late and the 2m40 one 21 s late | Opened each reminder in the teammate's sidebar | Payment checks still work, since a later check catches the payment; noted that sub-minute spacing isn't reliable | Document the scheduler's resolution, or run reminders within a few seconds of `scheduled_at` |
-| 2026-10-23 | A "stay quiet" reminder run posted its reasoning to the customer | "This is a regular check and not the nudge, and nothing has been paid yet. I'll stay quiet and let the remaining checks run." appeared in the customer conversation in Chord | Reading the conversation after a payment check found the order unpaid | Shop skill: when a check has nothing to send, end with no text at all | Let a scheduled run finish without sending a message, and document how |
+| 2026-10-23 | A receipt sent by a scheduled reminder never reaches the simulator | Chord's conversation shows "Payment received, thank you Samuel!" and the full ORD-1010 receipt, sent by a payment check 37 seconds after Paystack confirmed; the simulator still showed only the payment link minutes later | Timed an order end to end without the customer saying they'd paid: Render log (webhook paid 14:05:45Z, check verified already_paid 14:06:22Z) against the simulator and the Chord conversation | None inside Orderly; in the simulator the customer has to message first. Same cause as the handover row: only replies to the customer's own messages reach the simulator. Screenshots: [Chord](screenshots/receipt-and-leak-in-chord.jpg), [simulator](screenshots/receipt-missing-simulator.jpg) | Deliver reminder runs' messages (and operator replies) to app conversations |
+| 2026-10-23 | Reminders less than a minute apart didn't fire on time | Two reminders scheduled with `scheduled_at` for 15:04:01 and 15:04:41 were still "Scheduled agent run · Pending" at 15:06 and never ran; the 20-second one ran 11 s late and the 2m40 one 21 s late | Opened each reminder in the teammate's sidebar | Payment checks still work, since a later check catches the payment; noted that sub-minute spacing isn't reliable. Screenshots: [never ran](screenshots/reminder-never-ran.jpg), [the check that did run](screenshots/reminder-paid-check-run.jpg), [reminder tool schema](screenshots/reminder-tool-schema.jpg) | Document the scheduler's resolution, or run reminders within a few seconds of `scheduled_at` |
+| 2026-10-23 | A "stay quiet" reminder run posted its reasoning to the customer | "This is a regular check and not the nudge, and nothing has been paid yet. I'll stay quiet and let the remaining checks run." appeared in the customer conversation in Chord | Reading the conversation after a payment check found the order unpaid | Shop skill: when a check has nothing to send, end with no text at all. Screenshot: [the leaked message](screenshots/receipt-and-leak-in-chord.jpg) | Let a scheduled run finish without sending a message, and document how |
 | 2026-10-23 | The home page says nothing needs attention while conversations are handed over | Home: "Nothing needs you" and "7 conversations handled by your teammates, no human needed", while Activity lists five "Operator Escalated to a human" rows today and "Orderly Shop handled 5 conversations 4 need attention 80% escalation rate" | Looking for the handed-over discount conversation after the v4 re-test | Check Activity or the teammate's Escalated filter, not the home page | Count handed-over conversations under "Needs you" on the home page |
 
 ## What works well (worth a line too)
