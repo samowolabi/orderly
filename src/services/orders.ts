@@ -4,7 +4,7 @@ import {
   PaymentProcessorUnavailable,
   type PaymentTransaction,
   type PaymentWebhookEvent,
-} from "../adapters/payment-processor";
+} from "../adapters/payment/payment-processor";
 import { config } from "../config";
 import { pool, withTransaction } from "../db/pool";
 import { lagosTime } from "../utils/format";

@@ -1,6 +1,6 @@
 import type { Request, Response } from "express";
 import { paymentProcessor } from "../adapters";
-import { InvalidPaymentPayload } from "../adapters/payment-processor";
+import { InvalidPaymentPayload } from "../adapters/payment/payment-processor";
 import { processPaymentWebhook } from "../services/orders";
 import { ApiError, ok } from "../utils/http";
 

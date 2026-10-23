@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { GeoapifyAdapter } from "../src/adapters/geoapify";
-import { GeocodingProviderUnavailable } from "../src/adapters/geocoding-provider";
+import { GeoapifyAdapter } from "../src/adapters/geocoding/geoapify";
+import { GeocodingProviderUnavailable } from "../src/adapters/geocoding/geocoding-provider";
 
 // Verifies Geoapify request construction, successful mapping and failure handling.
 async function run() {

@@ -1,5 +1,5 @@
 import { geocodingProvider } from "../adapters";
-import { GeocodingProviderUnavailable } from "../adapters/geocoding-provider";
+import { GeocodingProviderUnavailable } from "../adapters/geocoding/geocoding-provider";
 import { config } from "../config";
 import { pool, withTransaction } from "../db/pool";
 import { ApiError } from "../utils/http";
