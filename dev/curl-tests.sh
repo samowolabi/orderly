@@ -192,6 +192,12 @@ check "receipt names the payment provider" 200 '.data.receipt.text | test("Payst
 jq -r .data.receipt.text <<<"$BODY" | sed 's/^/        | /'
 call "$BUYER" POST "/orders/$O1/verify";      check "verify again is idempotent" 200 '.data.outcome == "already_paid"'
 call "$SELLER" GET "/orders/$O1/receipt";     check "owner can get the receipt" 200 '.data.receipt_number == "'"$O1"'"'
+R1=$(ref "$O1")
+call "$BUYER" POST "/orders/$R1/verify";      check "verify by Paystack reference" 200 '.data.outcome == "already_paid" and .data.order.order_id == "'"$O1"'"'
+call "$BUYER" GET "/orders/$(tr '[:upper:]' '[:lower:]' <<<"$R1")/receipt"; check "receipt by lowercase reference" 200 '.data.receipt_number == "'"$O1"'"'
+LOOSE="%23$(tr '[:upper:]' '[:lower:]' <<<"$O1" | sed 's/-/%20/')"
+call "$BUYER" POST "/orders/$LOOSE/verify";   check "order number typed loosely (#ord 1001)" 200 '.data.order.order_id == "'"$O1"'"'
+call "$BUYER" POST "/orders/${O1}-ffffff/verify"; check "unknown reference" 404 '.error.code == "order_not_found" and (.error.message_for_agent | test("Never guess"))'; msg
 [ "$(stock IP13-128 ikeja)" = "$((before-1))" ] && { PASS=$((PASS+1)); echo "  ok    stock stays sold after payment"; } || { FAILS=$((FAILS+1)); echo "  FAIL  stock changed after payment"; }
 
 echo "== Bad order input"

@@ -52,7 +52,19 @@ export const CreateOrderBody = z.object({
   buyer_email: z.email().optional().openapi({ description: "For the Paystack receipt. Leave out if the customer didn't give one." }),
 });
 
-export const OrderParams = z.object({ id: z.string().trim().toUpperCase().openapi({ example: "ORD-1001" }) });
+export const OrderParams = z.object({
+  // Customers type order numbers loosely in chat ("#ord 1008", "Ord_1008-2678D7"), so this
+  // drops a leading "#", turns spaces and underscores into dashes and uppercases the rest.
+  id: z
+    .string()
+    .trim()
+    .transform((id) => id.replace(/^#+/, "").trim().replace(/[\s_]+/g, "-").toUpperCase())
+    .openapi({
+      description:
+        "The order number (ORD-1001) or any payment reference for it (ORD-1001-3f9a2c), exactly as the customer or an earlier reply gave it. Never guess one.",
+      example: "ORD-1001",
+    }),
+});
 
 export const ListOrdersQuery = z.object({
   status: OrderStatus.optional(),

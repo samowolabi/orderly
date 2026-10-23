@@ -94,9 +94,22 @@ const ORDER_SELECT = `
   JOIN stores s ON s.id = o.store_id`;
 
 // Loads one order with the product and store fields needed by API views.
+// Finds an order by its number or by any payment reference made for it, since customers
+// often quote the reference from Paystack's receipt (ORD-1008-2678d7) instead of ORD-1008.
+// The id arrives uppercased, and references have a lowercase suffix, so they match case-insensitively.
 async function loadOrder(db: Db, id: string): Promise<OrderRow> {
-  const { rows } = await db.query<OrderRow>(`${ORDER_SELECT} WHERE o.id = $1`, [id]);
-  if (!rows[0]) throw new ApiError(404, "order_not_found", `No order ${id}. Check the order number with the customer.`);
+  const { rows } = await db.query<OrderRow>(
+    `${ORDER_SELECT}
+     WHERE o.id = $1 OR EXISTS (SELECT 1 FROM unnest(o.payment_references) AS ref WHERE upper(ref) = $1)`,
+    [id],
+  );
+  if (!rows[0]) {
+    throw new ApiError(
+      404,
+      "order_not_found",
+      `No order or payment reference ${id}. Ask the customer for the order number (like ORD-1008) or the payment reference on their receipt. Never guess one.`,
+    );
+  }
   return rows[0];
 }
 
@@ -486,7 +499,7 @@ export async function verifyPayment(id: string) {
       await attachPaymentLink(before);
     } catch (error) {
       if (!(error instanceof PaymentProcessorUnavailable)) throw error;
-      console.error(`[paystack] ${id}: ${error.message}`);
+      console.error(`[paystack] ${before.id}: ${error.message}`);
       throw new ApiError(
         502,
         "payment_link_failed",
@@ -495,7 +508,7 @@ export async function verifyPayment(id: string) {
     }
   }
 
-  const after = await loadOrder(pool, id);
+  const after = await loadOrder(pool, before.id);
   return {
     outcome: result.outcome,
     next_step: nextStep(result.outcome, after),
@@ -512,7 +525,7 @@ export async function getReceipt(id: string) {
       order.status === "pending_payment"
         ? "Call verify_payment first to check with Paystack."
         : `The order status is ${order.status}, so there is no receipt.`;
-    throw new ApiError(409, "not_paid", `Order ${id} is not paid. ${hint}`);
+    throw new ApiError(409, "not_paid", `Order ${order.id} is not paid. ${hint}`);
   }
   return receiptView(order);
 }

@@ -108,7 +108,7 @@ If `create_order` fails:
 
 ## Payment
 
-Call `verify_payment` whenever they say they've paid, send a screenshot, or ask about their order, and when a reminder fires. Then:
+Call `verify_payment` whenever they say they've paid, send a screenshot, or ask about their order, and when a reminder fires. Use the order number from this chat, or what the customer sends: the order number (ORD-1008) and the Paystack reference on their receipt (ORD-1008-2678d7) both work. If you have neither, ask for it; never make one up. Then:
 
 - `paid`, `already_paid`, `paid_late_reheld`: thank them warmly and send `receipt.text` exactly as it is.
 - `not_paid_yet`: it hasn't landed yet. Resend the link with the time left, no fuss.
