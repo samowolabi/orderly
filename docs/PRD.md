@@ -51,6 +51,7 @@ These are the core features. Each one answers something the sellers raised.
 - **Several items, one payment:** everything a customer wants is held together (all or nothing) and paid with one link, even when the items sit in different stores. The receipt lists each item and, for pickup, where to collect it. The agent never splits a purchase into several orders.
 - **Receipt:** sent in chat as soon as payment is confirmed.
 - **Receipt on PAID:** every hold message ends "Reply PAID so we can confirm your payment." When the customer replies, the agent checks with Paystack and sends the receipt at once. Paystack's webhook confirms the order on our side within seconds either way, so stock and the owner's sales are right even before the customer writes. (Scheduled payment checks were built and then removed: Chord reminder messages never reach the simulator. See field-notes write-up 4.)
+- **Owner alerts by email:** when a payment is confirmed, the owner gets an email: paid (with the items, stores and pickup or delivery details), paid late, refund needed, or check payment. Chord can't message the owner first, so email is how the owner hears without asking.
 - **A real person when needed:** anything unusual is handed to the owner instead of guessed.
 
 ## Rules it never breaks

@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { paymentProcessor } from "../adapters";
+import { notifier, paymentProcessor } from "../adapters";
 import {
   PaymentProcessorUnavailable,
   type PaymentTransaction,
@@ -105,10 +105,13 @@ type DeliveryRow = {
 
 type OrderRow = OrderBase & { store_name: string; items: (ItemRow & AddressRow)[] } & DeliveryRow & AddressRow;
 
+// Payment events the owner hears about by email, sent once, when the order first changes.
+type OwnerAlert = "paid" | "paid_late_reheld" | "paid_no_stock" | "amount_mismatch";
+
 type VerifyResult =
-  | { outcome: PaymentOutcome }
+  | { outcome: PaymentOutcome; alert?: OwnerAlert }
   | { outcome: "declined"; newLink: true }
-  | { outcome: "amount_mismatch"; paidSubunits: number; currency: string };
+  | { outcome: "amount_mismatch"; paidSubunits: number; currency: string; alert?: OwnerAlert };
 
 const ORDER_SELECT = `
   SELECT o.*, s.name AS store_name, s.address_line1, s.address_line2, s.area, s.city, s.state,
@@ -597,7 +600,7 @@ async function confirmSuccessfulPayment(db: Db, order: OrderBase, transaction: P
       });
     }
 
-    return { outcome: "amount_mismatch", paidSubunits: transaction.amount, currency: transaction.currency };
+    return { outcome: "amount_mismatch", paidSubunits: transaction.amount, currency: transaction.currency, alert: "amount_mismatch" };
   }
 
   let status: "paid" | "paid_no_stock" = "paid";
@@ -630,7 +633,49 @@ async function confirmSuccessfulPayment(db: Db, order: OrderBase, transaction: P
     currency: transaction.currency,
   });
 
-  return { outcome };
+  return { outcome, alert: outcome as OwnerAlert };
+}
+
+// The owner's email for a payment event: what happened, what's in the order, and what to do.
+function ownerMessage(order: OrderRow, alert: OwnerAlert) {
+  const total = formatMoney(order.amount_subunit, order.currency);
+  const reference = order.paid_reference ?? order.payment_references.at(-1) ?? order.id;
+  const delivery = deliveryView(order);
+  const items = order.items.map(
+    (item) => `• ${itemName(item)}${item.quantity > 1 ? ` x${item.quantity}` : ""}: ${formatMoney(item.amount_subunit, order.currency)}, held at ${item.store_name}`,
+  );
+  const fulfilment = delivery
+    ? `Delivery to ${delivery.address} (phone ${delivery.phone}), leaving from ${order.store_name}.`
+    : "Pickup: the customer collects each item at the store shown.";
+  const details = ["", ...items, "", fulfilment, `Paystack reference: ${reference}`, "", `Sent by Orderly for ${config().BUSINESS_NAME}.`];
+  switch (alert) {
+    case "paid":
+      return { subject: `Paid: ${order.id}, ${total}`, text: [`${order.buyer_name} paid ${total} for ${order.id}.`, ...details].join("\n") };
+    case "paid_late_reheld":
+      return {
+        subject: `Paid late, still in stock: ${order.id}, ${total}`,
+        text: [`${order.buyer_name} paid ${total} for ${order.id} after the hold ran out. Everything was still in stock, so it's confirmed.`, ...details].join("\n"),
+      };
+    case "paid_no_stock":
+      return {
+        subject: `Refund needed: ${order.id}, ${total}`,
+        text: [`${order.buyer_name} paid ${total} for ${order.id} after the hold ran out, and something in the order had sold. Refund them in Paystack.`, ...details].join("\n"),
+      };
+    case "amount_mismatch":
+      return {
+        subject: `Check payment: ${order.id}`,
+        text: [`Paystack's amount for ${order.id} didn't match the order total of ${total}, so the order wasn't confirmed. Check it in Paystack and refund if needed.`, ...details].join("\n"),
+      };
+  }
+}
+
+// Emails the owner about a payment event. Never throws: a failed email mustn't fail the payment.
+async function alertOwner(orderId: string, alert: OwnerAlert) {
+  try {
+    await notifier().notifyOwner(ownerMessage(await loadOrder(pool, orderId), alert));
+  } catch (error) {
+    console.error(`[notify] ${orderId} ${alert}: ${(error as Error).message}`);
+  }
 }
 
 // Confirms a normalized payment-success event against its matching order.
@@ -643,7 +688,7 @@ export async function processPaymentWebhook(webhook: PaymentWebhookEvent) {
   await expireStaleOrders(pool);
 
   // Locks the referenced order while applying the idempotent confirmation.
-  return withTransaction(async (db) => {
+  const confirmed = await withTransaction(async (db) => {
     const { rows } = await db.query<OrderBase>(
       `SELECT * FROM orders
        WHERE payment_references @> ARRAY[$1]::text[]
@@ -657,6 +702,9 @@ export async function processPaymentWebhook(webhook: PaymentWebhookEvent) {
     const result = await confirmSuccessfulPayment(db, order, transaction);
     return { ...result, order_id: order.id, reference: transaction.reference };
   });
+  // Emails go out after the transaction commits, without holding up Paystack's request.
+  if ("alert" in confirmed && confirmed.alert) void alertOwner(confirmed.order_id, confirmed.alert);
+  return confirmed;
 }
 
 // Exposes payment verification, recovery guidance and any available receipt.
@@ -664,6 +712,7 @@ export async function verifyPayment(id: string) {
   await expireStaleOrders(pool);
   const before = await loadOrder(pool, id);
   const result = await verifyOrder(before);
+  if ("alert" in result && result.alert) void alertOwner(before.id, result.alert);
 
   if (result.outcome === "amount_mismatch") {
     throw new ApiError(

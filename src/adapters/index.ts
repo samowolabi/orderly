@@ -1,6 +1,8 @@
 import { config } from "../config";
 import type { GeocodingProvider } from "./geocoding/geocoding-provider";
 import { GoogleGeocodingAdapter } from "./geocoding/google";
+import type { Notifier } from "./notify/notifier";
+import { NoNotifier, ResendNotifier } from "./notify/resend";
 import { PaystackAdapter } from "./payment/paystack";
 import type { PaymentProcessor } from "./payment/payment-processor";
 import { GoogleRoutesAdapter } from "./routing/google";
@@ -23,4 +25,13 @@ let router: RoutingProvider | undefined;
 export function routingProvider(): RoutingProvider {
   router ??= new GoogleRoutesAdapter();
   return router;
+}
+
+let ownerNotifier: Notifier | undefined;
+
+// Returns the owner email sender, or one that does nothing when Resend isn't set up.
+export function notifier(): Notifier {
+  const { RESEND_API_KEY, OWNER_EMAIL } = config();
+  ownerNotifier ??= RESEND_API_KEY && OWNER_EMAIL ? new ResendNotifier() : new NoNotifier();
+  return ownerNotifier;
 }

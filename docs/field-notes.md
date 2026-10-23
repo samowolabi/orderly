@@ -117,7 +117,9 @@ No call was made in the turn that took it back, and live stock showed Yaba at 1 
 - Paystack's webhook still confirms the order on our side within seconds, whether or not the customer writes. Stock is safe, the owner sees the sale in `list_orders`, and when the customer does write, the agent finds it paid and sends the receipt.
 - The trade-off: a customer who pays and says nothing gets no receipt in WhatsApp until they write, and a quiet customer gets no nudge before the hold ends.
 
-A possible next step: after paying, Paystack sends the customer to a page with a "Back to WhatsApp" button that opens the chat with "PAID ORD-1018" already typed, so replying takes one tap.
+The owner had the same gap: they only learned about a sale by asking. The API now emails the owner (through Resend) whenever a payment is confirmed or needs a refund, which works because the owner's address is known.
+
+A possible next step for customers: after paying, Paystack sends the customer to a page with a "Back to WhatsApp" button that opens the chat with "PAID ORD-1018" already typed, so replying takes one tap.
 
 **What Chord should change.**
 - Let an external system trigger a teammate turn in a given conversation, e.g. a signed webhook with a conversation id and an event payload ("order ORD-1018 paid"). This is the real fix: receipts within seconds, no polling, no credits spent on checks.

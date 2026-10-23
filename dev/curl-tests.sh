@@ -5,6 +5,7 @@ cd "$(dirname "$0")/.." || exit 1
 API=${API:-http://localhost:3000}
 FAKE=${FAKE:-http://localhost:4010}
 FAKE_GOOGLE=${FAKE_GOOGLE:-http://localhost:4020}
+FAKE_RESEND=${FAKE_RESEND:-http://localhost:4030}
 BUYER=$(grep '^BUYER_API_KEY=' .env | cut -d= -f2)
 SELLER=$(grep '^SELLER_API_KEY=' .env | cut -d= -f2)
 PAYSTACK_SECRET_KEY=$(grep '^PAYSTACK_SECRET_KEY=' .env | cut -d= -f2-)
@@ -13,6 +14,7 @@ PSQL="$(command -v psql || echo /Library/PostgreSQL/18/bin/psql) $DATABASE_URL -
 PASS=0; FAILS=0
 RACE_FILE=$(mktemp -t orderly-race)
 trap 'rm -f "$RACE_FILE"' EXIT
+curl -sf -X DELETE "$FAKE_RESEND/_fake/emails" >/dev/null || echo "        (fake Resend isn't running: npm run fake-resend)"
 
 # Sends an API request and stores its response status and body.
 call() {
@@ -469,6 +471,21 @@ mode '{"fail_next":{"initialize":5}}'
 call "$BUYER" POST /orders '{"items":[{"product_id":"ANKER-20K"}],"store_id":"ikeja","buyer_name":"Tobi"}'
 check "a longer outage still fails cleanly after the retries" 502 '.error.code == "payment_link_failed"'
 mode '{"fail_next":{"initialize":0}}'
+
+echo "== Owner email alerts"
+sleep 1  # alerts are sent after the reply, without holding it up
+EMAILS=$(curl -s "$FAKE_RESEND/_fake/emails")
+email_check() {
+  local name=$1 expr=$2
+  if [ "$(jq -r "$expr" <<<"$EMAILS" 2>/dev/null)" = "true" ]; then PASS=$((PASS+1)); printf '  ok    %s\n' "$name"
+  else FAILS=$((FAILS+1)); printf '  FAIL  %s\n' "$name"; jq -r '.[].subject' <<<"$EMAILS" | sed 's/^/        /'; fi
+}
+email_check "a paid order emails the owner, with where each item is held" '[.[] | select(.subject == "Paid: '"$O1"', ₦650,000")] | length == 1 and (.[0].text | test("held at Kola Gadgets Ikeja"))'
+email_check "a late payment with nothing left asks for a refund" '[.[] | select(.subject | startswith("Refund needed: '"$RACE"'"))] | length == 1'
+email_check "a re-held late payment emails once, though the webhook came twice" '[.[] | select(.subject | startswith("Paid late, still in stock: '"$O2"'"))] | length == 1'
+email_check "a wrong amount asks the owner to check" '[.[] | select(.subject | startswith("Check payment: "))] | length >= 1'
+email_check "never the same email twice" 'group_by(.subject) | all(length == 1)'
+jq -r '[.[] | select(.subject | startswith("Paid: '"$O1"'"))][0] | "        | \(.subject)", (.text | split("\n")[] | "        | \(.)")' <<<"$EMAILS"
 
 echo "== Owner: list_orders"
 call "$SELLER" GET /orders;                   check "today's orders and summary" 200 '.data.period == "today" and .data.summary.counts.paid == 9 and .data.summary.paid_totals == [{"amount":4049600,"currency":"NGN","display":"₦4,049,600"}]'

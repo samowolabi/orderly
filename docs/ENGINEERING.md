@@ -32,6 +32,7 @@ The customer pays on Paystack's own page, so card details never touch the agent,
 | Database | Postgres | Atomic stock updates stop overselling |
 | Geocoding | Google Geocoding API | Turns a store address into an optional map pin, and says how precise the match is |
 | Payments | Paystack test mode | Real API, test cards, no real money |
+| Owner alerts | Resend (email) | Tells the owner about paid orders and refunds needed, since Chord can't start a conversation |
 | Hosting | Render, from a Blueprint (`render.yaml`) | Web service and Postgres defined in the repo. A paid instance stays on; the free one sleeps when idle |
 | AI teammates | Chord, two teammates | Conversations, tools and handover |
 

@@ -30,6 +30,12 @@ const Env = z.object({
   GOOGLE_GEOCODING_URL: z.string().url().default("https://maps.googleapis.com/maps/api/geocode/json"),
   GOOGLE_ROUTES_URL: z.string().url().default("https://routes.googleapis.com/directions/v2:computeRoutes"),
 
+  // Owner email alerts (paid orders, refunds needed). Off unless both are set.
+  RESEND_API_KEY: z.string().min(1).optional(),
+  OWNER_EMAIL: z.email().optional(),
+  EMAIL_FROM: z.string().default("Orderly <onboarding@resend.dev>"),
+  RESEND_URL: z.string().url().default("https://api.resend.com/emails"),
+
   PAYSTACK_SECRET_KEY: z
     .string()
     .startsWith("sk_test_", "Orderly only runs with a Paystack test key"),
@@ -97,6 +103,8 @@ export function config(): Config {
       ...process.env,
       PUBLIC_URL: process.env.PUBLIC_URL || hostUrl(),
       DELIVERY_MAX_KM: process.env.DELIVERY_MAX_KM || undefined,
+      RESEND_API_KEY: process.env.RESEND_API_KEY || undefined,
+      OWNER_EMAIL: process.env.OWNER_EMAIL || undefined,
     });
     if (!parsed.success) {
       // Formats each environment validation issue for the startup error.

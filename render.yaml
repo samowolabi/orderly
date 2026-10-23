@@ -25,6 +25,10 @@ services:
         generateValue: true
       - key: PAYSTACK_SECRET_KEY
         sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: OWNER_EMAIL
+        sync: false
       - key: GOOGLE_MAPS_API_KEY
         sync: false
 

@@ -15,6 +15,7 @@
     "openapi": "tsx src/openapi/write.ts",
     "fake-paystack": "tsx dev/fake-paystack.ts",
     "fake-google": "tsx dev/fake-google.ts",
+    "fake-resend": "tsx dev/fake-resend.ts",
     "test:api": "bash dev/curl-tests.sh",
     "test:geocoding": "tsx dev/geocoding-tests.ts",
     "test:hours": "tsx dev/hours-tests.ts",
