@@ -23,14 +23,14 @@ const stores: SeedStore[] = [
     id: "ikeja",
     name: "Kola Gadgets Ikeja",
     address: { line1: "14 Allen Avenue", area: "Ikeja", city: "Lagos", state: "Lagos", country_code: "NG" },
-    location: { latitude: 6.604718, longitude: 3.350299 },
+    location: { latitude: 6.599941, longitude: 3.352158 },
     hours: [{ days: ["mon", "tue", "wed", "thu", "fri", "sat"], opens: "09:00", closes: "19:00" }],
   },
   {
     id: "lekki",
     name: "Kola Gadgets Lekki",
     address: { line1: "8 Admiralty Way", area: "Lekki Phase 1", city: "Lagos", state: "Lagos", country_code: "NG" },
-    location: { latitude: 6.448381, longitude: 3.47926 },
+    location: { latitude: 6.447579, longitude: 3.475247 },
     hours: [
       { days: ["mon", "tue", "wed", "thu", "fri", "sat"], opens: "10:00", closes: "20:00" },
       { days: ["sun"], opens: "12:00", closes: "17:00" },

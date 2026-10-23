@@ -45,8 +45,8 @@ export const AddressPatch = z
 
 export const CoordinatesInput = z
   .object({
-    latitude: z.number().min(-90).max(90).openapi({ example: 6.604718 }),
-    longitude: z.number().min(-180).max(180).openapi({ example: 3.350299 }),
+    latitude: z.number().min(-90).max(90).openapi({ example: 6.599941 }),
+    longitude: z.number().min(-180).max(180).openapi({ example: 3.352158 }),
   })
   .openapi("StoreCoordinatesInput");
 

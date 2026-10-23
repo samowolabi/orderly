@@ -79,7 +79,7 @@ call "$BUYER" GET /stores;                     check "list_stores" 200 '.data.st
 check "Ikeja hours text" 200 '.data.stores[0].opening_hours == "Mon to Sat, 9am to 7pm; Sun, closed"'
 check "Lekki hours text" 200 '.data.stores[1].opening_hours == "Mon to Sat, 10am to 8pm; Sun, 12pm to 5pm"'
 check "structured hours and open_now" 200 '(.data.stores[0].hours | length == 6) and .data.stores[0].hours[0] == {"day":"Monday","opens":"09:00","closes":"19:00"} and (.data.stores | all(.open_now | type == "boolean"))'
-check "structured addresses and map pins" 200 '.data.stores[0].address_details == {"line1":"14 Allen Avenue","line2":null,"area":"Ikeja","city":"Lagos","state":"Lagos","country_code":"NG","postal_code":null,"directions_note":null} and .data.stores[0].location.latitude == 6.604718 and (.data.stores[0].location.map_url | contains("6.604718"))'
+check "structured addresses and map pins" 200 '.data.stores[0].address_details == {"line1":"14 Allen Avenue","line2":null,"area":"Ikeja","city":"Lagos","state":"Lagos","country_code":"NG","postal_code":null,"directions_note":null} and .data.stores[0].location.latitude == 6.599941 and (.data.stores[0].location.map_url | contains("6.599941"))'
 call "$BUYER" GET '/products?q=iphone%2013';   check "search 'iphone 13' finds IP13-128 only" 200 '[.data.products[].id] == ["IP13-128"]'
 check "buyer doesn't see the discount floor" 200 '.data.products[0] | has("min_price") | not'
 check "price comes with its currency" 200 '.data.products[0].price == {"amount":650000,"currency":"NGN","display":"₦650,000"}'
