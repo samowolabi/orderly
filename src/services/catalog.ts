@@ -14,7 +14,7 @@ import {
   type CoordinatesInputValue,
   type ResolvedAddressValue,
 } from "../utils/store-location";
-import { lowestOffer } from "./pricing";
+import { counterOffers } from "./pricing";
 import { expireStaleOrders, logEvent, type Db } from "./stock";
 
 type ProductRow = {
@@ -134,7 +134,7 @@ function productView(row: ProductRow, role: Role) {
     name: row.name,
     variant: row.variant,
     price: moneyView(row.price_subunit, row.currency),
-    lowest_price: moneyView(lowestOffer(row.price_subunit, row.min_price_subunit, row.currency), row.currency),
+    counter_offers: haggleView(row),
     ...(role === "seller" ? { min_price: moneyView(row.min_price_subunit, row.currency), active: row.active } : {}),
     stores: row.stores,
     total_available: row.stores.reduce(
@@ -143,6 +143,12 @@ function productView(row: ProductRow, role: Role) {
       0,
     ),
   };
+}
+
+// The counter-offers for a product as money, or null when there's no room to haggle.
+function haggleView(row: ProductRow) {
+  const offers = counterOffers(row.price_subunit, row.min_price_subunit, row.currency);
+  return offers && { first: moneyView(offers.first, row.currency), final: moneyView(offers.final, row.currency) };
 }
 
 // Converts an owner-entered amount into subunits, reporting extra decimals as bad input.

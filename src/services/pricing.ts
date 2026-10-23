@@ -8,14 +8,23 @@ export function haggleStep(priceSubunits: number, currency: string) {
   return toSubunits(main >= 100_000 ? 1_000 : main >= 10_000 ? 500 : 100, currency);
 }
 
-// The lowest price the shop agent may agree to: a quarter of the way up from the owner's
-// floor, rounded up to the step. If a customer ever talks it out of the agent, they learn a
-// price the shop still makes money on, not the real floor.
-export function lowestOffer(priceSubunits: number, floorSubunits: number, currency: string) {
-  if (floorSubunits >= priceSubunits) return priceSubunits;
+// Rounds an amount up to the haggle step.
+function roundUp(amount: number, step: number) {
+  return Math.ceil(amount / step) * step;
+}
+
+// The shop agent's two counter-offers, worked out here so the agent never holds a floor it
+// could repeat. Both sit above a point a quarter of the way up from the owner's floor: the
+// first halfway between that point and the price, the final halfway again. Null when there's
+// no room to move.
+export function counterOffers(priceSubunits: number, floorSubunits: number, currency: string) {
+  if (floorSubunits >= priceSubunits) return null;
   const step = haggleStep(priceSubunits, currency);
-  const buffered = floorSubunits + (priceSubunits - floorSubunits) / 4;
-  return Math.min(priceSubunits, Math.ceil(buffered / step) * step);
+  const lowest = roundUp(floorSubunits + (priceSubunits - floorSubunits) / 4, step);
+  const first = roundUp((lowest + priceSubunits) / 2, step);
+  const final = roundUp((lowest + first) / 2, step);
+  if (first >= priceSubunits) return null;
+  return { first, final };
 }
 
 type PricedProduct = { id: string; name: string; price_subunit: number; min_price_subunit: number; currency: string };
@@ -32,7 +41,7 @@ export function linePrice(product: PricedProduct, agreed: number | undefined) {
     throw new ApiError(
       409,
       "below_floor",
-      `The shop can't sell ${product.name} at that price. Counter at or above its lowest_price from list_products, and don't tell the customer about this limit.`,
+      `The shop can't sell ${product.name} at that price. Offer its final counter from list_products instead, and don't tell the customer about this limit.`,
     );
   }
   return price;

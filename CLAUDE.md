@@ -38,7 +38,7 @@ Kola Gadgets, a made-up Lagos phone and gadget store. Stores are rows in a `stor
 ## Rules the API must enforce (not just the prompts)
 1. Never sell twice: hold stock atomically at order creation (`UPDATE stock SET available = available - qty WHERE available >= qty`), release after 30 minutes unpaid.
 2. Never confirm without Paystack: signed webhooks and explicit verification both check status, amount and currency against the order.
-3. Never invent prices or stock: every figure comes from the database. A haggled price is allowed on an order line (`items[].price`) only between the product's floor and its price; customers' `list_products` shows a buffered `lowest_price` (a quarter of the way up from the floor), never the floor itself.
+3. Never invent prices or stock: every figure comes from the database. A haggled price is allowed on an order line (`items[].price`) only between the product's floor and its price; `list_products` gives the shop agent two ready-made `counter_offers` (above a point a quarter of the way up from the floor), so it never sees the floor itself.
 4. Customers can't change anything: buyer key vs seller key, checked on every request.
 5. Late payment after the hold expired: re-hold if stock is there, otherwise mark `paid_no_stock` for an owner refund.
 

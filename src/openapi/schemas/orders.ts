@@ -90,7 +90,7 @@ const Items = z
         .number()
         .positive()
         .optional()
-        .openapi({ description: "Only after haggling: the unit price the customer agreed, in the main unit. Never below lowest_price. Leave out to sell at the list price.", example: 635000 }),
+        .openapi({ description: "Only after haggling: the unit price the customer agreed, in the main unit. Never below counter_offers.final. Leave out to sell at the list price.", example: 635000 }),
     }),
   )
   .min(1)
