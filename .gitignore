@@ -3,3 +3,4 @@ dist/
 .env
 openapi.json
 .env.render
+.DS_Store
