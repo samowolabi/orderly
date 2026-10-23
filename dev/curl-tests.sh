@@ -55,8 +55,9 @@ pay() {
 mode() { curl -s -X POST -H 'content-type: application/json' -d "$1" "$FAKE/_fake/mode" >/dev/null; }
 # Reads an order's newest payment reference from Postgres.
 ref() { $PSQL -c "SELECT payment_references[cardinality(payment_references)] FROM orders WHERE id='$1'"; }
-# Reads an order's total amount in kobo from Postgres.
-amount() { $PSQL -c "SELECT amount_kobo FROM orders WHERE id='$1'"; }
+# Reads an order's total in minor units, and its currency, from Postgres.
+amount() { $PSQL -c "SELECT amount_minor FROM orders WHERE id='$1'"; }
+currency() { $PSQL -c "SELECT currency FROM orders WHERE id='$1'"; }
 # Counts matching event-log rows for an order.
 event_count() { $PSQL -c "SELECT count(*) FROM events WHERE order_id='$1' AND type='$2'"; }
 # Reads available stock for a product at one store.
@@ -71,7 +72,7 @@ call none GET /openapi.json;                 check "OpenAPI exposes 11 Chord too
 echo "== Auth and roles"
 call none GET /stores;                         check "no key is refused" 401 '.ok == false and .error.code == "unauthorized"'
 call wrong-key-0000000000 GET /stores;         check "wrong key is refused" 401
-call "$BUYER" PATCH /products/IP13-128 '{"price_naira":1}'; check "buyer can't change a price" 403 '.error.code == "owner_only"'; msg
+call "$BUYER" PATCH /products/IP13-128 '{"price":1}'; check "buyer can't change a price" 403 '.error.code == "owner_only"'; msg
 call "$BUYER" POST /stores '{"name":"Hack","address":{"line1":"1 Fake Road","area":"Ikeja","city":"Lagos","state":"Lagos"},"hours":[{"days":["mon","tue","wed","thu","fri"],"opens":"08:30","closes":"18:00"},{"days":["sat"],"opens":"10:00","closes":"16:00"}]}'; check "buyer can't add a store" 403
 call "$BUYER" GET /orders;                     check "buyer can't list orders" 403
 call "$SELLER" POST /orders '{"product_id":"IP13-128","store_id":"ikeja","buyer_name":"x"}'; check "seller can't create orders (buyer tool)" 403
@@ -83,9 +84,9 @@ check "Lekki hours text" 200 '.data.stores[1].opening_hours == "Mon to Sat, 10am
 check "structured hours and open_now" 200 '(.data.stores[0].hours | length == 6) and .data.stores[0].hours[0] == {"day":"Monday","opens":"09:00","closes":"19:00"} and (.data.stores | all(.open_now | type == "boolean"))'
 check "structured addresses and map pins" 200 '.data.stores[0].address_details == {"line1":"14 Allen Avenue","line2":null,"area":"Ikeja","city":"Lagos","state":"Lagos","country_code":"NG","postal_code":null,"directions_note":null} and .data.stores[0].location.latitude == 6.604718 and (.data.stores[0].location.map_url | contains("6.604718"))'
 call "$BUYER" GET '/products?q=iphone%2013';   check "search 'iphone 13' finds IP13-128 only" 200 '[.data.products[].id] == ["IP13-128"]'
-check "buyer doesn't see the discount floor" 200 '.data.products[0] | has("min_price_naira") | not'
-check "price shown in naira" 200 '.data.products[0].price_naira == 650000 and .data.products[0].price_display == "₦650,000"'
-call "$SELLER" GET '/products?q=iphone%2013';  check "seller sees the discount floor" 200 '.data.products[0].min_price_naira == 620000'
+check "buyer doesn't see the discount floor" 200 '.data.products[0] | has("min_price") | not'
+check "price comes with its currency" 200 '.data.products[0].price == {"amount":650000,"currency":"NGN","display":"₦650,000"}'
+call "$SELLER" GET '/products?q=iphone%2013';  check "seller sees the discount floor" 200 '.data.products[0].min_price.amount == 620000 and .data.products[0].min_price.currency == "NGN"'
 call "$BUYER" GET '/products?store_id=lekki';  check "filter by store" 200 '[.data.products[].stores[].store_id] | unique == ["lekki"]'
 call "$BUYER" GET '/products?store_id=abuja';  check "unknown store filter" 404 '.error.code == "store_not_found"'
 call "$BUYER" GET '/products?q=100%25';        check "LIKE wildcards are escaped" 200 '.data.products | length == 0'
@@ -124,12 +125,14 @@ call "$BUYER" GET /stores;                              check "list_stores shows
 [ "$($PSQL -c "SELECT count(*) FROM events WHERE type='store_updated'")" = 3 ] && { PASS=$((PASS+1)); echo "  ok    each update is logged"; } || { FAILS=$((FAILS+1)); echo "  FAIL  store_updated events: $($PSQL -c "SELECT count(*) FROM events WHERE type='store_updated'")"; }
 
 echo "== Owner: add_product"
-call "$SELLER" POST /products '{"name":"iPhone 16","variant":"256GB","price_naira":1150000,"stock":[{"store_id":"ikeja","quantity":2},{"store_id":"lekki","quantity":1}]}'
-check "add iPhone 16 256GB" 201 '.data.id == "IPHONE-16-256GB" and .data.total_available == 3 and .data.min_price_naira == 1150000'
-call "$SELLER" POST /products '{"name":"iphone 16","variant":"256gb","price_naira":1}'; check "duplicate by name and variant" 409 '.error.code == "product_exists"'; msg
-call "$SELLER" POST /products '{"name":"Pixel 9","price_naira":900000,"stock":[{"store_id":"abuja","quantity":1}]}'; check "unknown store in stock" 404 '.error.code == "store_not_found"'
-call "$SELLER" POST /products '{"name":"Pixel 9","price_naira":900000,"min_price_naira":950000}'; check "floor above price" 400 '.error.code == "invalid_input"'
-call "$SELLER" POST /products '{"name":"Pixel 9","price_naira":-5}'; check "negative price" 400
+call "$SELLER" POST /products '{"name":"iPhone 16","variant":"256GB","price":1150000,"stock":[{"store_id":"ikeja","quantity":2},{"store_id":"lekki","quantity":1}]}'
+check "add iPhone 16 256GB" 201 '.data.id == "IPHONE-16-256GB" and .data.total_available == 3 and .data.min_price.amount == 1150000 and .data.price.currency == "NGN"'
+call "$SELLER" POST /products '{"name":"iphone 16","variant":"256gb","price":1}'; check "duplicate by name and variant" 409 '.error.code == "product_exists"'; msg
+call "$SELLER" POST /products '{"name":"Pixel 9","price":900000,"stock":[{"store_id":"abuja","quantity":1}]}'; check "unknown store in stock" 404 '.error.code == "store_not_found"'
+call "$SELLER" POST /products '{"name":"Pixel 9","price":900000,"min_price":950000}'; check "floor above price" 400 '.error.code == "invalid_input"'
+call "$SELLER" POST /products '{"name":"Pixel 9","price":-5}'; check "negative price" 400
+call "$SELLER" POST /products '{"name":"Pixel 9","price":900000.555}'; check "more decimals than the currency has" 400 '.error.message_for_agent | test("at most 2 decimal places")'; msg
+call "$SELLER" POST /products '{"name":"Pixel 9","price_naira":900000}'; check "old price_naira field is gone" 400 '.error.message_for_agent | test("price is required")'
 call "$SELLER" POST /products '{bad json'; check "bad JSON" 400 '.error.code == "bad_json"'
 
 echo "== Owner: update_stock and update_price"
@@ -138,14 +141,14 @@ call "$SELLER" POST /products/IPHONE-16-256GB/stock '{"store_id":"lekki","change
 call "$SELLER" POST /products/IPHONE-16-256GB/stock '{"store_id":"lekki","change":1,"set_to":3}'; check "change and set_to together" 400
 call "$SELLER" POST /products/IPHONE-16-256GB/stock '{"store_id":"lekki","set_to":2}'; check "set_to after a count" 200 '.data.available == 2 and .data.on_hand == 2'
 call "$SELLER" POST /products/NOPE/stock '{"store_id":"lekki","change":1}'; check "unknown product" 404
-call "$SELLER" PATCH /products/IP13-128 '{"price_naira":630000}'; check "update price" 200 '.data.old_price_naira == 650000 and .data.product.price_naira == 630000'
-call "$SELLER" PATCH /products/IP13-128 '{"price_naira":600000}'; check "price below floor lowers the floor" 200 '.data.product.min_price_naira == 600000'
-call "$SELLER" PATCH /products/IP13-128 '{"price_naira":650000,"min_price_naira":620000}'; check "restore price and floor" 200 '.data.product.price_naira == 650000'
+call "$SELLER" PATCH /products/IP13-128 '{"price":630000}'; check "update price" 200 '.data.old_price.amount == 650000 and .data.product.price.amount == 630000 and .data.product.price.display == "₦630,000"'
+call "$SELLER" PATCH /products/IP13-128 '{"price":600000}'; check "price below floor lowers the floor" 200 '.data.product.min_price.amount == 600000'
+call "$SELLER" PATCH /products/IP13-128 '{"price":650000,"min_price":620000}'; check "restore price and floor" 200 '.data.product.price.amount == 650000'
 
 echo "== Happy path: order, 'I paid' too early, pay, verify, receipt"
 before=$(stock IP13-128 ikeja)
 call "$BUYER" POST /orders '{"product_id":"ip13-128","store_id":"Ikeja","buyer_name":"Tunde Bakare"}'
-check "create_order" 201 '.data.status == "pending_payment" and (.data.payment_url | startswith("http")) and .data.minutes_left == 30 and .data.amount_naira == 650000'
+check "create_order" 201 '.data.status == "pending_payment" and (.data.payment_url | startswith("http")) and .data.minutes_left == 30 and .data.amount == {"amount":650000,"currency":"NGN","display":"₦650,000"} and .data.unit_price.amount == 650000'
 O1=$(jq -r .data.order_id <<<"$BODY"); echo "        order $O1"
 [ "$(stock IP13-128 ikeja)" = "$((before-1))" ] && { PASS=$((PASS+1)); echo "  ok    stock held ($before -> $((before-1)))"; } || { FAILS=$((FAILS+1)); echo "  FAIL  stock not held"; }
 call "$BUYER" GET "/orders/$O1/receipt";      check "no receipt before payment" 409 '.error.code == "not_paid"'
@@ -153,7 +156,7 @@ call "$BUYER" POST "/orders/$O1/verify";      check "'I've paid' before paying" 
 pay "$O1" '{"outcome":"ongoing"}'
 call "$BUYER" POST "/orders/$O1/verify";      check "payment still processing" 200 '.data.outcome == "payment_processing"'
 pay "$O1"
-call "$BUYER" POST "/orders/$O1/verify";      check "verify after paying" 200 '.data.outcome == "paid" and .data.order.status == "paid" and .data.receipt.total_naira == 650000'
+call "$BUYER" POST "/orders/$O1/verify";      check "verify after paying" 200 '.data.outcome == "paid" and .data.order.status == "paid" and .data.receipt.total.amount == 650000 and .data.receipt.total.currency == "NGN"'
 jq -r .data.receipt.text <<<"$BODY" | sed 's/^/        | /'
 call "$BUYER" POST "/orders/$O1/verify";      check "verify again is idempotent" 200 '.data.outcome == "already_paid"'
 call "$SELLER" GET "/orders/$O1/receipt";     check "owner can get the receipt" 200 '.data.receipt_number == "'"$O1"'"'
@@ -190,9 +193,9 @@ call "$BUYER" POST "/orders/$RACE/verify";    check "late payer gets paid_no_sto
 echo "== Late payment, item still there: re-held"
 call "$BUYER" POST /orders '{"product_id":"A15-128","store_id":"lekki","buyer_name":"Dayo"}'; O2=$(jq -r .data.order_id <<<"$BODY")
 a15=$(stock A15-128 lekki); expire "$O2"
-O2_REF=$(ref "$O2"); O2_AMOUNT=$(amount "$O2")
-WEBHOOK=$(jq -nc --arg reference "$O2_REF" --argjson amount "$O2_AMOUNT" \
-  '{event:"charge.success",data:{status:"success",reference:$reference,amount:$amount,currency:"NGN",channel:"card",paid_at:"2026-10-22T22:00:00.000Z",gateway_response:"Successful"}}')
+O2_REF=$(ref "$O2"); O2_AMOUNT=$(amount "$O2"); O2_CURRENCY=$(currency "$O2")
+WEBHOOK=$(jq -nc --arg reference "$O2_REF" --argjson amount "$O2_AMOUNT" --arg currency "$O2_CURRENCY" \
+  '{event:"charge.success",data:{status:"success",reference:$reference,amount:$amount,currency:$currency,channel:"card",paid_at:"2026-10-22T22:00:00.000Z",gateway_response:"Successful"}}')
 webhook "$WEBHOOK" bad;                        check "invalid webhook signature" 401 '.error.code == "invalid_webhook_signature"'
 webhook "$WEBHOOK";                            check "webhook expires the hold, then re-holds" 200 '.data.outcome == "paid_late_reheld" and .data.order_id == "'"$O2"'"'
 webhook "$WEBHOOK";                            check "repeated webhook is idempotent" 200 '.data.outcome == "already_paid"'
@@ -223,8 +226,14 @@ echo "== Amount mismatch: never confirmed"
 c20=$(stock CAMON20-256 ikeja)
 call "$BUYER" POST /orders '{"product_id":"CAMON20-256","store_id":"ikeja","buyer_name":"Gbenga"}'; O5=$(jq -r .data.order_id <<<"$BODY")
 pay "$O5" '{"outcome":"success","amount":100}'
-call "$BUYER" POST "/orders/$O5/verify";      check "wrong amount is refused" 409 '.ok == false and .error.code == "amount_mismatch"'; msg
+call "$BUYER" POST "/orders/$O5/verify";      check "wrong amount is refused" 409 '.ok == false and .error.code == "amount_mismatch" and (.error.message_for_agent | test("₦1,"))'; msg
 call "$BUYER" GET "/orders/$O5/receipt";      check "no receipt for it" 409
+[ "$(stock CAMON20-256 ikeja)" = "$c20" ] && { PASS=$((PASS+1)); echo "  ok    unit released"; } || { FAILS=$((FAILS+1)); echo "  FAIL  stock: $(stock CAMON20-256 ikeja)"; }
+
+echo "== Right amount, wrong currency: never confirmed"
+call "$BUYER" POST /orders '{"product_id":"CAMON20-256","store_id":"ikeja","buyer_name":"Kemi"}'; O5C=$(jq -r .data.order_id <<<"$BODY")
+pay "$O5C" "{\"outcome\":\"success\",\"amount\":$(amount "$O5C"),\"currency\":\"USD\"}"
+call "$BUYER" POST "/orders/$O5C/verify";     check "USD payment for an NGN order is refused" 409 '.error.code == "amount_mismatch" and (.error.message_for_agent | test("\\$"))'; msg
 [ "$(stock CAMON20-256 ikeja)" = "$c20" ] && { PASS=$((PASS+1)); echo "  ok    unit released"; } || { FAILS=$((FAILS+1)); echo "  FAIL  stock: $(stock CAMON20-256 ikeja)"; }
 
 echo "== Paystack failures"
@@ -239,7 +248,7 @@ mode '{"initialize":"ok"}'
 [ "$(stock ANKER-20K ikeja)" = "$anker" ] && { PASS=$((PASS+1)); echo "  ok    held unit released after link failure"; } || { FAILS=$((FAILS+1)); echo "  FAIL  stock: $(stock ANKER-20K ikeja)"; }
 
 echo "== Owner: list_orders"
-call "$SELLER" GET /orders;                   check "today's orders and summary" 200 '.data.period == "today" and .data.summary.counts.paid == 3 and .data.summary.paid_total_naira == 1640000'
+call "$SELLER" GET /orders;                   check "today's orders and summary" 200 '.data.period == "today" and .data.summary.counts.paid == 3 and .data.summary.paid_totals == [{"amount":1640000,"currency":"NGN","display":"₦1,640,000"}]'
 jq -c '.data.summary' <<<"$BODY" | sed 's/^/        /'
 check "paid_no_stock and mismatch need attention" 200 '[.data.needs_attention[].order_id] | contains(["'"$RACE"'", "'"$O5"'"])'
 call "$SELLER" GET '/orders?status=paid&store_id=lekki'; check "filter by status and store" 200 '[.data.orders[] | .status, .store.id] | unique == ["lekki","paid"]'

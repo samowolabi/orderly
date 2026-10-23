@@ -29,7 +29,8 @@ export type PaymentWebhookEvent =
 
 export type CreateCheckoutInput = {
   reference: string;
-  amountKobo: number;
+  amountMinor: number;
+  currency: string;
   email: string;
   metadata: Record<string, unknown>;
 };

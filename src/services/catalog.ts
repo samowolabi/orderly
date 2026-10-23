@@ -1,8 +1,9 @@
 import { geocodingProvider } from "../adapters";
 import { GeocodingProviderUnavailable } from "../adapters/geocoding-provider";
+import { config } from "../config";
 import { pool, withTransaction } from "../db/pool";
-import { formatNaira, toKobo, toNaira } from "../utils/format";
 import { ApiError } from "../utils/http";
+import { InvalidMoneyAmount, moneyView, toMinor } from "../utils/money";
 import { DAYS, hoursView, toRows, type HourRow, type HoursInputValue } from "../utils/store-hours";
 import {
   addressSearchText,
@@ -19,8 +20,9 @@ type ProductRow = {
   name: string;
   variant: string | null;
 
-  price_kobo: number;
-  min_price_kobo: number;
+  price_minor: number;
+  min_price_minor: number;
+  currency: string;
 
   stores: {
     store_id: string;
@@ -63,8 +65,8 @@ type AddProductInput = {
   name: string;
   variant?: string;
 
-  price_naira: number;
-  min_price_naira?: number;
+  price: number;
+  min_price?: number;
 
   stock: {
     store_id: string;
@@ -80,14 +82,14 @@ type UpdateStockInput = {
 };
 
 type UpdatePriceInput = {
-  price_naira: number;
-  min_price_naira?: number;
+  price: number;
+  min_price?: number;
 };
 
 // Loads active products and their store-level stock using optional filters.
 async function findProducts(db: Db, filters: { productId?: string; storeId?: string; words?: string[] }) {
   const { rows } = await db.query<ProductRow>(
-    `SELECT p.id, p.name, p.variant, p.price_kobo, p.min_price_kobo,
+    `SELECT p.id, p.name, p.variant, p.price_minor, p.min_price_minor, p.currency,
             json_agg(json_build_object('store_id', s.id, 'store_name', s.name, 'available', st.available)
                      ORDER BY s.id) AS stores
      FROM products p
@@ -112,9 +114,8 @@ function productView(row: ProductRow, role: Role) {
     id: row.id,
     name: row.name,
     variant: row.variant,
-    price_naira: toNaira(row.price_kobo),
-    price_display: formatNaira(row.price_kobo),
-    ...(role === "seller" ? { min_price_naira: toNaira(row.min_price_kobo) } : {}),
+    price: moneyView(row.price_minor, row.currency),
+    ...(role === "seller" ? { min_price: moneyView(row.min_price_minor, row.currency) } : {}),
     stores: row.stores,
     total_available: row.stores.reduce(
       // Adds one store's available units to the product total.
@@ -122,6 +123,16 @@ function productView(row: ProductRow, role: Role) {
       0,
     ),
   };
+}
+
+// Converts an owner-entered amount into minor units, reporting extra decimals as bad input.
+function priceToMinor(field: string, amount: number, currency: string) {
+  try {
+    return toMinor(amount, currency);
+  } catch (error) {
+    if (error instanceof InvalidMoneyAmount) throw new ApiError(400, "invalid_input", `${field}: ${error.message}.`);
+    throw error;
+  }
 }
 
 // Loads one product or raises a consistent not-found error.
@@ -348,10 +359,14 @@ export async function addProduct(input: AddProductInput) {
       throw new ApiError(404, "store_not_found", `Unknown store: ${unknown.join(", ")}. Call list_stores for the right ids.`);
     }
 
-    const price = toKobo(input.price_naira);
+    // New products are priced in the business currency; the owner never picks one.
+    const currency = config().BUSINESS_CURRENCY;
+    const price = priceToMinor("price", input.price, currency);
+    const floor = input.min_price === undefined ? price : priceToMinor("min_price", input.min_price, currency);
     await db.query(
-      "INSERT INTO products (id, name, variant, price_kobo, min_price_kobo) VALUES ($1, $2, $3, $4, $5)",
-      [id, input.name, input.variant ?? null, price, input.min_price_naira === undefined ? price : toKobo(input.min_price_naira)],
+      `INSERT INTO products (id, name, variant, price_minor, min_price_minor, currency)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [id, input.name, input.variant ?? null, price, floor, currency],
     );
     // Converts each requested stock row into a store-to-quantity entry.
     const units = new Map(input.stock.map((stock) => [stock.store_id, stock.quantity]));
@@ -362,7 +377,7 @@ export async function addProduct(input: AddProductInput) {
         units.get(storeId) ?? 0,
       ]);
     }
-    await logEvent(db, null, "product_added", { product_id: id, price_kobo: price, stock: Object.fromEntries(units) });
+    await logEvent(db, null, "product_added", { product_id: id, price_minor: price, currency, stock: Object.fromEntries(units) });
     return loadProduct(db, id, "seller");
   });
 }
@@ -415,25 +430,33 @@ export async function updateStock(id: string, input: UpdateStockInput) {
 
 // Changes a product price while keeping its discount floor valid.
 export async function updatePrice(id: string, input: UpdatePriceInput) {
-  const price = toKobo(input.price_naira);
   // Locks the product while updating its price and discount floor.
   const result = await withTransaction(async (db) => {
-    const { rows } = await db.query<{ price_kobo: number; min_price_kobo: number }>(
-      "SELECT price_kobo, min_price_kobo FROM products WHERE id = $1 AND active FOR UPDATE",
+    const { rows } = await db.query<{ price_minor: number; min_price_minor: number; currency: string }>(
+      "SELECT price_minor, min_price_minor, currency FROM products WHERE id = $1 AND active FOR UPDATE",
       [id],
     );
     const old = rows[0];
     if (!old) throw new ApiError(404, "product_not_found", `No product with id ${id}. Call list_products for the right id.`);
 
-    const floor = Math.min(input.min_price_naira === undefined ? old.min_price_kobo : toKobo(input.min_price_naira), price);
-    await db.query("UPDATE products SET price_kobo = $2, min_price_kobo = $3, updated_at = now() WHERE id = $1", [
+    // The new price is in the product's own currency, whatever the business default is now.
+    const price = priceToMinor("price", input.price, old.currency);
+    const requestedFloor = input.min_price === undefined ? old.min_price_minor : priceToMinor("min_price", input.min_price, old.currency);
+    const floor = Math.min(requestedFloor, price);
+    await db.query("UPDATE products SET price_minor = $2, min_price_minor = $3, updated_at = now() WHERE id = $1", [
       id,
       price,
       floor,
     ]);
-    await logEvent(db, null, "price_updated", { product_id: id, from: old.price_kobo, to: price, min_price_kobo: floor });
-    return { old: old.price_kobo, product: await loadProduct(db, id, "seller") };
+    await logEvent(db, null, "price_updated", {
+      product_id: id,
+      currency: old.currency,
+      from: old.price_minor,
+      to: price,
+      min_price_minor: floor,
+    });
+    return { old, product: await loadProduct(db, id, "seller") };
   });
 
-  return { product: result.product, old_price_naira: toNaira(result.old) };
+  return { product: result.product, old_price: moneyView(result.old.price_minor, result.old.currency) };
 }

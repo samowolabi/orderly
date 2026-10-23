@@ -1,5 +1,6 @@
 import { DAYS } from "../../utils/store-hours";
 import { z } from "../registry";
+import { Money, PriceInput } from "./money";
 
 // Builds a trimmed text schema with the requested maximum length.
 const Text = (max: number) => z.string().trim().min(2).max(max);
@@ -8,7 +9,6 @@ const Time = z
   .string()
   .regex(/^([01]\d|2[0-3]):[0-5]\d$/, "use 24-hour HH:MM, e.g. 09:00 or 19:30")
   .openapi({ example: "09:00" });
-const Naira = z.number().positive().max(100_000_000);
 
 export const AddressInput = z
   .object({
@@ -131,9 +131,8 @@ export const Product = z
     id: z.string().openapi({ example: "IP13-128" }),
     name: z.string().openapi({ example: "iPhone 13" }),
     variant: z.string().nullable().openapi({ example: "128GB" }),
-    price_naira: z.number().openapi({ example: 650000 }),
-    price_display: z.string().openapi({ example: "₦650,000" }),
-    min_price_naira: z.number().optional().openapi({
+    price: Money,
+    min_price: Money.optional().openapi({
       description: "Lowest discounted price allowed. Owner only; never shown to customers.",
     }),
     stores: z.array(StoreStock),
@@ -206,17 +205,17 @@ export const AddProductBody = z
       .openapi({ description: "Product code, e.g. IP16-256. Made from name and variant if left out." }),
     name: z.string().trim().min(2).max(80).openapi({ example: "iPhone 16" }),
     variant: z.string().trim().max(60).optional().openapi({ example: "256GB" }),
-    price_naira: Naira.openapi({ example: 1150000 }),
-    min_price_naira: Naira.optional().openapi({ description: "Discount floor. Defaults to the price (no discounts)." }),
+    price: PriceInput.openapi({ description: "In the store's currency, main unit (not minor units)", example: 1150000 }),
+    min_price: PriceInput.optional().openapi({ description: "Discount floor, same currency. Defaults to the price (no discounts)." }),
     stock: z
       .array(z.object({ store_id: z.string(), quantity: z.number().int().min(0).max(10_000) }))
       .default([])
       .openapi({ description: "Starting units per store. Stores left out start at 0." }),
   })
   // Keeps a product's discount floor at or below its selling price.
-  .refine((input) => input.min_price_naira === undefined || input.min_price_naira <= input.price_naira, {
-    message: "min_price_naira can't be above price_naira",
-    path: ["min_price_naira"],
+  .refine((input) => input.min_price === undefined || input.min_price <= input.price, {
+    message: "min_price can't be above price",
+    path: ["min_price"],
   });
 
 export const UpdateStockBody = z
@@ -233,8 +232,8 @@ export const UpdateStockBody = z
   });
 
 export const UpdatePriceBody = z.object({
-  price_naira: Naira.openapi({ example: 630000 }),
-  min_price_naira: Naira.optional().openapi({ description: "New discount floor. Lowered to the price if it would be above it." }),
+  price: PriceInput.openapi({ description: "In the product's currency, main unit (not minor units)", example: 630000 }),
+  min_price: PriceInput.optional().openapi({ description: "New discount floor, same currency. Lowered to the price if it would be above it." }),
 });
 
 export const ProductParams = z.object({ id: z.string().openapi({ example: "IP13-128" }) });

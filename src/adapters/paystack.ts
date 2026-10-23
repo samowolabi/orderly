@@ -65,8 +65,8 @@ export class PaystackAdapter implements PaymentProcessor {
     try {
       result = await this.request("POST", "/transaction/initialize", {
         reference: input.reference,
-        amount: input.amountKobo,
-        currency: "NGN",
+        amount: input.amountMinor,
+        currency: input.currency,
         email: input.email,
         metadata: input.metadata,
       });

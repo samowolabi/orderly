@@ -53,15 +53,15 @@ The API is split into focused modules:
 
 ## Data
 
-Six tables. Stores are rows, not fixed names, so an owner can run any number of them. Addresses are structured and may include coordinates, so agents can quote them consistently and share a map link or WhatsApp pin. Opening hours are rows too, so the API can say whether a store is open now. Money is stored in kobo, which is what Paystack uses; the agents only ever see naira.
+Six tables. Stores are rows, not fixed names, so an owner can run any number of them. Addresses are structured and may include coordinates, so agents can quote them consistently and share a map link or WhatsApp pin. Opening hours are rows too, so the API can say whether a store is open now. Money is stored as integer minor units (kobo for NGN), which is what Paystack expects, always next to its ISO 4217 currency code. New products are priced in `BUSINESS_CURRENCY` (default NGN), an order copies its product's currency, and payment checks compare Paystack's currency to the order's. Only `src/utils/money.ts` knows how big a currency's minor unit is; the API returns every amount as `{ amount, currency, display }` in the main unit.
 
 | Table | Holds | Key columns |
 | --- | --- | --- |
 | stores | Each store or branch | id, name, structured address fields, optional latitude and longitude, active |
 | store_hours | When each store is open, Lagos time | store_id, weekday (1 = Monday), opens, closes; a day with no row is closed |
-| products | What the business sells | id (e.g. IP13-128), name, variant, price_kobo, min_price_kobo |
+| products | What the business sells | id (e.g. IP13-128), name, variant, price_minor, min_price_minor, currency |
 | stock | Units per product per store | product_id, store_id, available (never below 0) |
-| orders | Each purchase | id (e.g. ORD-1042), product_id, store_id, amount_kobo, buyer_name, status, payment_references, paid_reference, expires_at |
+| orders | Each purchase | id (e.g. ORD-1042), product_id, store_id, amount_minor, currency, buyer_name, status, payment_references, paid_reference, expires_at |
 | events | A log of everything that happened | order_id, type, detail, created_at |
 
 The demo seeds Kola Gadgets with two stores, Ikeja and Lekki; the owner can add more by chat. When a new store omits `location`, the API geocodes its structured address through Geoapify before opening the database transaction. Explicit coordinates always win, and `location: null` deliberately creates the store without a pin.

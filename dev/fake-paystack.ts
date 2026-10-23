@@ -4,7 +4,7 @@
 //   PAYSTACK_BASE_URL=http://localhost:4010
 //
 // Drive it with:
-//   POST /_fake/pay/:reference  { "outcome": "success" | "failed" | "ongoing", "amount"?: kobo }
+//   POST /_fake/pay/:reference  { "outcome": "success" | "failed" | "ongoing", "amount"?: minor units, "currency"?: code }
 //   POST /_fake/mode            { "initialize"?: "ok" | "fail", "verify"?: "ok" | "down" }
 //   GET  /_fake/state
 import express from "express";
@@ -72,6 +72,7 @@ app.post("/_fake/pay/:reference", (req, res) => {
   tx.gateway_response = outcome === "success" ? "Approved" : outcome === "failed" ? "Declined" : "Pending";
   tx.paid_at = outcome === "success" ? new Date().toISOString() : null;
   if (Number.isInteger(req.body?.amount)) tx.amount = req.body.amount;
+  if (typeof req.body?.currency === "string") tx.currency = req.body.currency;
   res.json(tx);
 });
 

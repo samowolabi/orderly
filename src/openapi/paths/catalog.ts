@@ -1,4 +1,5 @@
 import * as schema from "../schemas/catalog";
+import { Money } from "../schemas/money";
 import { apiKey, body, errorResponses, json, registry, z } from "../registry";
 
 const security = [{ [apiKey.name]: [] }];
@@ -102,7 +103,7 @@ registry.registerPath({
   security,
   request: { params: schema.ProductParams, body: body(schema.UpdatePriceBody) },
   responses: {
-    200: json(z.object({ product: schema.Product, old_price_naira: z.number() }), "The updated product"),
+    200: json(z.object({ product: schema.Product, old_price: Money }), "The updated product"),
     ...errorResponses,
   },
 });

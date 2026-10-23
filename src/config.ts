@@ -1,6 +1,9 @@
 import "dotenv/config";
 import { z } from "zod";
 
+// Validates BUSINESS_CURRENCY at startup; kept here so config has no app imports.
+const isCurrencyCode = (code: string) => Intl.supportedValuesOf("currency").includes(code);
+
 const Env = z.object({
   DATABASE_URL: z.string().url(),
 
@@ -16,6 +19,14 @@ const Env = z.object({
   SELLER_API_KEY: z.string().min(16),
 
   BUSINESS_NAME: z.string().default("Kola Gadgets"),
+  // Currency new products are priced in, and the locale prices are shown in.
+  BUSINESS_CURRENCY: z
+    .string()
+    .trim()
+    .toUpperCase()
+    .default("NGN")
+    .refine(isCurrencyCode, "use an ISO 4217 currency code, e.g. NGN"),
+  BUSINESS_LOCALE: z.string().default("en-NG"),
   HOLD_MINUTES: z.coerce.number().int().positive().default(30),
 
   // Base URL written into the OpenAPI spec's servers list.

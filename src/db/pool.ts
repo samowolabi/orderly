@@ -1,7 +1,7 @@
 import "dotenv/config";
 import pg from "pg";
 
-// Money columns are bigint (kobo). pg returns int8 as a string by default;
+// Money columns are bigint minor units (see utils/money.ts). pg returns int8 as a string by default;
 // every value we store fits comfortably in a JS number.
 // Converts Postgres bigint values into safe JavaScript numbers for money fields.
 pg.types.setTypeParser(pg.types.builtins.INT8, (v) => Number(v));

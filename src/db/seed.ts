@@ -1,11 +1,13 @@
+import { toMinor } from "../utils/money";
 import { toRows } from "../utils/store-hours";
 import type { AddressInputValue, CoordinatesInputValue } from "../utils/store-location";
 import { pool, withTransaction } from "./pool";
 
 // Kola Gadgets: a made-up Lagos phone and gadget store. All data is fictional.
 
-// Converts seed prices from naira into stored kobo values.
-const naira = (n: number) => n * 100;
+// The demo prices are Lagos prices, so the seed states its currency as data
+// rather than taking BUSINESS_CURRENCY (a USD config would otherwise get $650,000 iPhones).
+const SEED_CURRENCY = "NGN";
 
 type SeedStore = {
   id: string;
@@ -96,9 +98,9 @@ async function seed() {
 
     for (const p of products) {
       await db.query(
-        `INSERT INTO products (id, name, variant, price_kobo, min_price_kobo)
-         VALUES ($1, $2, $3, $4, $5)`,
-        [p.id, p.name, p.variant, naira(p.price), naira(p.floor)],
+        `INSERT INTO products (id, name, variant, price_minor, min_price_minor, currency)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [p.id, p.name, p.variant, toMinor(p.price, SEED_CURRENCY), toMinor(p.floor, SEED_CURRENCY), SEED_CURRENCY],
       );
       for (const s of stores) {
         const units = (p.stock as Record<string, number>)[s.id] ?? 0;

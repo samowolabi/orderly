@@ -1,3 +1,4 @@
+import { Money } from "../schemas/money";
 import * as schema from "../schemas/orders";
 import { apiKey, body, errorResponses, json, paymentErrorResponses, registry, z } from "../registry";
 
@@ -69,8 +70,7 @@ registry.registerPath({
         period: z.string(),
         summary: z.object({
           counts: z.record(z.string(), z.number().int()),
-          paid_total_naira: z.number(),
-          paid_total_display: z.string(),
+          paid_totals: z.array(Money).openapi({ description: "Paid sales, one entry per currency" }),
         }),
         needs_attention: z.array(
           z.object({ order_id: z.string(), status: schema.OrderStatus, reason: z.string() }),

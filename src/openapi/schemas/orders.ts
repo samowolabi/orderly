@@ -1,4 +1,5 @@
 import { z } from "../registry";
+import { Money } from "./money";
 
 export const OrderStatus = z.enum(["pending_payment", "paid", "failed", "expired", "paid_no_stock", "handed_over"]);
 
@@ -9,9 +10,8 @@ export const Order = z
     product: z.object({ id: z.string(), name: z.string(), variant: z.string().nullable() }),
     store: z.object({ id: z.string(), name: z.string() }),
     quantity: z.number().int(),
-    unit_price_naira: z.number(),
-    amount_naira: z.number(),
-    amount_display: z.string().openapi({ example: "₦650,000" }),
+    unit_price: Money,
+    amount: Money,
     buyer_name: z.string(),
     payment_url: z.string().nullable().openapi({ description: "Paystack page to pay on. Only set while waiting for payment." }),
     expires_at: z.string().openapi({ description: "When the hold ends (ISO time)" }),
@@ -29,9 +29,8 @@ export const Receipt = z
     store: z.object({ name: z.string(), address: z.string() }),
     item: z.string().openapi({ example: "iPhone 13 (128GB)" }),
     quantity: z.number().int(),
-    unit_price_naira: z.number(),
-    total_naira: z.number(),
-    total_display: z.string(),
+    unit_price: Money,
+    total: Money,
     buyer_name: z.string(),
     paid_at: z.string(),
     paid_at_display: z.string().openapi({ description: "Lagos time" }),
