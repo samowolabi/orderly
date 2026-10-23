@@ -58,6 +58,15 @@ Every response has the shape `{ ok, data, error: { code, message_for_agent } }`.
 - `POST /webhooks/paystack` is Paystack infrastructure, not a Chord tool, so it must stay out of OpenAPI. It needs the raw request body to validate `x-paystack-signature` before processing JSON.
 - Curl tests: `npm run fake-paystack` (a local stand-in on :4010 that can decline, fail or go down on demand), start the API with `PAYSTACK_BASE_URL=http://localhost:4010 npm run dev`, run `npm run db:seed`, then `npm run test:api` (set `API=http://localhost:<port>` to test a server on another port). Then repeat the happy path against real Paystack test mode.
 
+## Deploy (Railway)
+Railway's `railway.json` is deprecated and its replacement needs the Railway CLI, so these settings live in the service dashboard:
+- Postgres: add Railway's PostgreSQL service and set `DATABASE_URL=${{Postgres.DATABASE_URL}}` on the API service.
+- Pre-deploy command: `npm run db:migrate:prod` (runs the built migrator, so it works without dev dependencies; a failed migration stops the deploy).
+- Build `npm run build`, start `npm start`, healthcheck path `/health`.
+- Variables: `BUYER_API_KEY`, `SELLER_API_KEY` (new ones, not the local keys), `PAYSTACK_SECRET_KEY`, `GEOAPIFY_API_KEY`, `BUSINESS_NAME`, and `PUBLIC_URL` set to the Railway https domain.
+- Seed once from a laptop with the Postgres public URL: `DATABASE_URL='<public url>' npm run db:seed`. Never in a deploy step.
+- Paystack test webhook URL: `https://<domain>/webhooks/paystack`.
+
 ## Build order
 1. Database and seed data
 2. Tier 1 endpoints, tested with curl including failure cases
