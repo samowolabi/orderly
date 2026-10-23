@@ -8,8 +8,12 @@ import {
   type PaymentTransaction,
   type PaymentWebhookEvent,
 } from "./payment-processor";
+import { retry } from "../../utils/retry";
 
-const TIMEOUT_MS = 10_000;
+// Short enough that a retry still fits inside a Chord tool call.
+const TIMEOUT_MS = 5_000;
+// Checking a payment is a read, so it's safe to repeat: up to 3 tries within about 8 seconds.
+const VERIFY_RETRY = { attempts: 3, baseDelayMs: 300, maxDelayMs: 1_500, budgetMs: 8_000 };
 
 export class PaystackAdapter implements PaymentProcessor {
   readonly name = "Paystack";
@@ -77,39 +81,43 @@ export class PaystackAdapter implements PaymentProcessor {
 
     const url = result.body?.data?.authorization_url;
     if (result.httpStatus !== 200 || !result.body?.status || typeof url !== "string") {
-      throw new PaymentProcessorUnavailable(`initialize: HTTP ${result.httpStatus} ${result.body?.message ?? ""}`.trim());
+      // Paystack's 5xx may clear on a retry; a 4xx means it refused this request.
+      throw new PaymentProcessorUnavailable(
+        `initialize: HTTP ${result.httpStatus} ${result.body?.message ?? ""}`.trim(),
+        result.httpStatus >= 500,
+      );
     }
 
     return { checkoutUrl: url };
   }
 
-  // Verifies a Paystack reference with one retry for transient failures.
+  // Verifies a Paystack reference, retrying timeouts and 5xx replies with backoff.
   async verifyTransaction(reference: string): Promise<PaymentTransaction | null> {
-    let lastError = "";
-
-    for (let attempt = 0; attempt < 2; attempt++) {
-      try {
-        const { httpStatus, body } = await this.request("GET", `/transaction/verify/${encodeURIComponent(reference)}`);
-        if (httpStatus >= 500) {
-          lastError = `HTTP ${httpStatus}`;
-          continue;
+    return retry(
+      async () => {
+        let result;
+        try {
+          result = await this.request("GET", `/transaction/verify/${encodeURIComponent(reference)}`);
+        } catch (error) {
+          throw new PaymentProcessorUnavailable(`verify: ${(error as Error).message}`);
         }
-        if (httpStatus === 401) throw new PaymentProcessorUnavailable("verify: Paystack rejected the secret key");
+        const { httpStatus, body } = result;
+        if (httpStatus >= 500) throw new PaymentProcessorUnavailable(`verify: HTTP ${httpStatus}`);
+        if (httpStatus === 401) throw new PaymentProcessorUnavailable("verify: Paystack rejected the secret key", false);
         if (httpStatus === 400 || httpStatus === 404) return null;
 
         const transaction = body?.data;
         if (!body?.status || !transaction) {
-          throw new PaymentProcessorUnavailable(`verify: unexpected response ${httpStatus}`);
+          throw new PaymentProcessorUnavailable(`verify: unexpected response ${httpStatus}`, false);
         }
-
         return this.transactionFromData(transaction);
-      } catch (error) {
-        if (error instanceof PaymentProcessorUnavailable) throw error;
-        lastError = (error as Error).message;
-      }
-    }
-
-    throw new PaymentProcessorUnavailable(`verify: ${lastError}`);
+      },
+      {
+        ...VERIFY_RETRY,
+        retryOn: (error) => error instanceof PaymentProcessorUnavailable && error.retryable,
+        onRetry: (error, attempt, delay) => console.warn(`[paystack] verify try ${attempt} failed (${(error as Error).message}); retrying in ${delay}ms`),
+      },
+    );
   }
 
   // Validates and normalizes transaction data returned by Paystack.

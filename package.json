@@ -19,6 +19,7 @@
     "test:geocoding": "tsx dev/geocoding-tests.ts",
     "test:hours": "tsx dev/hours-tests.ts",
     "test:location": "tsx dev/location-tests.ts",
+    "test:retry": "tsx dev/retry-tests.ts",
     "db:create": "bash dev/create-local-db.sh"
   },
   "author": "Samuel Owolabi",

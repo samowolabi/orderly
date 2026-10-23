@@ -12,6 +12,7 @@ import { ApiError } from "../utils/http";
 import { formatMoney, moneyView } from "../utils/money";
 import { formatAddress, type AddressRow } from "../utils/store-location";
 import { claimDeliveryQuote, deliveryMinutes, distanceKm } from "./delivery";
+import { retry } from "../utils/retry";
 import { linePrice } from "./pricing";
 import { expireStaleOrders, failOrder, holdItems, logEvent, mergeItems, whenStockFrees, type Db, type HoldItem, type StoreLine } from "./stock";
 
@@ -310,18 +311,33 @@ const placeholderEmail = (buyerName: string, orderId: string) =>
 // Creates a unique Paystack reference for one payment attempt.
 const newReference = (orderId: string) => `${orderId}-${randomBytes(3).toString("hex")}`;
 
+// Making a link isn't a pure read, so each try uses a fresh reference: a try that timed
+// out but reached the processor leaves an unused transaction there, never a duplicate.
+const LINK_RETRY = { attempts: 3, baseDelayMs: 500, maxDelayMs: 2_000, budgetMs: 8_000 };
+
 // Initializes the payment processor and attaches its checkout link to an order.
 async function attachPaymentLink(
   order: Pick<OrderRow, "id" | "store_id" | "amount_subunit" | "currency" | "buyer_name" | "buyer_email">,
 ) {
-  const reference = newReference(order.id);
-  const { checkoutUrl } = await paymentProcessor.createCheckout({
-    reference,
-    amountSubunits: order.amount_subunit,
-    currency: order.currency,
-    email: order.buyer_email ?? placeholderEmail(order.buyer_name, order.id),
-    metadata: { order_id: order.id, store_id: order.store_id },
-  });
+  const { reference, checkoutUrl } = await retry(
+    async () => {
+      const reference = newReference(order.id);
+      const { checkoutUrl } = await paymentProcessor.createCheckout({
+        reference,
+        amountSubunits: order.amount_subunit,
+        currency: order.currency,
+        email: order.buyer_email ?? placeholderEmail(order.buyer_name, order.id),
+        metadata: { order_id: order.id, store_id: order.store_id },
+      });
+      return { reference, checkoutUrl };
+    },
+    {
+      ...LINK_RETRY,
+      retryOn: (error) => error instanceof PaymentProcessorUnavailable && error.retryable,
+      onRetry: (error, attempt, delay) =>
+        console.warn(`[paystack] ${order.id}: link try ${attempt} failed (${(error as Error).message}); retrying in ${delay}ms`),
+    },
+  );
   await pool.query(
     `UPDATE orders SET payment_url = $2, payment_references = array_append(payment_references, $3), updated_at = now()
      WHERE id = $1`,

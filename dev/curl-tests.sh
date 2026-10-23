@@ -456,8 +456,23 @@ call "$BUYER" POST /orders '{"items":[{"product_id":"ANKER-20K"}],"store_id":"ik
 mode '{"initialize":"ok"}'
 [ "$(stock ANKER-20K ikeja)" = "$anker" ] && { PASS=$((PASS+1)); echo "  ok    held unit released after link failure"; } || { FAILS=$((FAILS+1)); echo "  FAIL  stock: $(stock ANKER-20K ikeja)"; }
 
+echo "== Paystack blips: retried, then fine"
+mode '{"fail_next":{"initialize":1}}'
+call "$BUYER" POST /orders '{"items":[{"product_id":"ANKER-20K"}],"store_id":"ikeja","buyer_name":"Tobi"}'
+check "one failed link attempt is retried with a fresh reference" 201 '.data.payment_url | startswith("http")'
+OB=$(jq -r .data.order_id <<<"$BODY")
+[ "$($PSQL -c "SELECT cardinality(payment_references) FROM orders WHERE id='$OB'")" = 1 ] && { PASS=$((PASS+1)); echo "  ok    only the working reference is kept"; } || { FAILS=$((FAILS+1)); echo "  FAIL  references kept"; }
+pay "$OB"
+mode '{"fail_next":{"verify":2}}'
+call "$BUYER" POST "/orders/$OB/verify"
+check "two failed checks are retried, then it's confirmed" 200 '.data.outcome == "paid"'
+mode '{"fail_next":{"initialize":5}}'
+call "$BUYER" POST /orders '{"items":[{"product_id":"ANKER-20K"}],"store_id":"ikeja","buyer_name":"Tobi"}'
+check "a longer outage still fails cleanly after the retries" 502 '.error.code == "payment_link_failed"'
+mode '{"fail_next":{"initialize":0}}'
+
 echo "== Owner: list_orders"
-call "$SELLER" GET /orders;                   check "today's orders and summary" 200 '.data.period == "today" and .data.summary.counts.paid == 8 and .data.summary.paid_totals == [{"amount":4004600,"currency":"NGN","display":"₦4,004,600"}]'
+call "$SELLER" GET /orders;                   check "today's orders and summary" 200 '.data.period == "today" and .data.summary.counts.paid == 9 and .data.summary.paid_totals == [{"amount":4049600,"currency":"NGN","display":"₦4,049,600"}]'
 check "list_orders shows each order's lines" 200 '[.data.orders[] | select(.order_id == "'"$OM"'") | .items[].product.id] == ["IP14-128", "ANKER-20K"]'
 jq -c '.data.summary' <<<"$BODY" | sed 's/^/        /'
 check "paid_no_stock and mismatch need attention" 200 '[.data.needs_attention[].order_id] | contains(["'"$RACE"'", "'"$O5"'"])'

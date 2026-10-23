@@ -3,7 +3,8 @@
 //
 // Control endpoints:
 //   POST /_fake/pay/:reference  { "outcome": "success" | "failed" | "ongoing", "amount"?: subunits, "currency"?: code }
-//   POST /_fake/mode            { "initialize"?: "ok" | "fail", "verify"?: "ok" | "down" }
+//   POST /_fake/mode            { "initialize"?: "ok" | "fail", "verify"?: "ok" | "down",
+//                                 "fail_next"?: { "initialize"?: n, "verify"?: n } }  (the next n calls get a 503, then it recovers)
 //   GET  /_fake/state
 import express from "express";
 
@@ -25,6 +26,15 @@ type Tx = {
 const PORT = Number(process.env.FAKE_PAYSTACK_PORT ?? 4010);
 const txs = new Map<string, Tx>();
 const mode = { initialize: "ok", verify: "ok" };
+// Calls still to fail before the endpoint recovers, for testing retries.
+const failNext = { initialize: 0, verify: 0 };
+
+// Uses up one queued failure for an endpoint, if any are left.
+function failingNow(endpoint: keyof typeof failNext) {
+  if (failNext[endpoint] <= 0) return false;
+  failNext[endpoint]--;
+  return true;
+}
 const app = express();
 app.use(express.json());
 
@@ -38,7 +48,7 @@ app.use("/transaction", (req, res, next) => {
 
 // Creates an in-memory fake transaction and checkout URL.
 app.post("/transaction/initialize", (req, res) => {
-  if (mode.initialize === "fail") return res.status(503).json({ status: false, message: "Service unavailable" });
+  if (mode.initialize === "fail" || failingNow("initialize")) return res.status(503).json({ status: false, message: "Service unavailable" });
   const { reference, amount, email, currency = "NGN" } = req.body ?? {};
   if (!reference || !Number.isInteger(amount) || !email) {
     return res.status(400).json({ status: false, message: "reference, amount and email are required" });
@@ -54,7 +64,7 @@ app.post("/transaction/initialize", (req, res) => {
 
 // Returns the current state of a fake transaction reference.
 app.get("/transaction/verify/:reference", (req, res) => {
-  if (mode.verify === "down") return res.status(503).json({ status: false, message: "Service unavailable" });
+  if (mode.verify === "down" || failingNow("verify")) return res.status(503).json({ status: false, message: "Service unavailable" });
   const tx = txs.get(req.params.reference);
   if (!tx) return res.status(400).json({ status: false, message: "Transaction reference not found" });
   res.json({ status: true, message: "Verification successful", data: { id: 1, ...tx } });
@@ -76,8 +86,10 @@ app.post("/_fake/pay/:reference", (req, res) => {
 
 // Changes fake initialization and verification failure modes.
 app.post("/_fake/mode", (req, res) => {
-  Object.assign(mode, req.body ?? {});
-  res.json(mode);
+  const { fail_next: next, ...rest } = req.body ?? {};
+  Object.assign(mode, rest);
+  Object.assign(failNext, next ?? {});
+  res.json({ ...mode, fail_next: failNext });
 });
 
 // Exposes fake Paystack state for local debugging.

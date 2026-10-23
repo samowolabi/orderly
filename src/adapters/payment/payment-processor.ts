@@ -1,4 +1,12 @@
-export class PaymentProcessorUnavailable extends Error {}
+export class PaymentProcessorUnavailable extends Error {
+  // retryable is false when trying again can't help, e.g. a rejected key or a refused request.
+  constructor(
+    message: string,
+    readonly retryable = true,
+  ) {
+    super(message);
+  }
+}
 
 export class InvalidPaymentPayload extends Error {
   // Creates a provider-independent validation error for malformed payment data.
