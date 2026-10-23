@@ -77,7 +77,7 @@ call wrong-key-0000000000 GET /stores;         check "wrong key is refused" 401
 call "$BUYER" PATCH /products/IP13-128 '{"price":1}'; check "buyer can't change a price" 403 '.error.code == "owner_only"'; msg
 call "$BUYER" POST /stores '{"name":"Hack","address":{"line1":"1 Fake Road","area":"Ikeja","city":"Lagos","state":"Lagos"},"hours":[{"days":["mon","tue","wed","thu","fri"],"opens":"08:30","closes":"18:00"},{"days":["sat"],"opens":"10:00","closes":"16:00"}]}'; check "buyer can't add a store" 403
 call "$BUYER" GET /orders;                     check "buyer can't list orders" 403
-call "$SELLER" POST /orders '{"product_id":"IP13-128","store_id":"ikeja","buyer_name":"x"}'; check "seller can't create orders (buyer tool)" 403
+call "$SELLER" POST /orders '{"items":[{"product_id":"IP13-128"}],"store_id":"ikeja","buyer_name":"x"}'; check "seller can't create orders (buyer tool)" 403
 
 echo "== Catalog reads"
 call "$BUYER" GET /stores;                     check "list_stores" 200 '.data.stores | length == 2'
@@ -176,14 +176,14 @@ call "$SELLER" PATCH /products/IPHONE-16-256GB '{"name":"iPhone 13","variant":"1
 call "$SELLER" PATCH /products/IPHONE-16-256GB '{"name":"iPhone 16","variant":"256GB"}'; check "rename back" 200 '.data.product.variant == "256GB"'
 call "$SELLER" PATCH /products/IPHONE-16-256GB '{"active":false}';                      check "take off sale" 200 '.data.product.active == false and .data.previous.active == true'
 call "$BUYER" GET '/products?q=iphone%2016';                                            check "customers no longer see it" 200 '.data.products | length == 0'
-call "$BUYER" POST /orders '{"product_id":"IPHONE-16-256GB","store_id":"ikeja","buyer_name":"A"}'; check "and can't order it" 404 '.error.code == "product_not_found"'
+call "$BUYER" POST /orders '{"items":[{"product_id":"IPHONE-16-256GB"}],"store_id":"ikeja","buyer_name":"A"}'; check "and can't order it" 404 '.error.code == "product_not_found"'
 call "$SELLER" GET '/products?q=iphone%2016';                                           check "owner still sees it, marked off sale" 200 '[.data.products[] | .active] == [false]'
 call "$SELLER" PATCH /products/IPHONE-16-256GB '{"active":true}';                       check "back on sale" 200 '.data.product.active == true'
 call "$BUYER" PATCH /products/IPHONE-16-256GB '{"active":false}';                       check "buyer can't take it off sale" 403
 
 echo "== Happy path: order, 'I paid' too early, pay, verify, receipt"
 before=$(stock IP13-128 ikeja)
-call "$BUYER" POST /orders '{"product_id":"ip13-128","store_id":"Ikeja","buyer_name":"Tunde Bakare"}'
+call "$BUYER" POST /orders '{"items":[{"product_id":"ip13-128"}],"store_id":"Ikeja","buyer_name":"Tunde Bakare"}'
 check "create_order" 201 '.data.status == "pending_payment" and (.data.payment_url | startswith("http")) and .data.minutes_left == 30 and .data.amount == {"amount":650000,"currency":"NGN","display":"₦650,000"} and .data.items == [{"product":{"id":"IP13-128","name":"iPhone 13","variant":"128GB"},"quantity":1,"unit_price":{"amount":650000,"currency":"NGN","display":"₦650,000"},"amount":{"amount":650000,"currency":"NGN","display":"₦650,000"}}]'
 O1=$(jq -r .data.order_id <<<"$BODY"); echo "        order $O1"
 check "payment checks: 20s, doubling, last a minute before expiry, one nudge" 201 '(.data.created_at | sub("\\.[0-9]+Z$"; "Z") | fromdate) as $t0 | (.data.expires_at | sub("\\.[0-9]+Z$"; "Z") | fromdate) as $end | [.data.payment_checks[].at | sub("\\.[0-9]+Z$"; "Z") | fromdate - $t0] == [20, 40, 80, 160, 320, 640, 1280, ($end - $t0 - 60)] and ([.data.payment_checks[] | select(.nudge)] | length == 1) and (.data.payment_checks[6].nudge)'
@@ -225,8 +225,7 @@ ip14=$(stock IP14-128 ikeja)
 call "$BUYER" POST /orders '{"items":[{"product_id":"IP14-128"},{"product_id":"AIRPODS-PRO2"}],"store_id":"ikeja","buyer_name":"Obi"}'
 check "one item short: nothing is held" 409 '.error.code == "out_of_stock" and (.error.message_for_agent | test("Nothing in this order was held")) and (.error.message_for_agent | test("AirPods"))'; msg
 eq "iPhone 14 not held" "$(stock IP14-128 ikeja)" "$ip14"
-call "$BUYER" POST /orders '{"items":[{"product_id":"IP14-128"}],"product_id":"ANKER-20K","store_id":"ikeja","buyer_name":"A"}'; check "items and product_id together" 400; msg
-call "$BUYER" POST /orders '{"store_id":"ikeja","buyer_name":"A"}'; check "neither items nor product_id" 400
+call "$BUYER" POST /orders '{"product_id":"IP14-128","store_id":"ikeja","buyer_name":"A"}'; check "product_id without items is refused" 400 '.error.message_for_agent | test("items")'; msg
 call "$BUYER" POST /orders '{"items":[],"store_id":"ikeja","buyer_name":"A"}'; check "empty items" 400
 call "$BUYER" POST /orders '{"items":[{"product_id":"ANKER-20K"},{"product_id":"anker-20k"}],"store_id":"ikeja","buyer_name":"Pat"}'
 check "the same product twice becomes one line of 2" 201 '(.data.items | length) == 1 and .data.items[0].quantity == 2 and .data.amount.amount == 90000'
@@ -253,20 +252,20 @@ eq "power bank not re-held when the iPhone is gone" "$(stock ANKER-20K ikeja)" "
 $PSQL -c "UPDATE stock SET available = $ip14_left WHERE product_id='IP14-128' AND store_id='ikeja'"
 
 echo "== Bad order input"
-call "$BUYER" POST /orders '{"product_id":"IP13-128","store_id":"ikeja"}'; check "missing buyer_name" 400 '.error.message_for_agent | test("buyer_name is required")'; msg
-call "$BUYER" POST /orders '{"product_id":"IP13-128","store_id":"ikeja","buyer_name":"A","quantity":0}'; check "quantity 0" 400
-call "$BUYER" POST /orders '{"product_id":"NOPE","store_id":"ikeja","buyer_name":"A"}'; check "unknown product" 404 '.error.code == "product_not_found"'
-call "$BUYER" POST /orders '{"product_id":"AIRPODS-PRO2","store_id":"ikeja","buyer_name":"A"}'; check "out of stock here, offers Lekki" 409 '.error.code == "out_of_stock" and (.error.message_for_agent | test("Lekki"))'; msg
-call "$BUYER" POST /orders '{"product_id":"IP13-128","store_id":"lekki","buyer_name":"A","quantity":5}'; check "not enough units" 409 '.error.code == "out_of_stock"'
-call "$BUYER" POST /orders '{"product_id":"IP13-128","store_id":"lekki","buyer_name":"Femi"}'; check "first buyer holds Lekki's only unit" 201
-call "$BUYER" POST /orders '{"product_id":"IP13-128","store_id":"lekki","buyer_name":"Gozie"}'
+call "$BUYER" POST /orders '{"items":[{"product_id":"IP13-128"}],"store_id":"ikeja"}'; check "missing buyer_name" 400 '.error.message_for_agent | test("buyer_name is required")'; msg
+call "$BUYER" POST /orders '{"items":[{"product_id":"IP13-128","quantity":0}],"store_id":"ikeja","buyer_name":"A"}'; check "quantity 0" 400
+call "$BUYER" POST /orders '{"items":[{"product_id":"NOPE"}],"store_id":"ikeja","buyer_name":"A"}'; check "unknown product" 404 '.error.code == "product_not_found"'
+call "$BUYER" POST /orders '{"items":[{"product_id":"AIRPODS-PRO2"}],"store_id":"ikeja","buyer_name":"A"}'; check "out of stock here, offers Lekki" 409 '.error.code == "out_of_stock" and (.error.message_for_agent | test("Lekki"))'; msg
+call "$BUYER" POST /orders '{"items":[{"product_id":"IP13-128","quantity":5}],"store_id":"lekki","buyer_name":"A"}'; check "not enough units" 409 '.error.code == "out_of_stock"'
+call "$BUYER" POST /orders '{"items":[{"product_id":"IP13-128"}],"store_id":"lekki","buyer_name":"Femi"}'; check "first buyer holds Lekki's only unit" 201
+call "$BUYER" POST /orders '{"items":[{"product_id":"IP13-128"}],"store_id":"lekki","buyer_name":"Gozie"}'
 check "second buyer hears it's reserved, not sold out, and when" 409 '.error.code == "reserved" and (.error.message_for_agent | test("comes back at about [0-9]")) and (.error.message_for_agent | test("Kola Gadgets Ikeja"))'; msg
 call "$BUYER" POST /orders/ORD-9999/verify;   check "unknown order" 404 '.error.code == "order_not_found"'
 
 echo "== Never sell twice: two buyers, last unit, at the same moment"
 for who in Ada Bola; do
   curl -s -o "/tmp/claude-501/race-$who.json" -w '%{http_code}\n' -X POST -H "X-Api-Key: $BUYER" -H 'content-type: application/json' \
-    -d "{\"product_id\":\"IP15P-256\",\"store_id\":\"ikeja\",\"buyer_name\":\"$who\"}" "$API/orders" &
+    -d "{\"items\":[{\"product_id\":\"IP15P-256\"}],\"store_id\":\"ikeja\",\"buyer_name\":\"$who\"}" "$API/orders" &
 done > /tmp/claude-501/race-codes.txt; wait
 codes=$(sort /tmp/claude-501/race-codes.txt | tr '\n' ' ')
 [ "$codes" = "201 409 " ] && { PASS=$((PASS+1)); echo "  ok    one 201, one 409 ($codes)"; } || { FAILS=$((FAILS+1)); echo "  FAIL  race codes: $codes"; }
@@ -279,13 +278,13 @@ echo "== Late payment, item gone: paid_no_stock"
 expire "$RACE"
 call "$BUYER" GET '/products?product_id=IP15P-256'; check "expired hold returns the unit" 200 '.data.products[0].total_available == 1'
 call "$BUYER" POST "/orders/$RACE/verify";    check "verify after expiry, unpaid" 200 '.data.outcome == "expired"'; msg
-call "$BUYER" POST /orders '{"product_id":"IP15P-256","store_id":"ikeja","buyer_name":"Chika"}'; check "someone else takes the unit" 201
+call "$BUYER" POST /orders '{"items":[{"product_id":"IP15P-256"}],"store_id":"ikeja","buyer_name":"Chika"}'; check "someone else takes the unit" 201
 pay "$RACE"
 call "$BUYER" POST "/orders/$RACE/verify";    check "late payer gets paid_no_stock" 200 '.data.outcome == "paid_no_stock" and .data.receipt == null'; msg
 [ "$(stock IP15P-256 ikeja)" = "0" ] && { PASS=$((PASS+1)); echo "  ok    still not oversold"; } || { FAILS=$((FAILS+1)); echo "  FAIL  stock: $(stock IP15P-256 ikeja)"; }
 
 echo "== Late payment, item still there: re-held"
-call "$BUYER" POST /orders '{"product_id":"A15-128","store_id":"lekki","buyer_name":"Dayo"}'; O2=$(jq -r .data.order_id <<<"$BODY")
+call "$BUYER" POST /orders '{"items":[{"product_id":"A15-128"}],"store_id":"lekki","buyer_name":"Dayo"}'; O2=$(jq -r .data.order_id <<<"$BODY")
 a15=$(stock A15-128 lekki); expire "$O2"
 O2_REF=$(ref "$O2"); O2_AMOUNT=$(amount "$O2"); O2_CURRENCY=$(currency "$O2")
 WEBHOOK=$(jq -nc --arg reference "$O2_REF" --argjson amount "$O2_AMOUNT" --arg currency "$O2_CURRENCY" \
@@ -301,7 +300,7 @@ call "$BUYER" POST "/orders/$O2/verify";      check "verify sees webhook-confirm
 [ "$(stock A15-128 lekki)" = "$a15" ] && { PASS=$((PASS+1)); echo "  ok    unit taken again on late payment"; } || { FAILS=$((FAILS+1)); echo "  FAIL  stock: $(stock A15-128 lekki), wanted $a15"; }
 
 echo "== Declined card: new link, then success on the new link"
-call "$BUYER" POST /orders '{"product_id":"S23-256","store_id":"lekki","buyer_name":"Emeka"}'; O3=$(jq -r .data.order_id <<<"$BODY"); url1=$(jq -r .data.payment_url <<<"$BODY")
+call "$BUYER" POST /orders '{"items":[{"product_id":"S23-256"}],"store_id":"lekki","buyer_name":"Emeka"}'; O3=$(jq -r .data.order_id <<<"$BODY"); url1=$(jq -r .data.payment_url <<<"$BODY")
 ref1=$(ref "$O3" | tr -d "\n")
 pay "$O3" '{"outcome":"failed"}'
 call "$BUYER" POST "/orders/$O3/verify";      check "declined gives a new link" 200 '.data.outcome == "declined" and .data.order.status == "pending_payment" and .data.order.payment_url != "'"$url1"'" and .data.order.declined_attempts == 1'; msg
@@ -310,7 +309,7 @@ call "$BUYER" POST "/orders/$O3/verify";      check "pays on the new link" 200 '
 
 echo "== Declined three times: cancelled and released"
 s23=$(stock S23-256 ikeja)
-call "$BUYER" POST /orders '{"product_id":"S23-256","store_id":"ikeja","buyer_name":"Femi"}'; O4=$(jq -r .data.order_id <<<"$BODY")
+call "$BUYER" POST /orders '{"items":[{"product_id":"S23-256"}],"store_id":"ikeja","buyer_name":"Femi"}'; O4=$(jq -r .data.order_id <<<"$BODY")
 pay "$O4" '{"outcome":"failed"}';    call "$BUYER" POST "/orders/$O4/verify"; check "decline 1" 200 '.data.outcome == "declined"'
 pay "$O4" '{"outcome":"failed"}'; call "$BUYER" POST "/orders/$O4/verify"; check "decline 2 says hand over" 200 '.data.outcome == "declined" and (.data.next_step | test("hand over"))'; msg
 pay "$O4" '{"outcome":"failed"}'; call "$BUYER" POST "/orders/$O4/verify"; check "decline 3 cancels" 200 '.data.outcome == "declined_final" and .data.order.status == "failed"'; msg
@@ -318,26 +317,26 @@ pay "$O4" '{"outcome":"failed"}'; call "$BUYER" POST "/orders/$O4/verify"; check
 
 echo "== Amount mismatch: never confirmed"
 c20=$(stock CAMON20-256 ikeja)
-call "$BUYER" POST /orders '{"product_id":"CAMON20-256","store_id":"ikeja","buyer_name":"Gbenga"}'; O5=$(jq -r .data.order_id <<<"$BODY")
+call "$BUYER" POST /orders '{"items":[{"product_id":"CAMON20-256"}],"store_id":"ikeja","buyer_name":"Gbenga"}'; O5=$(jq -r .data.order_id <<<"$BODY")
 pay "$O5" '{"outcome":"success","amount":100}'
 call "$BUYER" POST "/orders/$O5/verify";      check "wrong amount is refused" 409 '.success == false and .error.code == "amount_mismatch" and (.error.message_for_agent | test("₦1,"))'; msg
 call "$BUYER" GET "/orders/$O5/receipt";      check "no receipt for it" 409
 [ "$(stock CAMON20-256 ikeja)" = "$c20" ] && { PASS=$((PASS+1)); echo "  ok    unit released"; } || { FAILS=$((FAILS+1)); echo "  FAIL  stock: $(stock CAMON20-256 ikeja)"; }
 
 echo "== Right amount, wrong currency: never confirmed"
-call "$BUYER" POST /orders '{"product_id":"CAMON20-256","store_id":"ikeja","buyer_name":"Kemi"}'; O5C=$(jq -r .data.order_id <<<"$BODY")
+call "$BUYER" POST /orders '{"items":[{"product_id":"CAMON20-256"}],"store_id":"ikeja","buyer_name":"Kemi"}'; O5C=$(jq -r .data.order_id <<<"$BODY")
 pay "$O5C" "{\"outcome\":\"success\",\"amount\":$(amount "$O5C"),\"currency\":\"USD\"}"
 call "$BUYER" POST "/orders/$O5C/verify";     check "USD payment for an NGN order is refused" 409 '.error.code == "amount_mismatch" and (.error.message_for_agent | test("\\$"))'; msg
 [ "$(stock CAMON20-256 ikeja)" = "$c20" ] && { PASS=$((PASS+1)); echo "  ok    unit released"; } || { FAILS=$((FAILS+1)); echo "  FAIL  stock: $(stock CAMON20-256 ikeja)"; }
 
 echo "== Paystack failures"
-call "$BUYER" POST /orders '{"product_id":"ANKER-20K","store_id":"ikeja","buyer_name":"Halima"}'; O6=$(jq -r .data.order_id <<<"$BODY")
+call "$BUYER" POST /orders '{"items":[{"product_id":"ANKER-20K"}],"store_id":"ikeja","buyer_name":"Halima"}'; O6=$(jq -r .data.order_id <<<"$BODY")
 mode '{"verify":"down"}'
 call "$BUYER" POST "/orders/$O6/verify";      check "Paystack down on verify" 503 '.error.code == "paystack_unreachable"'; msg
 mode '{"verify":"ok"}'
 call "$BUYER" GET "/orders/$O6/receipt";      check "still not confirmed" 409
 anker=$(stock ANKER-20K ikeja); mode '{"initialize":"fail"}'
-call "$BUYER" POST /orders '{"product_id":"ANKER-20K","store_id":"ikeja","buyer_name":"Ife"}'; check "link creation fails" 502 '.error.code == "payment_link_failed"'; msg
+call "$BUYER" POST /orders '{"items":[{"product_id":"ANKER-20K"}],"store_id":"ikeja","buyer_name":"Ife"}'; check "link creation fails" 502 '.error.code == "payment_link_failed"'; msg
 mode '{"initialize":"ok"}'
 [ "$(stock ANKER-20K ikeja)" = "$anker" ] && { PASS=$((PASS+1)); echo "  ok    held unit released after link failure"; } || { FAILS=$((FAILS+1)); echo "  FAIL  stock: $(stock ANKER-20K ikeja)"; }
 
@@ -356,7 +355,7 @@ echo "== Ten buyers at once, two units (S23-256 at Lekki)"
 $PSQL -c "UPDATE stock SET available = 2 WHERE product_id='S23-256' AND store_id='lekki'"
 for i in $(seq 1 10); do
   curl -s -o /dev/null -w '%{http_code}\n' -X POST -H "X-Api-Key: $BUYER" -H 'content-type: application/json' \
-    -d "{\"product_id\":\"S23-256\",\"store_id\":\"lekki\",\"buyer_name\":\"Buyer $i\"}" "$API/orders" &
+    -d "{\"items\":[{\"product_id\":\"S23-256\"}],\"store_id\":\"lekki\",\"buyer_name\":\"Buyer $i\"}" "$API/orders" &
 done > "$RACE_FILE"; wait
 won=$(grep -c 201 "$RACE_FILE"); lost=$(grep -c 409 "$RACE_FILE")
 [ "$won" = 2 ] && [ "$lost" = 8 ] && [ "$(stock S23-256 lekki)" = 0 ] \

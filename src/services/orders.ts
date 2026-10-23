@@ -30,12 +30,8 @@ type PaymentOutcome =
   | "failed"
   | "handed_over";
 
-// Either items, or product_id and quantity for a single product (the schema allows one form).
 type CreateOrderInput = {
-  items?: { product_id: string; quantity: number }[];
-  product_id?: string;
-  quantity?: number;
-
+  items: HoldItem[];
   store_id: string;
 
   buyer_name: string;
@@ -269,11 +265,10 @@ async function attachPaymentLink(
   await logEvent(pool, order.id, "payment_link_created", { reference });
 }
 
-// Turns either request form into order lines, adding up repeats of the same product.
+// Turns the requested items into order lines, adding up repeats of the same product.
 function requestedItems(input: CreateOrderInput): HoldItem[] {
-  const requested = input.items ?? [{ product_id: input.product_id!, quantity: input.quantity ?? 1 }];
   const merged = new Map<string, number>();
-  for (const item of requested) merged.set(item.product_id, (merged.get(item.product_id) ?? 0) + item.quantity);
+  for (const item of input.items) merged.set(item.product_id, (merged.get(item.product_id) ?? 0) + item.quantity);
   return [...merged].map(([product_id, quantity]) => ({ product_id, quantity }));
 }
 
