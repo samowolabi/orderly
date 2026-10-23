@@ -2,6 +2,7 @@ import express from "express";
 import { config } from "./config";
 import { pool } from "./db/pool";
 import { errorHandler, notFound } from "./middleware/errors";
+import { requestLog } from "./middleware/request-log";
 import { openApiDocument } from "./openapi/document";
 import { catalog } from "./routes/catalog";
 import { orders } from "./routes/orders";
@@ -14,6 +15,9 @@ export function createApp() {
   // The host terminates TLS at one proxy hop; trust its X-Forwarded-Proto so
   // req.protocol is https and the fallback spec URL is right.
   app.set("trust proxy", 1);
+
+  // One log line per request, including the webhook and unknown paths.
+  app.use(requestLog);
 
   // Paystack signs the exact request bytes, so this route must run before JSON parsing.
   app.use(webhooks);

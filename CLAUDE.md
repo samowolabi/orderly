@@ -48,6 +48,7 @@ Every response has the shape `{ success, data, error: { code, message_for_agent 
 - Postgres: database `orderly`, owned by role `orderly`, in the local Postgres 18 on port 5433. The connection string is `DATABASE_URL` in `.env`.
 - First time: `npm run db:create` makes the role and database from `DATABASE_URL` (it asks once for the postgres superuser password), then `npm run db:reset` (migrate and reseed; the seed wipes all data).
 - `npm run dev` serves on :3000. `GET /health` checks the database.
+- Every request except `/health` writes one log line (Render: service > Logs): time, `tool=` (the Chord tool name), `role=` (buyer, seller or none), `status=`, `ms=`, and `outcome=` or `error=` when there is one. Keys, bodies, names and contact details are never logged.
 - Migrations are plain SQL in `migrations/`, applied in name order and tracked in `schema_migrations`.
 - Seed: Kola Gadgets, 2 stores, 9 products. `IP15P-256` has a single unit (Ikeja) for the last-unit race test.
 - Geocoding: Google when `GOOGLE_MAPS_API_KEY` is set, otherwise Geoapify (`GEOAPIFY_API_KEY`); `GEOCODING_PROVIDER` forces one. A new store, or a store whose address changes, gets a pin from its address when `location` is omitted. Vague matches (Google `APPROXIMATE`, Geoapify confidence below 0.5) give no pin, so the map link searches the address instead. Send explicit coordinates for an exact pin, or `location: null` for none.
