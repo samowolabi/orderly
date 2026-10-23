@@ -1,8 +1,11 @@
+import { geocodingProvider } from "../adapters";
+import { GeocodingProviderUnavailable } from "../adapters/geocoding-provider";
 import { pool, withTransaction } from "../db/pool";
 import { formatNaira, toKobo, toNaira } from "../utils/format";
 import { ApiError } from "../utils/http";
 import { DAYS, hoursView, toRows, type HourRow, type HoursInputValue } from "../utils/store-hours";
 import {
+  addressSearchText,
   addressView,
   type AddressInputValue,
   type AddressPatchValue,
@@ -40,7 +43,7 @@ type AddStoreInput = {
   name: string;
 
   address: AddressInputValue;
-  location?: CoordinatesInputValue;
+  location?: CoordinatesInputValue | null;
 
   hours: HoursInputValue;
 };
@@ -163,6 +166,28 @@ const escapeLike = (value: string) => value.replace(
   (character) => `\\${character}`,
 );
 
+// Uses an explicit map pin or resolves the store address through the configured geocoder.
+async function resolveStoreLocation(address: AddressInputValue, location: CoordinatesInputValue | null | undefined) {
+  if (location !== undefined) return location;
+
+  try {
+    return await geocodingProvider.geocodeAddress({
+      address: addressSearchText(address),
+      countryCode: address.country_code,
+    });
+  } catch (error) {
+    if (error instanceof GeocodingProviderUnavailable) {
+      throw new ApiError(
+        502,
+        "geocoding_unavailable",
+        "The address could not be mapped right now. Retry, send location as null to continue without a pin, or provide latitude and longitude.",
+      );
+    }
+
+    throw error;
+  }
+}
+
 // Returns every active store with normalized location and hours data.
 export async function listStores() {
   return { stores: await findStores(pool) };
@@ -178,6 +203,8 @@ export async function addStore(input: AddStoreInput) {
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/^-|-$/g, "");
   if (!id) throw new ApiError(400, "invalid_input", "Give the store a short id, e.g. yaba.");
+
+  const location = await resolveStoreLocation(input.address, input.location);
 
   // Persists the store and all dependent rows atomically.
   return withTransaction(async (db) => {
@@ -197,8 +224,8 @@ export async function addStore(input: AddStoreInput) {
         input.address.state,
         input.address.country_code,
         input.address.postal_code ?? null,
-        input.location?.latitude ?? null,
-        input.location?.longitude ?? null,
+        location?.latitude ?? null,
+        location?.longitude ?? null,
         input.address.directions_note ?? null,
       ],
     );

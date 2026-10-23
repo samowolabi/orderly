@@ -14,6 +14,7 @@
     "openapi": "tsx src/openapi/write.ts",
     "fake-paystack": "tsx dev/fake-paystack.ts",
     "test:api": "bash dev/curl-tests.sh",
+    "test:geocoding": "tsx dev/geocoding-tests.ts",
     "test:hours": "tsx dev/hours-tests.ts",
     "test:location": "tsx dev/location-tests.ts",
     "db:create": "bash dev/create-local-db.sh"

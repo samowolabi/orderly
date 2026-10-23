@@ -151,7 +151,9 @@ export const AddStoreBody = z.object({
   id: StoreId.optional().openapi({ description: "Short id, e.g. yaba. Made from the name if left out.", example: "yaba" }),
   name: z.string().trim().min(2).max(80).openapi({ example: "Kola Gadgets Yaba" }),
   address: AddressInput,
-  location: CoordinatesInput.optional().openapi({ description: "Map pin. Optional until the owner supplies exact coordinates." }),
+  location: CoordinatesInput.nullable().optional().openapi({
+    description: "Exact map pin. Omit to geocode the address automatically, or send null to create the store without a pin.",
+  }),
   hours: HoursInput,
 });
 

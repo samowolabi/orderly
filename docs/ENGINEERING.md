@@ -16,6 +16,7 @@ flowchart TB
   OS -- buyer key --> API
   API[Orderly REST API<br/>imported into Chord via OpenAPI<br/>TypeScript on Railway]
   API -- stores, stock, orders --> DB[(Postgres)]
+  API -- new store address --> GA[Geoapify]
   API -- create link, verify --> PS[Paystack test mode]
   PS -- signed payment webhook --> API
   CW -. pays by link .-> PS
@@ -29,6 +30,7 @@ The customer pays on Paystack's own page, so card details never touch the agent,
 | --- | --- | --- |
 | API | TypeScript, Express, Zod | Zod schemas validate input; zod-to-openapi generates the spec Chord imports |
 | Database | Postgres | Atomic stock updates stop overselling |
+| Geocoding | Geoapify | Converts a new store address into an optional map pin |
 | Payments | Paystack test mode | Real API, test cards, no real money |
 | Hosting | Railway, always on | No cold starts while reviewers test |
 | AI teammates | Chord, two teammates | Conversations, tools, reminders and handover |
@@ -42,12 +44,12 @@ The API is split into focused modules:
 | `src/routes/` | Wires Express endpoints to role checks and controllers |
 | `src/controllers/` | Validates request data, calls a service and writes the HTTP response |
 | `src/services/` | Enforces business rules and owns database, stock and payment workflows |
-| `src/adapters/` | Defines the payment processor contract and translates Paystack calls and webhooks into generic payment data |
+| `src/adapters/` | Defines external-provider contracts and translates Geoapify and Paystack responses into application data |
 | `src/utils/` | Shared HTTP, currency, time, opening-hours and address helpers |
 | `src/openapi/` | Owns API schemas, path descriptions, the registry and document generation |
 | `src/middleware/` | Handles API-key roles, unknown routes and application errors |
 
-`src/db/` contains connection, migration and seed code. Services do not depend on Express request or response objects, which keeps the business workflows reusable and easier to test. Order services call the `PaymentProcessor` interface. `src/adapters/index.ts` is the single composition point that selects `PaystackAdapter`, so another processor can be added without putting provider payloads into order logic. OpenAPI does not import Express routes or controllers, so the specification can be generated independently.
+`src/db/` contains connection, migration and seed code. Services do not depend on Express request or response objects, which keeps the business workflows reusable and easier to test. Services call the `PaymentProcessor` and `GeocodingProvider` interfaces. `src/adapters/index.ts` is the single composition point that selects `PaystackAdapter` and `GeoapifyAdapter`, so provider payloads stay out of business logic. OpenAPI does not import Express routes or controllers, so the specification can be generated independently.
 
 ## Data
 
@@ -62,7 +64,9 @@ Six tables. Stores are rows, not fixed names, so an owner can run any number of 
 | orders | Each purchase | id (e.g. ORD-1042), product_id, store_id, amount_kobo, buyer_name, status, payment_references, paid_reference, expires_at |
 | events | A log of everything that happened | order_id, type, detail, created_at |
 
-The demo seeds Kola Gadgets with two stores, Ikeja and Lekki; the owner can add more by chat.
+The demo seeds Kola Gadgets with two stores, Ikeja and Lekki; the owner can add more by chat. When a new store omits `location`, the API geocodes its structured address through Geoapify before opening the database transaction. Explicit coordinates always win, and `location: null` deliberately creates the store without a pin.
+
+Any interface that displays Geoapify-derived coordinates must retain the Geoapify and OpenStreetMap attribution required by the free plan.
 
 Order status is one of: `pending_payment`, `paid`, `failed`, `expired`, `paid_no_stock`, `handed_over`.
 
@@ -77,7 +81,7 @@ Each endpoint becomes one tool in Chord when the OpenAPI spec is imported. Every
 | create_order | `POST /orders` | Yes | No | Holds stock at the chosen store for 30 minutes and returns a Paystack link |
 | verify_payment | `POST /orders/{id}/verify` | Yes | No | Checks Paystack, confirms the order, returns the receipt |
 | get_receipt | `GET /orders/{id}/receipt` | Yes | Yes | The receipt for a paid order |
-| add_store | `POST /stores` | No | Yes | A new store or branch |
+| add_store | `POST /stores` | No | Yes | A new store or branch, with automatic address geocoding when no location is supplied |
 | update_store | `PATCH /stores/{id}` | No | Yes | Change a store's name, structured address, map pin or opening hours |
 | add_product | `POST /products` | No | Yes | New product with stock at one or more stores |
 | update_stock | `POST /products/{id}/stock` | No | Yes | Change stock at one store |

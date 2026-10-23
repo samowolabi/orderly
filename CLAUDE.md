@@ -13,13 +13,14 @@ Read these first:
 - TypeScript, Express, Zod (input validation), zod-to-openapi (generates the OpenAPI spec Chord imports)
 - Postgres
 - Paystack test mode only (`sk_test_...`)
+- Geoapify for converting new store addresses into optional map pins
 - Hosting: Railway, always on
 
 ## Source layout
 - `src/routes/`: Express endpoint wiring and authorization
 - `src/controllers/`: request parsing and HTTP responses
 - `src/services/`: business rules, database workflows and stock holds
-- `src/adapters/`: payment processor contract, provider selection and Paystack implementation
+- `src/adapters/`: provider contracts, provider selection, Paystack and Geoapify implementations
 - `src/utils/`: shared HTTP, formatting and store address/hours helpers
 - `src/openapi/`: independent schemas, path descriptions, registry and document generation
 - `src/middleware/`: API-key authorization, Paystack signature checks and Express error handling
@@ -49,6 +50,7 @@ Every response has the shape `{ ok, data, error: { code, message_for_agent } }`.
 - `npm run dev` serves on :3000. `GET /health` checks the database.
 - Migrations are plain SQL in `migrations/`, applied in name order and tracked in `schema_migrations`.
 - Seed: Kola Gadgets, 2 stores, 9 products. `IP15P-256` has a single unit (Ikeja) for the last-unit race test.
+- `GEOAPIFY_API_KEY` geocodes a new store when `location` is omitted. Send explicit coordinates to use an exact pin, or `location: null` to skip geocoding.
 - API keys: send `X-Api-Key` (or `Authorization: Bearer`). Buyer key for Orderly Shop, seller key for Orderly Owner.
 - `npm run openapi -- <public url>` writes `openapi.json` for Chord (gitignored); the running API also serves it at `/openapi.json`. The independent `src/openapi/` module owns the spec, and each `operationId` is the Chord tool name.
 - `POST /webhooks/paystack` is Paystack infrastructure, not a Chord tool, so it must stay out of OpenAPI. It needs the raw request body to validate `x-paystack-signature` before processing JSON.

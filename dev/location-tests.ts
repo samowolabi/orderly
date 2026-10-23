@@ -1,6 +1,17 @@
 import assert from "node:assert/strict";
 import { AddressInput, AddressPatch } from "../src/openapi/schemas/catalog";
-import { addressView } from "../src/utils/store-location";
+import { addressSearchText, addressView } from "../src/utils/store-location";
+
+assert.equal(
+  addressSearchText({
+    line1: "14 Allen Avenue",
+    area: "Ikeja",
+    city: "Lagos",
+    state: "Lagos",
+    country_code: "NG",
+  }),
+  "14 Allen Avenue, Ikeja, Lagos, NG",
+);
 
 const ikeja = addressView({
   address_line1: "14 Allen Avenue",

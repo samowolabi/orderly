@@ -5,8 +5,8 @@
 # Reseeds nothing; run npm run db:seed first for a clean slate.
 # Usage: npm run test:api
 cd "$(dirname "$0")/.." || exit 1
-API=http://localhost:3000
-FAKE=http://localhost:4010
+API=${API:-http://localhost:3000}
+FAKE=${FAKE:-http://localhost:4010}
 BUYER=$(grep '^BUYER_API_KEY=' .env | cut -d= -f2)
 SELLER=$(grep '^SELLER_API_KEY=' .env | cut -d= -f2)
 PAYSTACK_SECRET_KEY=$(grep '^PAYSTACK_SECRET_KEY=' .env | cut -d= -f2-)
@@ -87,7 +87,7 @@ call "$BUYER" GET '/products?store_id=abuja';  check "unknown store filter" 404 
 call "$BUYER" GET '/products?q=100%25';        check "LIKE wildcards are escaped" 200 '.data.products | length == 0'
 
 echo "== Owner: add_store"
-call "$SELLER" POST /stores '{"name":"Kola Gadgets Yaba","address":{"line1":"3 Herbert Macaulay Way","area":"Yaba","city":"Lagos","state":"Lagos"},"hours":[{"days":["mon","tue","wed","thu","fri"],"opens":"08:30","closes":"18:00"},{"days":["sat"],"opens":"10:00","closes":"16:00"}]}'
+call "$SELLER" POST /stores '{"name":"Kola Gadgets Yaba","address":{"line1":"3 Herbert Macaulay Way","area":"Yaba","city":"Lagos","state":"Lagos"},"location":null,"hours":[{"days":["mon","tue","wed","thu","fri"],"opens":"08:30","closes":"18:00"},{"days":["sat"],"opens":"10:00","closes":"16:00"}]}'
 check "add Yaba (id made from name)" 201 '.data.id == "yaba" and .data.address == "3 Herbert Macaulay Way, Yaba, Lagos" and .data.address_details.country_code == "NG" and .data.location.latitude == null and (.data.location.map_url | contains("Herbert%20Macaulay")) and .data.opening_hours == "Mon to Fri, 8:30am to 6pm; Sat, 10am to 4pm; Sun, closed"'
 for bad in '[]' '[{"days":["mon"],"opens":"9am","closes":"17:00"}]' '[{"days":["mon"],"opens":"18:00","closes":"09:00"}]' \
            '[{"days":["mon","tue"],"opens":"09:00","closes":"17:00"},{"days":["tue"],"opens":"10:00","closes":"12:00"}]' \
@@ -96,7 +96,7 @@ for bad in '[]' '[{"days":["mon"],"opens":"9am","closes":"17:00"}]' '[{"days":["
   check "bad hours refused: $bad" 400 '.error.code == "invalid_input"'
 done
 msg
-call "$SELLER" POST /stores '{"name":"Kola Gadgets Yaba","address":{"line1":"3 Herbert Macaulay Way","area":"Yaba","city":"Lagos","state":"Lagos"},"hours":[{"days":["mon","tue","wed","thu","fri"],"opens":"08:30","closes":"18:00"},{"days":["sat"],"opens":"10:00","closes":"16:00"}]}'
+call "$SELLER" POST /stores '{"name":"Kola Gadgets Yaba","address":{"line1":"3 Herbert Macaulay Way","area":"Yaba","city":"Lagos","state":"Lagos"},"location":null,"hours":[{"days":["mon","tue","wed","thu","fri"],"opens":"08:30","closes":"18:00"},{"days":["sat"],"opens":"10:00","closes":"16:00"}]}'
 check "duplicate store" 409 '.error.code == "store_exists"'
 call "$SELLER" POST /stores '{"name":"Surulere"}'; check "missing fields named" 400 '.error.message_for_agent | test("address is required") and test("hours is required")'; msg
 call "$BUYER" GET '/products?product_id=IP13-128'; check "new store has 0 stock lines" 200 '[.data.products[0].stores[] | select(.store_id=="yaba") | .available] == [0]'
