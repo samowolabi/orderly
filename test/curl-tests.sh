@@ -410,6 +410,22 @@ pay "$RACE"
 call "$BUYER" POST "/orders/$RACE/verify";    check "late payer gets paid_no_stock" 200 '.data.outcome == "paid_no_stock" and .data.receipt == null'; msg
 [ "$(stock IP15P-256 ikeja)" = "0" ] && { PASS=$((PASS+1)); echo "  ok    still not oversold"; } || { FAILS=$((FAILS+1)); echo "  FAIL  stock: $(stock IP15P-256 ikeja)"; }
 
+echo "== Webhook lands while a check is in flight"
+call "$BUYER" POST /orders '{"items":[{"product_id":"ANKER-20K"}],"store_id":"ikeja","buyer_name":"Bola"}'; ORACE=$(jq -r .data.order_id <<<"$BODY")
+mode '{"verify_delay_ms":1500}'
+curl -s -X POST -H "X-Api-Key: $BUYER" "$API/v1/orders/$ORACE/verify" > "$RACE_FILE" &
+VPID=$!
+sleep 0.5
+pay "$ORACE"
+RACE_REF=$(ref "$ORACE"); RACE_AMOUNT=$(amount "$ORACE"); RACE_CURRENCY=$(currency "$ORACE")
+webhook "$(jq -nc --arg reference "$RACE_REF" --argjson amount "$RACE_AMOUNT" --arg currency "$RACE_CURRENCY" \
+  '{event:"charge.success",data:{status:"success",reference:$reference,amount:$amount,currency:$currency,channel:"card",paid_at:"2026-10-23T20:00:00.000Z",gateway_response:"Successful"}}')"
+check "the webhook confirms it during the check" 200 '.data.outcome == "paid"'
+wait $VPID
+mode '{"verify_delay_ms":0}'
+STATUS=200; BODY=$(cat "$RACE_FILE")
+check "the slow check reports it paid, not failed" 200 '.data.outcome == "already_paid" and .data.order.status == "paid" and .data.receipt != null and (.data.next_step | test("cancelled") | not)'; msg
+
 echo "== Late payment, item still there: re-held"
 call "$BUYER" POST /orders '{"items":[{"product_id":"A15-128"}],"store_id":"lekki","buyer_name":"Dayo"}'; O2=$(jq -r .data.order_id <<<"$BODY")
 a15=$(stock A15-128 lekki); expire "$O2"
@@ -499,7 +515,7 @@ email_check "never the same email twice" 'group_by(.subject) | all(length == 1)'
 jq -r '[.[] | select(.subject | startswith("Paid: '"$O1"'"))][0] | "        | \(.subject)", (.text | split("\n")[] | "        | \(.)")' <<<"$EMAILS"
 
 echo "== Owner: list_orders"
-call "$SELLER" GET /orders;                   check "today's orders and summary" 200 '.data.period == "today" and .data.summary.counts.paid == 10 and .data.summary.paid_totals == [{"amount":4389200,"currency":"NGN","display":"₦4,389,200"}]'
+call "$SELLER" GET /orders;                   check "today's orders and summary" 200 '.data.period == "today" and .data.summary.counts.paid == 11 and .data.summary.paid_totals == [{"amount":4434200,"currency":"NGN","display":"₦4,434,200"}]'
 check "list_orders shows each order's lines" 200 '[.data.orders[] | select(.order_id == "'"$OM"'") | .items[].product.id] == ["IP14-128", "ANKER-20K"]'
 jq -c '.data.summary' <<<"$BODY" | sed 's/^/        /'
 check "paid_no_stock and mismatch need attention" 200 '[.data.needs_attention[].order_id] | contains(["'"$RACE"'", "'"$O5"'"])'

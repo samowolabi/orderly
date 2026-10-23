@@ -4,7 +4,8 @@
 // Control endpoints:
 //   POST /_fake/pay/:reference  { "outcome": "success" | "failed" | "ongoing", "amount"?: subunits, "currency"?: code }
 //   POST /_fake/mode            { "initialize"?: "ok" | "fail", "verify"?: "ok" | "down",
-//                                 "fail_next"?: { "initialize"?: n, "verify"?: n } }  (the next n calls get a 503, then it recovers)
+//                                 "fail_next"?: { "initialize"?: n, "verify"?: n },  (the next n calls get a 503, then it recovers)
+//                                 "verify_delay_ms"?: n }  (verify reads the transaction, then waits n ms before answering)
 //   GET  /_fake/state
 import express from "express";
 
@@ -25,7 +26,7 @@ type Tx = {
 
 const PORT = Number(process.env.FAKE_PAYSTACK_PORT ?? 4010);
 const txs = new Map<string, Tx>();
-const mode = { initialize: "ok", verify: "ok" };
+const mode = { initialize: "ok", verify: "ok", verify_delay_ms: 0 };
 // Calls still to fail before the endpoint recovers, for testing retries.
 const failNext = { initialize: 0, verify: 0 };
 
@@ -67,7 +68,9 @@ app.get("/transaction/verify/:reference", (req, res) => {
   if (mode.verify === "down" || failingNow("verify")) return res.status(503).json({ status: false, message: "Service unavailable" });
   const tx = txs.get(req.params.reference);
   if (!tx) return res.status(400).json({ status: false, message: "Transaction reference not found" });
-  res.json({ status: true, message: "Verification successful", data: { id: 1, ...tx } });
+  // A copy taken now, so a payment made during the delay isn't seen: an answer that's out of date by the time it arrives.
+  const snapshot = { id: 1, ...tx };
+  setTimeout(() => res.json({ status: true, message: "Verification successful", data: snapshot }), mode.verify_delay_ms);
 });
 
 // Changes a fake transaction to a chosen payment outcome.

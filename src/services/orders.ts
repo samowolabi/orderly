@@ -551,6 +551,10 @@ async function verifyOrder(order: OrderRow): Promise<VerifyResult> {
       return confirmSuccessfulPayment(db, current, paid);
     }
 
+    // The Paystack check ran before this lock, so the webhook may have settled the order
+    // meanwhile. Report what the order is now, not what the earlier check saw.
+    if (current.status === "paid") return { outcome: "already_paid" };
+    if (current.status === "paid_no_stock" || current.status === "handed_over") return { outcome: current.status };
     if (current.status === "expired") return { outcome: "expired" };
     if (current.status !== "pending_payment") return { outcome: "failed" };
 
