@@ -1,4 +1,5 @@
 import { config } from "../../config";
+import { retry } from "../../utils/retry";
 import {
   GeocodingProviderUnavailable,
   type GeocodedCoordinates,
@@ -38,8 +39,13 @@ export class GoogleGeocodingAdapter implements GeocodingProvider {
     this.request = options.request ?? fetch;
   }
 
+  // Resolves one address, retrying when Google can't be reached or answers with an error.
+  geocodeAddress(input: GeocodingInput): Promise<GeocodedCoordinates | null> {
+    return retry(() => this.geocodeOnce(input), { retryOn: (error) => error instanceof GeocodingProviderUnavailable });
+  }
+
   // Resolves one address through the Google Geocoding API, refusing city-level guesses.
-  async geocodeAddress(input: GeocodingInput): Promise<GeocodedCoordinates | null> {
+  private async geocodeOnce(input: GeocodingInput): Promise<GeocodedCoordinates | null> {
     const url = new URL(config().GOOGLE_GEOCODING_URL);
     url.search = new URLSearchParams({
       address: input.address,

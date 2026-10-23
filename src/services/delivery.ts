@@ -201,12 +201,20 @@ export async function quoteDelivery(input: QuoteInput) {
     );
   }
 
-  let routes: (DrivingRoute | null)[];
-  try {
-    routes = await Promise.all(plans.map((plan) => routing.drivingRoute(plan.store, destination)));
-  } catch (error) {
-    if (!(error instanceof RoutingProviderUnavailable)) throw error;
-    console.error(`[routing] delivery quote: ${error.message}`);
+  // A store whose route can't be fetched is left out; the quote comes from the stores that
+  // answered. Only when none answered is the map service treated as down.
+  let unreachable = 0;
+  const routes = await Promise.all(
+    plans.map((plan) =>
+      routing.drivingRoute(plan.store, destination).catch((error) => {
+        if (!(error instanceof RoutingProviderUnavailable)) throw error;
+        console.error(`[routing] delivery quote from ${plan.store.id}: ${error.message}`);
+        unreachable++;
+        return undefined;
+      }),
+    ),
+  );
+  if (unreachable === plans.length) {
     throw new ApiError(503, "maps_unavailable", "The map service isn't answering, so delivery can't be priced right now. Offer pickup, or try again in a minute.");
   }
 

@@ -294,6 +294,17 @@ curl -s -X POST -H 'content-type: application/json' -d '{"routes":"down"}' "$FAK
 call "$BUYER" POST /delivery/quote '{"items":[{"product_id":"ANKER-20K"}],"address":"'"$LEKKI_ADDR"'","phone":"08031234567"}'
 check "maps down: offer pickup" 503 '.error.code == "maps_unavailable"'
 curl -s -X POST -H 'content-type: application/json' -d '{"routes":"ok"}' "$FAKE_GOOGLE/_fake/mode" >/dev/null
+gmode() { curl -s -X POST -H 'content-type: application/json' -d "$1" "$FAKE_GOOGLE/_fake/mode" >/dev/null; }
+gmode '{"fail_next":{"geocode":2,"routes":1}}'
+call "$BUYER" POST /delivery/quote '{"items":[{"product_id":"ANKER-20K"}],"address":"'"$LEKKI_ADDR"'","phone":"08031234567"}'
+check "Google blips are retried and the quote still comes back" 201 '.data.store.id == "lekki" and .data.fee.amount == 1600'
+gmode '{"routes_down_from":[[6.447579,3.475247]]}'
+call "$BUYER" POST /delivery/quote '{"items":[{"product_id":"ANKER-20K"}],"address":"'"$LEKKI_ADDR"'","phone":"08031234567"}'
+check "no route from Lekki: quoted from Ikeja instead of failing" 201 '.data.store.id == "ikeja"'
+gmode '{"routes_down_from":[[6.447579,3.475247],[6.599941,3.352158]]}'
+call "$BUYER" POST /delivery/quote '{"items":[{"product_id":"ANKER-20K"}],"address":"'"$LEKKI_ADDR"'","phone":"08031234567"}'
+check "no route from any store: offer pickup" 503 '.error.code == "maps_unavailable"'
+gmode '{"routes_down_from":[]}'
 
 echo "== Delivery: order, pay, receipt and rider follow-up"
 anker=$(stock ANKER-20K lekki)

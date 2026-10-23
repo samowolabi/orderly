@@ -6,7 +6,9 @@
 // 25 km/h, and returns no route when the destination is on "Atlantis".
 //
 // Control endpoints:
-//   POST /_fake/mode   { "geocode"?: "ok" | "down", "routes"?: "ok" | "down" }
+//   POST /_fake/mode   { "geocode"?: "ok" | "down", "routes"?: "ok" | "down",
+//                        "fail_next"?: { "geocode"?: n, "routes"?: n },   (the next n calls get a 503)
+//                        "routes_down_from"?: [[lat, lng], ...] }       (routes from these points get a 503)
 import express from "express";
 
 const PORT = Number(process.env.FAKE_GOOGLE_PORT ?? 4020);
@@ -21,6 +23,17 @@ const PLACES: [RegExp, number, number][] = [
 ];
 
 let mode = { geocode: "ok", routes: "ok" };
+// Calls still to fail before the endpoint recovers, for testing retries.
+const failNext = { geocode: 0, routes: 0 };
+// Origins whose routes fail, for testing a quote that leaves one store out.
+let downFrom: [number, number][] = [];
+
+// Uses up one queued failure for an endpoint, if any are left.
+function failingNow(endpoint: keyof typeof failNext) {
+  if (failNext[endpoint] <= 0) return false;
+  failNext[endpoint]--;
+  return true;
+}
 
 const app = express();
 app.use(express.json());
@@ -36,7 +49,7 @@ function haversine(a: { latitude: number; longitude: number }, b: { latitude: nu
 
 // Answers a geocoding lookup for a few known areas.
 app.get("/geocode/json", (req, res) => {
-  if (mode.geocode === "down") return res.status(503).send("down");
+  if (mode.geocode === "down" || failingNow("geocode")) return res.status(503).send("down");
   const address = String(req.query.address ?? "");
   if (/nowhere/i.test(address)) return res.json({ status: "ZERO_RESULTS", results: [] });
   const [, lat, lng] = PLACES.find(([pattern]) => pattern.test(address)) ?? [null, 6.5244, 3.3792];
@@ -45,8 +58,9 @@ app.get("/geocode/json", (req, res) => {
 
 // Answers a driving route request with a predictable distance and time.
 app.post("/routes", (req, res) => {
-  if (mode.routes === "down") return res.status(503).send("down");
   const origin = req.body?.origin?.location?.latLng;
+  const fromDownPoint = downFrom.some(([lat, lng]) => Math.abs(lat - origin?.latitude) < 0.001 && Math.abs(lng - origin?.longitude) < 0.001);
+  if (mode.routes === "down" || fromDownPoint || failingNow("routes")) return res.status(503).send("down");
   const destination = req.body?.destination?.location?.latLng;
   if (!origin || !destination) return res.status(400).json({ error: "origin and destination latLng are required" });
   // Atlantis (0, 0) has no road to it.
@@ -57,7 +71,10 @@ app.post("/routes", (req, res) => {
 
 // Switches the fake endpoints between working and failing.
 app.post("/_fake/mode", (req, res) => {
-  mode = { ...mode, ...(req.body ?? {}) };
+  const { fail_next: next, routes_down_from: from, ...rest } = req.body ?? {};
+  mode = { ...mode, ...rest };
+  Object.assign(failNext, next ?? {});
+  if (from) downFrom = from;
   res.json(mode);
 });
 

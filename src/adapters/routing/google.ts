@@ -1,4 +1,5 @@
 import { config } from "../../config";
+import { retry } from "../../utils/retry";
 import { RoutingProviderUnavailable, type Coordinates, type DrivingRoute, type RoutingProvider } from "./routing-provider";
 
 const TIMEOUT_MS = 8_000;
@@ -24,8 +25,13 @@ export class GoogleRoutesAdapter implements RoutingProvider {
     this.request = options.request ?? fetch;
   }
 
+  // Gets the driving route, retrying when Google can't be reached or answers with an error.
+  drivingRoute(origin: Coordinates, destination: Coordinates): Promise<DrivingRoute | null> {
+    return retry(() => this.routeOnce(origin, destination), { retryOn: (error) => error instanceof RoutingProviderUnavailable });
+  }
+
   // Asks the Google Routes API for the traffic-aware driving route between two points.
-  async drivingRoute(origin: Coordinates, destination: Coordinates): Promise<DrivingRoute | null> {
+  private async routeOnce(origin: Coordinates, destination: Coordinates): Promise<DrivingRoute | null> {
     let response: Response;
     try {
       response = await this.request(config().GOOGLE_ROUTES_URL, {
