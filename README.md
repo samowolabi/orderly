@@ -32,16 +32,18 @@ The API is live at [orderly-o1ag.onrender.com](https://orderly-o1ag.onrender.com
 
 ```mermaid
 flowchart LR
-  C[Customer on WhatsApp] --> S[Orderly Shop teammate]
-  O[Owner] --> W[Orderly Owner teammate]
-  S -- buyer key --> API[Orderly API]
-  W -- seller key --> API
+  C[Customer on WhatsApp] --> S
+  O[Owner] --> W
+  subgraph Chord
+    S[Orderly Shop teammate]
+    W[Orderly Owner teammate]
+  end
+  S -->|buyer key| API[Orderly API]
+  W -->|seller key| API
   API --> DB[(Postgres)]
-  API --> P[Paystack]
-  P -- signed webhook --> API
-  API --> G[Google Maps]
-  API --> R[Resend email]
-  R --> O
+  API <-->|payment links, checks, webhooks| P[Paystack]
+  API -->|addresses, routes| G[Google Maps]
+  API -->|owner emails| R[Resend]
 ```
 
 - The teammates never touch the database. Every price, stock figure and payment result comes from the API, and every rule is enforced there, not just in the prompts.
