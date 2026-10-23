@@ -59,12 +59,19 @@ registry.registerPath({
   method: "post",
   path: "/products",
   operationId: "add_product",
-  summary: "Add a new product (owner only)",
+  summary: "Add one or more new products (owner only)",
   description:
-    "Adds a product with its price and starting stock per store. Read the details back to the owner and get a yes before calling. Use update_stock for products that already exist.",
+    "Adds products with their prices and starting stock per store. Put every product the owner mentions in one call; they are added together or not at all. Read them all back to the owner once and get a yes before calling. Use update_product for products that already exist.",
   security: security.seller,
   request: { body: body(schema.AddProductBody) },
-  responses: { 201: json(schema.Product, "The new product"), ...errorResponses },
+  responses: { 201: json(z.object({ products: z.array(schema.Product) }), "The new products"), ...errorResponses },
+});
+
+const StockResult = z.object({
+  store_id: z.string(),
+  available: z.number().int(),
+  held_for_unpaid_orders: z.number().int(),
+  on_hand: z.number().int(),
 });
 
 registry.registerPath({
@@ -73,18 +80,12 @@ registry.registerPath({
   operationId: "update_stock",
   summary: "Change stock at one store (owner only)",
   description:
-    "Send exactly one of change or set_to. Use change to add or remove units ('add 3 more to Lekki' is change: 3), or set_to after a physical count. Units held for unpaid orders are counted as on hand.",
+    "Changes stock at a single store. For several stores, or stock plus other changes, use update_product instead. Send exactly one of change or set_to. Use change to add or remove units ('add 3 more to Lekki' is change: 3), or set_to after a physical count. Units held for unpaid orders are counted as on hand.",
   security: security.seller,
   request: { params: schema.ProductParams, body: body(schema.UpdateStockBody) },
   responses: {
     200: json(
-      z.object({
-        product: schema.Product,
-        store_id: z.string(),
-        available: z.number().int(),
-        held_for_unpaid_orders: z.number().int(),
-        on_hand: z.number().int(),
-      }),
+      StockResult.extend({ product: schema.Product }),
       "Stock after the change",
     ),
     ...errorResponses,
@@ -94,14 +95,27 @@ registry.registerPath({
 registry.registerPath({
   method: "patch",
   path: "/products/{id}",
-  operationId: "update_price",
-  summary: "Change a product's price (owner only)",
+  operationId: "update_product",
+  summary: "Change a product's price, details, sale status or stock (owner only)",
   description:
-    "Sets one price for every store. Orders already waiting for payment keep the price they were created with. Confirm the new price with the owner first.",
+    "Send only what changes, in one call: price, min_price, name, variant, active, and stock changes for any number of stores. Everything applies together or nothing does. Price is the same at every store, and orders already waiting for payment keep their price. active: false takes a product off sale. Read the whole change back to the owner once and get a yes before calling.",
   security: security.seller,
-  request: { params: schema.ProductParams, body: body(schema.UpdatePriceBody) },
+  request: { params: schema.ProductParams, body: body(schema.UpdateProductBody) },
   responses: {
-    200: json(z.object({ product: schema.Product, old_price: Money }), "The updated product"),
+    200: json(
+      z.object({
+        product: schema.Product,
+        previous: z.object({
+          name: z.string(),
+          variant: z.string().nullable(),
+          price: Money,
+          min_price: Money,
+          active: z.boolean(),
+        }),
+        stock: z.array(StockResult).openapi({ description: "One entry per store in the request" }),
+      }),
+      "The product after the change, what it was before, and each store's stock",
+    ),
     ...errorResponses,
   },
 });

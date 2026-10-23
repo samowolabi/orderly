@@ -25,6 +25,8 @@ type ProductRow = {
   min_price_subunit: number;
   currency: string;
 
+  active: boolean;
+
   stores: {
     store_id: string;
     store_name: string;
@@ -61,7 +63,7 @@ type UpdateStoreInput = {
   closed_days?: (typeof DAYS)[number][];
 };
 
-type AddProductInput = {
+type NewProductInput = {
   id?: string;
   name: string;
   variant?: string;
@@ -82,21 +84,31 @@ type UpdateStockInput = {
   set_to?: number;
 };
 
-type UpdatePriceInput = {
-  price: number;
+type UpdateProductInput = {
+  name?: string;
+  variant?: string | null;
+
+  price?: number;
   min_price?: number;
+
+  active?: boolean;
+
+  stock?: UpdateStockInput[];
 };
 
-// Loads active products and their store-level stock using optional filters.
-async function findProducts(db: Db, filters: { productId?: string; storeId?: string; words?: string[] }) {
+// Loads products and their store-level stock; off-sale products only when asked for.
+async function findProducts(
+  db: Db,
+  filters: { productId?: string; storeId?: string; words?: string[]; includeInactive?: boolean },
+) {
   const { rows } = await db.query<ProductRow>(
-    `SELECT p.id, p.name, p.variant, p.price_subunit, p.min_price_subunit, p.currency,
+    `SELECT p.id, p.name, p.variant, p.price_subunit, p.min_price_subunit, p.currency, p.active,
             json_agg(json_build_object('store_id', s.id, 'store_name', s.name, 'available', st.available)
                      ORDER BY s.id) AS stores
      FROM products p
      JOIN stock st ON st.product_id = p.id
      JOIN stores s ON s.id = st.store_id AND s.active
-     WHERE p.active
+     WHERE ($4::boolean OR p.active)
        AND ($1::text IS NULL OR st.store_id = $1)
        AND ($2::text[] IS NULL OR (
              SELECT bool_and((p.id || ' ' || p.name || ' ' || coalesce(p.variant, '')) ILIKE '%' || word || '%')
@@ -104,7 +116,12 @@ async function findProducts(db: Db, filters: { productId?: string; storeId?: str
        AND ($3::text IS NULL OR p.id = $3)
      GROUP BY p.id
      ORDER BY p.name, p.variant`,
-    [filters.storeId ?? null, filters.words?.length ? filters.words : null, filters.productId ?? null],
+    [
+      filters.storeId ?? null,
+      filters.words?.length ? filters.words : null,
+      filters.productId ?? null,
+      filters.includeInactive ?? false,
+    ],
   );
   return rows;
 }
@@ -116,7 +133,7 @@ function productView(row: ProductRow, role: Role) {
     name: row.name,
     variant: row.variant,
     price: moneyView(row.price_subunit, row.currency),
-    ...(role === "seller" ? { min_price: moneyView(row.min_price_subunit, row.currency) } : {}),
+    ...(role === "seller" ? { min_price: moneyView(row.min_price_subunit, row.currency), active: row.active } : {}),
     stores: row.stores,
     total_available: row.stores.reduce(
       // Adds one store's available units to the product total.
@@ -136,9 +153,9 @@ function priceToSubunits(field: string, amount: number, currency: string) {
   }
 }
 
-// Loads one product or raises a consistent not-found error.
+// Loads one product or raises a consistent not-found error; owners also see off-sale products.
 async function loadProduct(db: Db, id: string, role: Role) {
-  const [row] = await findProducts(db, { productId: id });
+  const [row] = await findProducts(db, { productId: id, includeInactive: role === "seller" });
   if (!row) throw new ApiError(404, "product_not_found", `No product with id ${id}.`);
   return productView(row, role);
 }
@@ -337,140 +354,220 @@ export async function listProducts(filters: { product_id?: string; store_id?: st
   await expireStaleOrders(pool);
   if (filters.store_id) await assertStore(pool, filters.store_id);
   const words = filters.q?.trim().split(/\s+/).filter(Boolean).map(escapeLike);
-  const rows = await findProducts(pool, { storeId: filters.store_id, words, productId: filters.product_id });
+  const rows = await findProducts(pool, {
+    storeId: filters.store_id,
+    words,
+    productId: filters.product_id,
+    includeInactive: role === "seller",
+  });
   // Converts one product row into the caller's permitted view.
   return { products: rows.map((row) => productView(row, role)) };
 }
 
-// Creates a product and its per-store stock rows atomically.
-export async function addProduct(input: AddProductInput) {
-  const id =
-    input.id ??
-    `${input.name} ${input.variant ?? ""}`.toUpperCase().replace(/[^A-Z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40);
+// Builds a product code from its name and variant, e.g. "IPHONE-16-256GB".
+const productCode = (name: string, variant?: string | null) =>
+  `${name} ${variant ?? ""}`.toUpperCase().replace(/[^A-Z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40);
 
-  // Persists the product and all stock rows in one transaction.
+// Matches products case-insensitively by name and variant.
+const sameProductKey = (name: string, variant?: string | null) => `${name.toLowerCase()}|${(variant ?? "").toLowerCase()}`;
+
+// Creates one or more products and their per-store stock rows, all or none.
+export async function addProducts(products: NewProductInput[]) {
+  // 1. Give every product its code, and reject repeats within the request.
+  const planned = products.map((product) => ({ ...product, id: product.id ?? productCode(product.name, product.variant) }));
+  const seenIds = new Set<string>();
+  const seenKeys = new Set<string>();
+  for (const product of planned) {
+    const key = sameProductKey(product.name, product.variant);
+    if (seenIds.has(product.id) || seenKeys.has(key)) {
+      throw new ApiError(400, "invalid_input", `${product.id} appears more than once in this request. Send each product once.`);
+    }
+    seenIds.add(product.id);
+    seenKeys.add(key);
+  }
+
+  // Persists every product and its stock rows in one transaction.
   return withTransaction(async (db) => {
-    const duplicate = await db.query(
-      `SELECT id FROM products
-       WHERE id = $1 OR (lower(name) = lower($2) AND lower(coalesce(variant, '')) = lower($3))`,
-      [id, input.name, input.variant ?? ""],
+    // 2. Check stores and existing products before writing anything.
+    const stores = (await db.query<{ id: string }>("SELECT id FROM stores")).rows.map(
+      // Extracts each known store id for stock validation and insertion.
+      (row) => row.id,
     );
-    if (duplicate.rows[0]) {
-      throw new ApiError(
-        409,
-        "product_exists",
-        `This product already exists as ${duplicate.rows[0].id}. Use update_stock to add units or update_price to change the price.`,
-      );
-    }
-
-    // Extracts each known store id for stock validation and insertion.
-    const stores = (await db.query<{ id: string }>("SELECT id FROM stores")).rows.map((row) => row.id);
-    // Extracts one requested stock row's store id.
-    const requestedStores = input.stock.map((stock) => stock.store_id);
-    // Keeps requested store ids that are absent from the database.
-    const unknown = requestedStores.filter((storeId) => !stores.includes(storeId));
+    const unknown = [...new Set(planned.flatMap(
+      // Collects the store ids one product asks to stock.
+      (product) => product.stock.map((stock) => stock.store_id),
+    ))].filter((storeId) => !stores.includes(storeId));
     if (unknown.length) {
-      throw new ApiError(404, "store_not_found", `Unknown store: ${unknown.join(", ")}. Call list_stores for the right ids.`);
+      throw new ApiError(404, "store_not_found", `Unknown store: ${unknown.join(", ")}. Call list_stores for the right ids. Nothing was added.`);
     }
 
-    // New products are priced in the business currency; the owner never picks one.
-    const currency = config().BUSINESS_CURRENCY;
-    const price = priceToSubunits("price", input.price, currency);
-    const floor = input.min_price === undefined ? price : priceToSubunits("min_price", input.min_price, currency);
-    await db.query(
-      `INSERT INTO products (id, name, variant, price_subunit, min_price_subunit, currency)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
-      [id, input.name, input.variant ?? null, price, floor, currency],
-    );
-    // Converts each requested stock row into a store-to-quantity entry.
-    const units = new Map(input.stock.map((stock) => [stock.store_id, stock.quantity]));
-    for (const storeId of stores) {
-      await db.query("INSERT INTO stock (product_id, store_id, available) VALUES ($1, $2, $3)", [
-        id,
-        storeId,
-        units.get(storeId) ?? 0,
-      ]);
+    for (const product of planned) {
+      const duplicate = await db.query<{ id: string }>(
+        `SELECT id FROM products
+         WHERE id = $1 OR (lower(name) = lower($2) AND lower(coalesce(variant, '')) = lower($3))`,
+        [product.id, product.name, product.variant ?? ""],
+      );
+      if (duplicate.rows[0]) {
+        throw new ApiError(
+          409,
+          "product_exists",
+          `${product.name} already exists as ${duplicate.rows[0].id}, so nothing was added. Use update_product for it, and send the others again.`,
+        );
+      }
     }
-    await logEvent(db, null, "product_added", { product_id: id, price_subunit: price, currency, stock: Object.fromEntries(units) });
-    return loadProduct(db, id, "seller");
+
+    // 3. Insert products in the business currency, with a stock row at every store.
+    const currency = config().BUSINESS_CURRENCY;
+    for (const product of planned) {
+      const price = priceToSubunits("price", product.price, currency);
+      const floor = product.min_price === undefined ? price : priceToSubunits("min_price", product.min_price, currency);
+      await db.query(
+        `INSERT INTO products (id, name, variant, price_subunit, min_price_subunit, currency)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [product.id, product.name, product.variant || null, price, floor, currency],
+      );
+
+      // Converts each requested stock row into a store-to-quantity entry.
+      const units = new Map(product.stock.map((stock) => [stock.store_id, stock.quantity]));
+      for (const storeId of stores) {
+        await db.query("INSERT INTO stock (product_id, store_id, available) VALUES ($1, $2, $3)", [
+          product.id,
+          storeId,
+          units.get(storeId) ?? 0,
+        ]);
+      }
+      await logEvent(db, null, "product_added", {
+        product_id: product.id,
+        price_subunit: price,
+        currency,
+        stock: Object.fromEntries(units),
+      });
+    }
+
+    const added = [];
+    for (const product of planned) added.push(await loadProduct(db, product.id, "seller"));
+    return { products: added };
   });
 }
 
-// Adjusts available stock without counting units held by unpaid orders.
+// Applies one store's stock change inside a caller's transaction; held units count as on hand.
+async function applyStockChange(db: Db, productId: string, input: UpdateStockInput) {
+  await assertStore(db, input.store_id);
+  const { rows } = await db.query<{ available: number; held: number }>(
+    `SELECT st.available,
+            coalesce((SELECT sum(quantity) FROM orders o
+                      WHERE o.product_id = st.product_id AND o.store_id = st.store_id
+                        AND o.status = 'pending_payment'), 0)::int AS held
+     FROM stock st WHERE st.product_id = $1 AND st.store_id = $2
+     FOR UPDATE`,
+    [productId, input.store_id],
+  );
+  const current = rows[0];
+  if (!current) throw new ApiError(404, "product_not_found", `No product with id ${productId}. Call list_products for the right id.`);
+
+  const next = input.set_to !== undefined ? input.set_to - current.held : current.available + (input.change ?? 0);
+  if (next < 0) {
+    const why =
+      input.set_to !== undefined
+        ? `${current.held} unit(s) at ${input.store_id} are held for unpaid orders, so on hand can't be set below ${current.held}.`
+        : `Only ${current.available} unit(s) are free at ${input.store_id}, so ${-(input.change ?? 0)} can't be removed.`;
+    throw new ApiError(409, "stock_below_zero", `${why} Nothing was changed. Tell the owner and ask what they want to do.`);
+  }
+
+  await db.query("UPDATE stock SET available = $3, updated_at = now() WHERE product_id = $1 AND store_id = $2", [
+    productId,
+    input.store_id,
+    next,
+  ]);
+  await logEvent(db, null, "stock_updated", { product_id: productId, store_id: input.store_id, from: current.available, to: next });
+  return { store_id: input.store_id, available: next, held_for_unpaid_orders: current.held, on_hand: next + current.held };
+}
+
+// Adjusts available stock at one store.
 export async function updateStock(id: string, input: UpdateStockInput) {
   await expireStaleOrders(pool);
 
-  // Locks the stock row while calculating and applying its new value.
-  const result = await withTransaction(async (db) => {
-    await assertStore(db, input.store_id);
-    const { rows } = await db.query<{ available: number; held: number }>(
-      `SELECT st.available,
-              coalesce((SELECT sum(quantity) FROM orders o
-                        WHERE o.product_id = st.product_id AND o.store_id = st.store_id
-                          AND o.status = 'pending_payment'), 0)::int AS held
-       FROM stock st WHERE st.product_id = $1 AND st.store_id = $2
-       FOR UPDATE`,
-      [id, input.store_id],
-    );
-    const current = rows[0];
-    if (!current) throw new ApiError(404, "product_not_found", `No product with id ${id}. Call list_products for the right id.`);
-
-    const next = input.set_to !== undefined ? input.set_to - current.held : current.available + (input.change ?? 0);
-    if (next < 0) {
-      const why =
-        input.set_to !== undefined
-          ? `${current.held} unit(s) are held for unpaid orders, so on hand can't be set below ${current.held}.`
-          : `Only ${current.available} unit(s) are free at this store, so ${-(input.change ?? 0)} can't be removed.`;
-      throw new ApiError(409, "stock_below_zero", `${why} Tell the owner and ask what they want to do.`);
-    }
-
-    await db.query("UPDATE stock SET available = $3, updated_at = now() WHERE product_id = $1 AND store_id = $2", [
-      id,
-      input.store_id,
-      next,
-    ]);
-    await logEvent(db, null, "stock_updated", { product_id: id, store_id: input.store_id, from: current.available, to: next });
-    return { available: next, held: current.held, product: await loadProduct(db, id, "seller") };
+  // Applies the change and reloads the product in one transaction.
+  return withTransaction(async (db) => {
+    const change = await applyStockChange(db, id, input);
+    return { product: await loadProduct(db, id, "seller"), ...change };
   });
-
-  return {
-    product: result.product,
-    store_id: input.store_id,
-    available: result.available,
-    held_for_unpaid_orders: result.held,
-    on_hand: result.available + result.held,
-  };
 }
 
-// Changes a product price while keeping its discount floor valid.
-export async function updatePrice(id: string, input: UpdatePriceInput) {
-  // Locks the product while updating its price and discount floor.
-  const result = await withTransaction(async (db) => {
-    const { rows } = await db.query<{ price_subunit: number; min_price_subunit: number; currency: string }>(
-      "SELECT price_subunit, min_price_subunit, currency FROM products WHERE id = $1 AND active FOR UPDATE",
+// Changes any mix of a product's name, variant, price, floor, sale status and stock in one transaction.
+export async function updateProduct(id: string, input: UpdateProductInput) {
+  await expireStaleOrders(pool);
+
+  // Locks the product so every requested change lands together or not at all.
+  return withTransaction(async (db) => {
+    // 1. Load the current product.
+    const { rows } = await db.query<{
+      name: string;
+      variant: string | null;
+      price_subunit: number;
+      min_price_subunit: number;
+      currency: string;
+      active: boolean;
+    }>(
+      "SELECT name, variant, price_subunit, min_price_subunit, currency, active FROM products WHERE id = $1 FOR UPDATE",
       [id],
     );
     const old = rows[0];
     if (!old) throw new ApiError(404, "product_not_found", `No product with id ${id}. Call list_products for the right id.`);
 
-    // The new price is in the product's own currency, whatever the business default is now.
-    const price = priceToSubunits("price", input.price, old.currency);
-    const requestedFloor = input.min_price === undefined ? old.min_price_subunit : priceToSubunits("min_price", input.min_price, old.currency);
-    const floor = Math.min(requestedFloor, price);
-    await db.query("UPDATE products SET price_subunit = $2, min_price_subunit = $3, updated_at = now() WHERE id = $1", [
-      id,
-      price,
-      floor,
-    ]);
-    await logEvent(db, null, "price_updated", {
+    // 2. Work out the new values, keeping name and variant unique.
+    const name = input.name ?? old.name;
+    const variant = input.variant === undefined ? old.variant : input.variant || null;
+    if (sameProductKey(name, variant) !== sameProductKey(old.name, old.variant)) {
+      const clash = await db.query<{ id: string }>(
+        `SELECT id FROM products
+         WHERE id <> $1 AND lower(name) = lower($2) AND lower(coalesce(variant, '')) = lower($3)`,
+        [id, name, variant ?? ""],
+      );
+      if (clash.rows[0]) {
+        throw new ApiError(409, "product_exists", `Another product, ${clash.rows[0].id}, already has that name and variant. Nothing was changed.`);
+      }
+    }
+
+    // The price is in the product's own currency, whatever the business default is now.
+    const price = input.price === undefined ? old.price_subunit : priceToSubunits("price", input.price, old.currency);
+    let floor = input.min_price === undefined ? old.min_price_subunit : priceToSubunits("min_price", input.min_price, old.currency);
+    if (floor > price) {
+      if (input.min_price !== undefined) {
+        throw new ApiError(400, "invalid_input", "min_price can't be above the price. Nothing was changed.");
+      }
+      floor = price;
+    }
+    const active = input.active ?? old.active;
+
+    // 3. Apply the product fields, then each store's stock.
+    await db.query(
+      `UPDATE products
+       SET name = $2, variant = $3, price_subunit = $4, min_price_subunit = $5, active = $6, updated_at = now()
+       WHERE id = $1`,
+      [id, name, variant, price, floor, active],
+    );
+    await logEvent(db, null, "product_updated", {
       product_id: id,
       currency: old.currency,
-      from: old.price_subunit,
-      to: price,
-      min_price_subunit: floor,
+      from: { name: old.name, variant: old.variant, price_subunit: old.price_subunit, min_price_subunit: old.min_price_subunit, active: old.active },
+      to: { name, variant, price_subunit: price, min_price_subunit: floor, active },
     });
-    return { old, product: await loadProduct(db, id, "seller") };
-  });
 
-  return { product: result.product, old_price: moneyView(result.old.price_subunit, result.old.currency) };
+    const stock = [];
+    for (const change of input.stock ?? []) stock.push(await applyStockChange(db, id, change));
+
+    // 4. Return the product as it is now, what it was, and each stock result.
+    return {
+      product: await loadProduct(db, id, "seller"),
+      previous: {
+        name: old.name,
+        variant: old.variant,
+        price: moneyView(old.price_subunit, old.currency),
+        min_price: moneyView(old.min_price_subunit, old.currency),
+        active: old.active,
+      },
+      stock,
+    };
+  });
 }

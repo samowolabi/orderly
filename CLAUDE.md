@@ -33,7 +33,7 @@ Kola Gadgets, a made-up Lagos phone and gadget store. Stores are rows in a `stor
 
 ## Two Chord teammates
 - **Orderly Shop**: customer side, on the WhatsApp simulator. Tools: list_stores, list_products, create_order, verify_payment, get_receipt. Built-in: schedule_reminder, handover_to_human.
-- **Orderly Owner**: owner side, on the Chord direct line or an owner chat link. Tools: list_stores, list_products, get_receipt, add_store, update_store, add_product, update_stock, update_price, list_orders.
+- **Orderly Owner**: owner side, on the Chord direct line or an owner chat link. Tools: list_stores, list_products, get_receipt, add_store, update_store, add_product, update_stock, update_product, list_orders.
 
 ## Rules the API must enforce (not just the prompts)
 1. Never sell twice: hold stock atomically at order creation (`UPDATE stock SET available = available - qty WHERE available >= qty`), release after 30 minutes unpaid.

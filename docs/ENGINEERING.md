@@ -83,9 +83,9 @@ Each endpoint becomes one tool in Chord when the OpenAPI spec is imported. Every
 | get_receipt | `GET /orders/{id}/receipt` | Yes | Yes | The receipt for a paid order |
 | add_store | `POST /stores` | No | Yes | A new store or branch, with automatic address geocoding when no location is supplied |
 | update_store | `PATCH /stores/{id}` | No | Yes | Change a store's name, structured address, map pin or opening hours |
-| add_product | `POST /products` | No | Yes | New product with stock at one or more stores |
+| add_product | `POST /products` | No | Yes | One or more new products with stock at any stores, added together or not at all |
 | update_stock | `POST /products/{id}/stock` | No | Yes | Change stock at one store |
-| update_price | `PATCH /products/{id}` | No | Yes | Change a price (the same at every store) |
+| update_product | `PATCH /products/{id}` | No | Yes | Change any mix of price, discount floor, name, variant, on-sale status and stock at several stores, in one call |
 | list_orders | `GET /orders` | No | Yes | Orders by status and store, including handed-over ones |
 
 Chord's built-in tools cover the rest: `schedule_reminder` for the payment nudge and `handover_to_human` for escalation.

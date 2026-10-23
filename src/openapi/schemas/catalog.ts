@@ -135,6 +135,7 @@ export const Product = z
     min_price: Money.optional().openapi({
       description: "Lowest discounted price allowed. Owner only; never shown to customers.",
     }),
+    active: z.boolean().optional().openapi({ description: "On sale. Owner only; customers never see products that are off sale." }),
     stores: z.array(StoreStock),
     total_available: z.number().int(),
   })
@@ -199,12 +200,15 @@ export const ListProductsQuery = z.object({
   product_id: z.string().optional(),
 });
 
-export const AddProductBody = z
+const ProductName = z.string().trim().min(2).max(80);
+const Variant = z.string().trim().max(60);
+
+const NewProduct = z
   .object({
     id: z.string().trim().toUpperCase().regex(/^[A-Z0-9][A-Z0-9-]*$/).max(40).optional()
       .openapi({ description: "Product code, e.g. IP16-256. Made from name and variant if left out." }),
-    name: z.string().trim().min(2).max(80).openapi({ example: "iPhone 16" }),
-    variant: z.string().trim().max(60).optional().openapi({ example: "256GB" }),
+    name: ProductName.openapi({ example: "iPhone 16" }),
+    variant: Variant.optional().openapi({ example: "256GB" }),
     price: PriceInput.openapi({ description: "In the business currency (the one list_products shows), main unit, not subunits", example: 1150000 }),
     min_price: PriceInput.optional().openapi({ description: "Discount floor, same currency. Defaults to the price (no discounts)." }),
     stock: z
@@ -217,6 +221,10 @@ export const AddProductBody = z
     message: "min_price can't be above price",
     path: ["min_price"],
   });
+
+export const AddProductBody = z.object({
+  products: z.array(NewProduct).min(1).max(20).openapi({ description: "One or more products, added together or not at all" }),
+});
 
 export const UpdateStockBody = z
   .object({
@@ -231,9 +239,36 @@ export const UpdateStockBody = z
     message: "send exactly one of change or set_to",
   });
 
-export const UpdatePriceBody = z.object({
-  price: PriceInput.openapi({ description: "In the product's currency, main unit (not subunits)", example: 630000 }),
-  min_price: PriceInput.optional().openapi({ description: "New discount floor, same currency. Lowered to the price if it would be above it." }),
-});
+export const UpdateProductBody = z
+  .object({
+    name: ProductName.optional().openapi({ example: "iPhone 13" }),
+    variant: Variant.nullable().optional().openapi({ description: "New variant, or null to remove it", example: "128GB" }),
+    price: PriceInput.optional().openapi({ description: "In the product's currency, main unit (not subunits)", example: 630000 }),
+    min_price: PriceInput.optional().openapi({
+      description: "New discount floor, same currency. If only price is sent and drops below the floor, the floor drops with it.",
+    }),
+    active: z.boolean().optional().openapi({ description: "false takes the product off sale; true puts it back" }),
+    stock: z.array(UpdateStockBody).min(1).max(50).optional().openapi({ description: "Stock changes, one entry per store" }),
+  })
+  // Requires an update to change something.
+  .refine((input) => Object.values(input).some(
+    // Detects whether a product field was supplied.
+    (value) => value !== undefined,
+  ), {
+    message: "send at least one of name, variant, price, min_price, active or stock",
+  })
+  // Keeps a new floor at or below a new price sent in the same request.
+  .refine((input) => input.price === undefined || input.min_price === undefined || input.min_price <= input.price, {
+    message: "min_price can't be above price",
+    path: ["min_price"],
+  })
+  // Allows one stock entry per store, so changes can't contradict each other.
+  .refine((input) => !input.stock || new Set(input.stock.map(
+    // Extracts one stock entry's store id.
+    (entry) => entry.store_id,
+  )).size === input.stock.length, {
+    message: "each store can appear only once in stock",
+    path: ["stock"],
+  });
 
 export const ProductParams = z.object({ id: z.string().openapi({ example: "IP13-128" }) });

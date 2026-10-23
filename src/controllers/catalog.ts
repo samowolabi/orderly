@@ -5,7 +5,7 @@ import {
   ListProductsQuery,
   ProductParams,
   StoreParams,
-  UpdatePriceBody,
+  UpdateProductBody,
   UpdateStockBody,
   UpdateStoreBody,
 } from "../openapi/schemas/catalog";
@@ -36,10 +36,10 @@ export async function listProducts(request: Request, response: Response) {
   ok(response, await catalogService.listProducts(filters, response.locals.role));
 }
 
-// Validates and creates a product with starting stock.
+// Validates and creates one or more products with starting stock.
 export async function addProduct(request: Request, response: Response) {
   const input = parse(AddProductBody, request.body);
-  ok(response, await catalogService.addProduct(input), 201);
+  ok(response, await catalogService.addProducts(input.products), 201);
 }
 
 // Validates and applies a stock adjustment for one store.
@@ -49,9 +49,9 @@ export async function updateStock(request: Request, response: Response) {
   ok(response, await catalogService.updateStock(id, input));
 }
 
-// Validates and applies a product price change.
-export async function updatePrice(request: Request, response: Response) {
+// Validates and applies any mix of product, price, sale status and stock changes.
+export async function updateProduct(request: Request, response: Response) {
   const { id } = parse(ProductParams, request.params);
-  const input = parse(UpdatePriceBody, request.body);
-  ok(response, await catalogService.updatePrice(id, input));
+  const input = parse(UpdateProductBody, request.body);
+  ok(response, await catalogService.updateProduct(id, input));
 }

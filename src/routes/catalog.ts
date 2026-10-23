@@ -11,4 +11,4 @@ catalog.patch("/stores/:id", requireRole("seller"), controller.updateStore);
 catalog.get("/products", requireRole("buyer", "seller"), controller.listProducts);
 catalog.post("/products", requireRole("seller"), controller.addProduct);
 catalog.post("/products/:id/stock", requireRole("seller"), controller.updateStock);
-catalog.patch("/products/:id", requireRole("seller"), controller.updatePrice);
+catalog.patch("/products/:id", requireRole("seller"), controller.updateProduct);

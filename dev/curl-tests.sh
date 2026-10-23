@@ -124,25 +124,55 @@ call "$BUYER" GET /stores;                              check "list_stores shows
 [ "$($PSQL -c "SELECT count(*) FROM events WHERE type='store_updated'")" = 3 ] && { PASS=$((PASS+1)); echo "  ok    each update is logged"; } || { FAILS=$((FAILS+1)); echo "  FAIL  store_updated events: $($PSQL -c "SELECT count(*) FROM events WHERE type='store_updated'")"; }
 
 echo "== Owner: add_product"
-call "$SELLER" POST /products '{"name":"iPhone 16","variant":"256GB","price":1150000,"stock":[{"store_id":"ikeja","quantity":2},{"store_id":"lekki","quantity":1}]}'
-check "add iPhone 16 256GB" 201 '.data.id == "IPHONE-16-256GB" and .data.total_available == 3 and .data.min_price.amount == 1150000 and .data.price.currency == "NGN"'
-call "$SELLER" POST /products '{"name":"iphone 16","variant":"256gb","price":1}'; check "duplicate by name and variant" 409 '.error.code == "product_exists"'; msg
-call "$SELLER" POST /products '{"name":"Pixel 9","price":900000,"stock":[{"store_id":"abuja","quantity":1}]}'; check "unknown store in stock" 404 '.error.code == "store_not_found"'
-call "$SELLER" POST /products '{"name":"Pixel 9","price":900000,"min_price":950000}'; check "floor above price" 400 '.error.code == "invalid_input"'
-call "$SELLER" POST /products '{"name":"Pixel 9","price":-5}'; check "negative price" 400
-call "$SELLER" POST /products '{"name":"Pixel 9","price":900000.555}'; check "more decimals than the currency has" 400 '.error.message_for_agent | test("at most 2 decimal places")'; msg
-call "$SELLER" POST /products '{"name":"Pixel 9","price_naira":900000}'; check "old price_naira field is gone" 400 '.error.message_for_agent | test("price is required")'
+call "$SELLER" POST /products '{"products":[{"name":"iPhone 16","variant":"256GB","price":1150000,"stock":[{"store_id":"ikeja","quantity":2},{"store_id":"lekki","quantity":1}]}]}'
+check "add iPhone 16 256GB" 201 '.data.products[0].id == "IPHONE-16-256GB" and .data.products[0].total_available == 3 and .data.products[0].min_price.amount == 1150000 and .data.products[0].price.currency == "NGN" and .data.products[0].active == true'
+call "$SELLER" POST /products '{"products":[{"name":"iphone 16","variant":"256gb","price":1}]}'; check "duplicate by name and variant" 409 '.error.code == "product_exists"'; msg
+call "$SELLER" POST /products '{"products":[{"name":"Pixel 9","price":900000,"stock":[{"store_id":"abuja","quantity":1}]}]}'; check "unknown store in stock" 404 '.error.code == "store_not_found"'
+call "$SELLER" POST /products '{"products":[{"name":"Pixel 9","price":900000,"min_price":950000}]}'; check "floor above price" 400 '.error.code == "invalid_input"'
+call "$SELLER" POST /products '{"products":[{"name":"Pixel 9","price":-5}]}'; check "negative price" 400
+call "$SELLER" POST /products '{"products":[{"name":"Pixel 9","price":900000.555}]}'; check "more decimals than the currency has" 400 '.error.message_for_agent | test("at most 2 decimal places")'; msg
+call "$SELLER" POST /products '{"products":[{"name":"Pixel 9","price_naira":900000}]}'; check "old price_naira field is gone" 400 '.error.message_for_agent | test("price is required")'
 call "$SELLER" POST /products '{bad json'; check "bad JSON" 400 '.error.code == "bad_json"'
 
-echo "== Owner: update_stock and update_price"
+echo "== Owner: add several products in one call"
+call "$SELLER" POST /products '{"products":[{"name":"Pixel 9","price":900000,"stock":[{"store_id":"ikeja","quantity":2}]},{"name":"Pixel 9 Pro","price":1200000,"stock":[{"store_id":"lekki","quantity":1}]}]}'
+check "two products in one call" 201 '[.data.products[].id] == ["PIXEL-9","PIXEL-9-PRO"]'
+call "$SELLER" POST /products '{"products":[{"name":"Pixel 10","price":1000000},{"name":"Pixel 9","price":1}]}'
+check "one existing product stops the whole batch" 409 '.error.code == "product_exists" and (.error.message_for_agent | test("nothing was added"))'; msg
+call "$SELLER" GET '/products?q=pixel%2010';    check "so the other one wasn't added" 200 '.data.products | length == 0'
+call "$SELLER" POST /products '{"products":[{"name":"Nokia 3310","price":30000},{"name":"nokia 3310","price":31000}]}'
+check "same product twice in one request" 400 '.error.message_for_agent | test("more than once")'
+call "$SELLER" POST /products '{"products":[]}'; check "empty batch" 400
+
+echo "== Owner: update_stock and update_product"
 call "$SELLER" POST /products/IPHONE-16-256GB/stock '{"store_id":"lekki","change":3}'; check "add 3 more to Lekki" 200 '.data.available == 4'
 call "$SELLER" POST /products/IPHONE-16-256GB/stock '{"store_id":"lekki","change":-10}'; check "can't go below zero" 409 '.error.code == "stock_below_zero"'; msg
 call "$SELLER" POST /products/IPHONE-16-256GB/stock '{"store_id":"lekki","change":1,"set_to":3}'; check "change and set_to together" 400
 call "$SELLER" POST /products/IPHONE-16-256GB/stock '{"store_id":"lekki","set_to":2}'; check "set_to after a count" 200 '.data.available == 2 and .data.on_hand == 2'
 call "$SELLER" POST /products/NOPE/stock '{"store_id":"lekki","change":1}'; check "unknown product" 404
-call "$SELLER" PATCH /products/IP13-128 '{"price":630000}'; check "update price" 200 '.data.old_price.amount == 650000 and .data.product.price.amount == 630000 and .data.product.price.display == "₦630,000"'
+call "$SELLER" PATCH /products/IP13-128 '{"price":630000}'; check "update price" 200 '.data.previous.price.amount == 650000 and .data.product.price.amount == 630000 and .data.product.price.display == "₦630,000"'
 call "$SELLER" PATCH /products/IP13-128 '{"price":600000}'; check "price below floor lowers the floor" 200 '.data.product.min_price.amount == 600000'
 call "$SELLER" PATCH /products/IP13-128 '{"price":650000,"min_price":620000}'; check "restore price and floor" 200 '.data.product.price.amount == 650000'
+call "$SELLER" PATCH /products/IPHONE-16-256GB '{"price":1100000,"stock":[{"store_id":"ikeja","change":2},{"store_id":"lekki","set_to":5}]}'
+check "price and two stores in one call" 200 '.data.previous.price.amount == 1150000 and .data.product.price.amount == 1100000 and ([.data.stock[] | {store_id, available}] == [{"store_id":"ikeja","available":4},{"store_id":"lekki","available":5}])'
+call "$SELLER" PATCH /products/IPHONE-16-256GB '{"price":1,"stock":[{"store_id":"ikeja","change":1},{"store_id":"lekki","change":-100}]}'
+check "one bad stock change rolls back everything" 409 '.error.code == "stock_below_zero" and (.error.message_for_agent | test("Nothing was changed"))'; msg
+call "$SELLER" GET '/products?product_id=IPHONE-16-256GB'
+check "so price and Ikeja stock are unchanged" 200 '.data.products[0].price.amount == 1100000 and ([.data.products[0].stores[] | select(.store_id=="ikeja") | .available] == [4])'
+call "$SELLER" PATCH /products/IPHONE-16-256GB '{"stock":[{"store_id":"ikeja","change":1},{"store_id":"ikeja","change":1}]}'; check "same store twice" 400 '.error.message_for_agent | test("only once")'
+call "$SELLER" PATCH /products/IPHONE-16-256GB '{"stock":[{"store_id":"ikeja"}]}';     check "stock entry needs change or set_to" 400
+call "$SELLER" PATCH /products/IPHONE-16-256GB '{}';                                    check "empty update" 400 '.error.message_for_agent | test("at least one")'
+call "$SELLER" PATCH /products/IPHONE-16-256GB '{"min_price":2000000}';                 check "floor above the current price" 400 '.error.message_for_agent | test("above the price")'
+call "$SELLER" PATCH /products/IPHONE-16-256GB '{"name":"iPhone 16 Plus","variant":null}'
+check "rename and clear the variant" 200 '.data.product.name == "iPhone 16 Plus" and .data.product.variant == null and .data.previous.variant == "256GB" and .data.product.id == "IPHONE-16-256GB"'
+call "$SELLER" PATCH /products/IPHONE-16-256GB '{"name":"iPhone 13","variant":"128GB"}'; check "can't take another product's name" 409 '.error.code == "product_exists"'
+call "$SELLER" PATCH /products/IPHONE-16-256GB '{"name":"iPhone 16","variant":"256GB"}'; check "rename back" 200 '.data.product.variant == "256GB"'
+call "$SELLER" PATCH /products/IPHONE-16-256GB '{"active":false}';                      check "take off sale" 200 '.data.product.active == false and .data.previous.active == true'
+call "$BUYER" GET '/products?q=iphone%2016';                                            check "customers no longer see it" 200 '.data.products | length == 0'
+call "$BUYER" POST /orders '{"product_id":"IPHONE-16-256GB","store_id":"ikeja","buyer_name":"A"}'; check "and can't order it" 404 '.error.code == "product_not_found"'
+call "$SELLER" GET '/products?q=iphone%2016';                                           check "owner still sees it, marked off sale" 200 '[.data.products[] | .active] == [false]'
+call "$SELLER" PATCH /products/IPHONE-16-256GB '{"active":true}';                       check "back on sale" 200 '.data.product.active == true'
+call "$BUYER" PATCH /products/IPHONE-16-256GB '{"active":false}';                       check "buyer can't take it off sale" 403
 
 echo "== Happy path: order, 'I paid' too early, pay, verify, receipt"
 before=$(stock IP13-128 ikeja)
@@ -168,6 +198,9 @@ call "$BUYER" POST /orders '{"product_id":"IP13-128","store_id":"ikeja","buyer_n
 call "$BUYER" POST /orders '{"product_id":"NOPE","store_id":"ikeja","buyer_name":"A"}'; check "unknown product" 404 '.error.code == "product_not_found"'
 call "$BUYER" POST /orders '{"product_id":"AIRPODS-PRO2","store_id":"ikeja","buyer_name":"A"}'; check "out of stock here, offers Lekki" 409 '.error.code == "out_of_stock" and (.error.message_for_agent | test("Lekki"))'; msg
 call "$BUYER" POST /orders '{"product_id":"IP13-128","store_id":"lekki","buyer_name":"A","quantity":5}'; check "not enough units" 409 '.error.code == "out_of_stock"'
+call "$BUYER" POST /orders '{"product_id":"IP13-128","store_id":"lekki","buyer_name":"Femi"}'; check "first buyer holds Lekki's only unit" 201
+call "$BUYER" POST /orders '{"product_id":"IP13-128","store_id":"lekki","buyer_name":"Gozie"}'
+check "second buyer hears it's reserved, not sold out, and when" 409 '.error.code == "reserved" and (.error.message_for_agent | test("comes back at about [0-9]")) and (.error.message_for_agent | test("Kola Gadgets Ikeja"))'; msg
 call "$BUYER" POST /orders/ORD-9999/verify;   check "unknown order" 404 '.error.code == "order_not_found"'
 
 echo "== Never sell twice: two buyers, last unit, at the same moment"
@@ -179,6 +212,7 @@ codes=$(sort /tmp/claude-501/race-codes.txt | tr '\n' ' ')
 [ "$codes" = "201 409 " ] && { PASS=$((PASS+1)); echo "  ok    one 201, one 409 ($codes)"; } || { FAILS=$((FAILS+1)); echo "  FAIL  race codes: $codes"; }
 [ "$(stock IP15P-256 ikeja)" = "0" ] && { PASS=$((PASS+1)); echo "  ok    stock is 0, not negative"; } || { FAILS=$((FAILS+1)); echo "  FAIL  stock: $(stock IP15P-256 ikeja)"; }
 RACE=$(jq -r 'select(.ok) | .data.order_id' /tmp/claude-501/race-*.json)
+[ "$(jq -r 'select(.ok|not) | .error.code' /tmp/claude-501/race-*.json)" = "reserved" ] && { PASS=$((PASS+1)); echo "  ok    loser is told the unit is reserved"; } || { FAILS=$((FAILS+1)); echo "  FAIL  loser code: $(jq -r 'select(.ok|not) | .error.code' /tmp/claude-501/race-*.json)"; }
 jq -r 'select(.ok|not) | .error.message_for_agent' /tmp/claude-501/race-*.json | sed 's/^/        > /'
 
 echo "== Late payment, item gone: paid_no_stock"

@@ -44,6 +44,27 @@ export async function expireStaleOrders(db: Db): Promise<number> {
   return rowCount ?? 0;
 }
 
+// Returns when enough unpaid holds at a store will have expired to free `quantity`
+// units, or null when the store couldn't cover it even then.
+export async function whenStockFrees(db: Db, productId: string, storeId: string, quantity: number): Promise<Date | null> {
+  const { rows } = await db.query<{ available: number; quantity: number | null; expires_at: Date | null }>(
+    `SELECT st.available, o.quantity, o.expires_at
+     FROM stock st
+     LEFT JOIN orders o ON o.product_id = st.product_id AND o.store_id = st.store_id AND o.status = 'pending_payment'
+     WHERE st.product_id = $1 AND st.store_id = $2
+     ORDER BY o.expires_at`,
+    [productId, storeId],
+  );
+
+  let free = rows[0]?.available ?? 0;
+  for (const row of rows) {
+    if (row.quantity === null || !row.expires_at) continue;
+    free += row.quantity;
+    if (free >= quantity) return row.expires_at;
+  }
+  return null;
+}
+
 // Fails an order, releases any active hold and records the reason.
 export async function failOrder(db: Db, orderId: string, reason: string, detail: Record<string, unknown> = {}) {
   const { rows } = await db.query(

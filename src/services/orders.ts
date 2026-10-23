@@ -7,11 +7,11 @@ import {
 } from "../adapters/payment/payment-processor";
 import { config } from "../config";
 import { pool, withTransaction } from "../db/pool";
-import { formatLocalTime } from "../utils/format";
+import { formatLocalClock, formatLocalTime } from "../utils/format";
 import { ApiError } from "../utils/http";
 import { formatMoney, moneyView } from "../utils/money";
 import { formatAddress, type AddressRow } from "../utils/store-location";
-import { expireStaleOrders, failOrder, holdStock, logEvent, type Db } from "./stock";
+import { expireStaleOrders, failOrder, holdStock, logEvent, whenStockFrees, type Db } from "./stock";
 
 const MAX_DECLINES = 3;
 const IN_PROGRESS = new Set(["ongoing", "pending", "processing", "queued"]);
@@ -196,7 +196,7 @@ export async function createOrder(input: CreateOrderInput) {
     if (!product) {
       throw new ApiError(404, "product_not_found", `No product ${input.product_id}. Call list_products to find the right id.`);
     }
-    const store = (await db.query("SELECT id FROM stores WHERE id = $1 AND active", [input.store_id])).rows[0];
+    const store = (await db.query<{ id: string; name: string }>("SELECT id, name FROM stores WHERE id = $1 AND active", [input.store_id])).rows[0];
     if (!store) throw new ApiError(404, "store_not_found", `No store ${input.store_id}. Call list_stores for the right id.`);
 
     if (!(await holdStock(db, input.product_id, input.store_id, input.quantity))) {
@@ -206,16 +206,28 @@ export async function createOrder(input: CreateOrderInput) {
          ORDER BY st.available DESC`,
         [input.product_id, input.store_id, input.quantity],
       );
-      const hint = elsewhere.length
-        ? `It is available at ${elsewhere.map(
-            // Formats one alternative store and its available quantity.
-            (candidate) => `${candidate.name} (${candidate.available})`,
-          ).join(", ")}. Offer that store instead.`
+      const otherStores = elsewhere.map(
+        // Formats one alternative store and its available quantity.
+        (candidate) => `${candidate.name} (${candidate.available})`,
+      ).join(", ");
+
+      // Held units may come back, so say when instead of calling the item sold out.
+      const freeAt = await whenStockFrees(db, input.product_id, input.store_id, input.quantity);
+      if (freeAt) {
+        throw new ApiError(
+          409,
+          "reserved",
+          `${input.product_id} at ${store.name} is reserved for other customers who haven't paid yet. If they don't pay, it comes back at about ${formatLocalClock(freeAt)}. Tell the customer, and offer to try again then${otherStores ? `, or offer ${otherStores} now` : ""}.`,
+        );
+      }
+
+      const hint = otherStores
+        ? `It is available at ${otherStores}. Offer that store instead.`
         : "It is sold out at every store. Say so honestly and offer something similar from list_products.";
       throw new ApiError(
         409,
         "out_of_stock",
-        `Not enough ${input.product_id} at ${input.store_id} for ${input.quantity}. ${hint}`,
+        `Not enough ${input.product_id} at ${store.name} for ${input.quantity}. ${hint}`,
       );
     }
 

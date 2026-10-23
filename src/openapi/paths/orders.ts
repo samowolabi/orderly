@@ -8,7 +8,7 @@ registry.registerPath({
   operationId: "create_order",
   summary: "Hold an item and get a Paystack payment link",
   description:
-    "Holds the units at the chosen store so nobody else can buy them, and returns a Paystack payment_url to send the customer. Tell the customer how long they have from minutes_left; the hold ends at expires_at. The price always comes from the store's records. Confirm item, store and the customer's name before calling. If it says out_of_stock, offer the other stores it names.",
+    "Holds the units at the chosen store so nobody else can buy them, and returns a Paystack payment_url to send the customer. Tell the customer how long they have from minutes_left; the hold ends at expires_at. The price always comes from the store's records. Confirm item, store and the customer's name before calling. If it says out_of_stock, offer the other stores it names. If it says reserved, the item is held for someone who hasn't paid yet: tell the customer when it may come back, as the message says.",
   security: security.buyer,
   request: { body: body(schema.CreateOrderBody) },
   responses: {
