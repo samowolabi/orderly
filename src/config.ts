@@ -69,9 +69,6 @@ const Env = z.object({
   // Delivery fee in the business currency's main unit: base plus a rate per km, rounded up.
   DELIVERY_BASE_FEE: z.coerce.number().nonnegative().default(1500),
   DELIVERY_FEE_PER_KM: z.coerce.number().nonnegative().default(150),
-  DELIVERY_FEE_ROUND_TO: z.coerce.number().positive().default(100),
-  // Furthest a rider goes, in km; unset means any distance the map can route.
-  DELIVERY_MAX_KM: z.coerce.number().positive().optional(),
   // Minutes to pack an order and hand it to a rider, added to the drive time.
   DELIVERY_PREP_MINUTES: z.coerce.number().int().nonnegative().default(20),
   // Added to the delivery time when items have to be brought over from another store first.
@@ -102,7 +99,6 @@ export function config(): Config {
     const parsed = Env.safeParse({
       ...process.env,
       PUBLIC_URL: process.env.PUBLIC_URL || hostUrl(),
-      DELIVERY_MAX_KM: process.env.DELIVERY_MAX_KM || undefined,
       RESEND_API_KEY: process.env.RESEND_API_KEY || undefined,
       OWNER_EMAIL: process.env.OWNER_EMAIL || undefined,
     });

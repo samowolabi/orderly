@@ -279,6 +279,9 @@ check "no store has both: delivered from Lekki, the charger comes over from Ikej
 QM=$(jq -r .data.quote_id <<<"$BODY")
 call "$BUYER" POST /orders '{"items":[{"product_id":"AIRPODS-PRO2"},{"product_id":"APL-20W"}],"delivery_quote_id":"'"$QM"'","buyer_name":"Kemi"}'
 check "one order, each item held at its own store, one link" 201 '.data.store.id == "lekki" and ([.data.items[].store.id] == ["lekki","ikeja"]) and .data.amount.amount == 339600 and (.data.payment_url | startswith("http"))'
+ODM=$(jq -r .data.order_id <<<"$BODY")
+pay "$ODM"
+call "$BUYER" POST "/orders/$ODM/verify"; check "the multi-store delivery is paid" 200 '.data.outcome == "paid"'
 call "$BUYER" POST /delivery/quote '{"items":[{"product_id":"IP15P-256","quantity":2}],"address":"'"$LEKKI_ADDR"'","phone":"08031234567"}'
 check "not enough anywhere" 409 '.error.code == "out_of_stock" and (.error.message_for_agent | test("any store"))'; msg
 call "$BUYER" POST /delivery/quote '{"items":[{"product_id":"ANKER-20K"}],"address":"5 Nowhere Close","phone":"08031234567"}'
@@ -300,7 +303,7 @@ OD=$(jq -r .data.order_id <<<"$BODY")
 eq "held at Lekki" "$(stock ANKER-20K lekki)" "$((anker-1))"
 pay "$OD"
 call "$BUYER" POST "/orders/$OD/verify"
-check "paid: receipt shows delivery, next_step adds the rider message" 200 '.data.outcome == "paid" and (.data.receipt.text | test("Delivery to 12 Admiralty Way, Lekki Phase 1, Lagos: ₦1,600")) and (.data.receipt.text | test("Total paid: ₦46,600")) and .data.receipt.delivery.fee.amount == 1600 and (.data.next_step | test("rider")) and (.data.next_step | test("08031234567"))'; msg
+check "paid: the receipt shows delivery and when the rider comes" 200 '.data.outcome == "paid" and (.data.receipt.text | test("Delivery to 12 Admiralty Way, Lekki Phase 1, Lagos: ₦1,600")) and (.data.receipt.text | test("Total paid: ₦46,600")) and .data.receipt.delivery.fee.amount == 1600 and (.data.receipt.text | test("Our rider will bring it to 12 Admiralty Way, Lekki Phase 1, Lagos in about 22 minutes")) and (.data.receipt.text | test("call 08031234567")) and (.data.next_step | test("second") | not)'
 jq -r .data.receipt.text <<<"$BODY" | sed 's/^/        | /'
 call "$BUYER" POST /orders '{"items":[{"product_id":"ANKER-20K"}],"delivery_quote_id":"'"$Q1"'","buyer_name":"Uche"}'
 check "a quote pays for one order only" 409 '.error.code == "quote_used"'
@@ -317,22 +320,15 @@ check "neither store_id nor a quote" 400 '.error.message_for_agent | test("deliv
 
 echo "== Owner: delivery pricing"
 call "$SELLER" PATCH /delivery/settings '{}'
-check "defaults until the owner sets any" 200 '.data.set_by_owner == false and .data.base_fee.amount == 1500 and .data.fee_per_km.amount == 150 and .data.round_to.amount == 100 and .data.max_km == null and .data.prep_minutes == 20 and (.data.examples[] | select(.km == 5) | .fee.amount) == 2300'
+check "defaults until the owner sets any" 200 '.data.set_by_owner == false and .data.base_fee.amount == 1500 and .data.fee_per_km.amount == 150 and (.data.examples[] | select(.km == 5) | .fee.amount) == 2300 and (.data | has("max_km") | not)'
 call "$BUYER" PATCH /delivery/settings '{}';                      check "customers can't read or change it" 403
 call "$SELLER" PATCH /delivery/settings '{"fee_per_km":-1}';      check "negative rate" 400
-call "$SELLER" PATCH /delivery/settings '{"round_to":0}';         check "rounding to zero" 400
-call "$SELLER" PATCH /delivery/settings '{"fee_per_km":200,"max_km":10,"prep_minutes":30}'
-check "owner raises the rate, caps the distance, keeps the base fee" 200 '.data.set_by_owner and .data.fee_per_km.amount == 200 and .data.base_fee.amount == 1500 and .data.max_km == 10 and .data.prep_minutes == 30 and (.data.examples[] | select(.km == 5) | .fee.amount) == 2500'
-call "$BUYER" POST /delivery/quote '{"items":[{"product_id":"ANKER-20K"}],"address":"'"$LEKKI_ADDR"'","phone":"08031234567"}'
-check "new quotes use the owner's pricing" 201 '.data.fee.amount == 1600 and .data.minutes == 32'
+call "$SELLER" PATCH /delivery/settings '{"fee_per_km":200}'
+check "owner raises the rate and keeps the base fee" 200 '.data.set_by_owner and .data.fee_per_km.amount == 200 and .data.base_fee.amount == 1500 and (.data.examples[] | select(.km == 5) | .fee.amount) == 2500'
 call "$BUYER" POST /delivery/quote '{"items":[{"product_id":"IP15P-256"}],"address":"'"$LEKKI_ADDR"'","phone":"08031234567"}'
-check "beyond the owner's limit: offer pickup" 409 '.error.code == "too_far" and (.error.message_for_agent | test("10 km"))'; msg
-call "$BUYER" POST "/orders/$OD/verify";      check "an order keeps the time it was quoted with" 200 '.data.order.delivery.minutes == 22'
-call "$SELLER" PATCH /delivery/settings '{"max_km":null}'
-check "limit removed, other settings kept" 200 '.data.max_km == null and .data.fee_per_km.amount == 200'
-call "$BUYER" POST /delivery/quote '{"items":[{"product_id":"IP15P-256"}],"address":"'"$LEKKI_ADDR"'","phone":"08031234567"}'
-check "far address quotes again" 201 '.data.store.id == "ikeja" and .data.fee.amount > 5000'
-call "$SELLER" PATCH /delivery/settings '{"fee_per_km":150,"prep_minutes":20}'; check "back to the usual pricing" 200 '.data.fee_per_km.amount == 150'
+check "new quotes use the owner's pricing, rounded up to ₦100, at any distance" 201 '.data.store.id == "ikeja" and .data.fee.amount > 5000 and (.data.fee.amount % 100 == 0)'
+call "$BUYER" POST "/orders/$OD/verify";      check "an order keeps the fee it was quoted" 200 '.data.order.delivery.fee.amount == 1600'
+call "$SELLER" PATCH /delivery/settings '{"fee_per_km":150}'; check "back to the usual pricing" 200 '.data.fee_per_km.amount == 150'
 
 echo "== Haggling: counter offers, agreed prices, the floor"
 call "$BUYER" GET '/products?product_id=IP13-128'
@@ -484,11 +480,12 @@ email_check "a paid order emails the owner, with where each item is held" '[.[] 
 email_check "a late payment with nothing left asks for a refund" '[.[] | select(.subject | startswith("Refund needed: '"$RACE"'"))] | length == 1'
 email_check "a re-held late payment emails once, though the webhook came twice" '[.[] | select(.subject | startswith("Paid late, still in stock: '"$O2"'"))] | length == 1'
 email_check "a wrong amount asks the owner to check" '[.[] | select(.subject | startswith("Check payment: "))] | length >= 1'
+email_check "a delivery email lists what to bring to the delivering store" '[.[] | select(.subject | startswith("Paid: '"$ODM"'"))] | length == 1 and (.[0].text | test("bring these to Kola Gadgets Lekki")) and (.[0].text | test("Apple USB-C charger \\(20W\\) from Kola Gadgets Ikeja"))'
 email_check "never the same email twice" 'group_by(.subject) | all(length == 1)'
 jq -r '[.[] | select(.subject | startswith("Paid: '"$O1"'"))][0] | "        | \(.subject)", (.text | split("\n")[] | "        | \(.)")' <<<"$EMAILS"
 
 echo "== Owner: list_orders"
-call "$SELLER" GET /orders;                   check "today's orders and summary" 200 '.data.period == "today" and .data.summary.counts.paid == 9 and .data.summary.paid_totals == [{"amount":4049600,"currency":"NGN","display":"₦4,049,600"}]'
+call "$SELLER" GET /orders;                   check "today's orders and summary" 200 '.data.period == "today" and .data.summary.counts.paid == 10 and .data.summary.paid_totals == [{"amount":4389200,"currency":"NGN","display":"₦4,389,200"}]'
 check "list_orders shows each order's lines" 200 '[.data.orders[] | select(.order_id == "'"$OM"'") | .items[].product.id] == ["IP14-128", "ANKER-20K"]'
 jq -c '.data.summary' <<<"$BODY" | sed 's/^/        /'
 check "paid_no_stock and mismatch need attention" 200 '[.data.needs_attention[].order_id] | contains(["'"$RACE"'", "'"$O5"'"])'

@@ -176,18 +176,12 @@ export const DeliveryQuote = z
 export const DeliverySettingsBody = z.object({
   base_fee: z.number().min(0).optional().openapi({ description: "Flat part of every delivery fee, in the main unit of the business currency", example: 1500 }),
   fee_per_km: z.number().min(0).optional().openapi({ description: "Added for each km of driving distance", example: 150 }),
-  round_to: z.number().positive().optional().openapi({ description: "Fees are rounded up to a multiple of this", example: 100 }),
-  max_km: z.number().positive().nullable().optional().openapi({ description: "Furthest a rider goes; null removes the limit", example: 30 }),
-  prep_minutes: z.number().int().min(0).max(240).optional().openapi({ description: "Minutes to pack an order before the rider leaves", example: 20 }),
 });
 
 export const DeliverySettings = z
   .object({
     base_fee: Money,
     fee_per_km: Money,
-    round_to: Money,
-    max_km: z.number().nullable().openapi({ description: "null means no limit" }),
-    prep_minutes: z.number().int(),
     set_by_owner: z.boolean().openapi({ description: "false while the shop still uses the default pricing" }),
     examples: z.array(z.object({ km: z.number(), fee: Money })).openapi({ description: "What a few typical trips cost with this pricing" }),
   })

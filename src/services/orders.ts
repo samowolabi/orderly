@@ -249,6 +249,12 @@ function receiptView(order: OrderRow) {
     `*Total paid: ${total}*`,
     "",
     `Paid ${formatLocalTime(paidAt)}${order.payment_channel ? ` by ${channelLabel(order.payment_channel)}` : ""}`,
+    // A delivery receipt says when the rider comes, so the customer needs no second message.
+    ...(delivery
+      ? [
+          `Our rider will bring it to ${delivery.address} in about ${delivery.minutes} minutes from payment (around ${formatLocalClock(new Date(paidAt.getTime() + delivery.minutes * 60_000))}), and will call ${delivery.phone} on arrival.`,
+        ]
+      : []),
     `${paymentProcessor.name} reference: ${reference}`,
     `Thank you for shopping with ${business}.`,
   ];
@@ -475,23 +481,15 @@ export async function createOrder(input: CreateOrderInput) {
   return orderView(await loadOrder(pool, order.id));
 }
 
-// For a paid delivery order, the follow-up message that tells the customer a rider is on the way.
-function riderFollowUp(order: OrderRow) {
-  const delivery = deliveryView(order);
-  if (!delivery) return "";
-  const arrives = formatLocalClock(new Date(Date.now() + delivery.minutes * 60_000));
-  return ` Then send a second, short message: our rider will bring it to ${delivery.address} in about ${delivery.minutes} minutes (around ${arrives}) and will call ${delivery.phone} on arrival.`;
-}
-
 // Maps a payment outcome to the exact conversational instruction for Chord.
 function nextStep(outcome: PaymentOutcome, order: OrderRow): string {
   switch (outcome) {
     case "paid":
-      return `Paystack confirmed the payment. Send the customer the receipt text.${riderFollowUp(order)}`;
+      return `Paystack confirmed the payment. Send the customer the receipt text.`;
     case "already_paid":
-      return `This order was already confirmed. Send the receipt text again if they need it.${riderFollowUp(order)}`;
+      return `This order was already confirmed. Send the receipt text again if they need it.`;
     case "paid_late_reheld":
-      return `The payment came in after the hold ran out, but everything was still in stock, so the order is confirmed. Send the receipt text.${riderFollowUp(order)}`;
+      return `The payment came in after the hold ran out, but everything was still in stock, so the order is confirmed. Send the receipt text.`;
     case "paid_no_stock":
       return "The customer paid after the hold ran out and something in the order has since sold out. Tell them honestly, say the owner will refund them in full, and hand over to a person.";
     case "not_paid_yet":
@@ -644,10 +642,17 @@ function ownerMessage(order: OrderRow, alert: OwnerAlert) {
   const items = order.items.map(
     (item) => `• ${itemName(item)}${item.quantity > 1 ? ` x${item.quantity}` : ""}: ${formatMoney(item.amount_subunit, order.currency)}, held at ${item.store_name}`,
   );
+  // A delivery leaves from one store; items held elsewhere have to be brought there first.
+  const bringOver = delivery ? order.items.filter((item) => item.store_id !== order.store_id) : [];
   const fulfilment = delivery
-    ? `Delivery to ${delivery.address} (phone ${delivery.phone}), leaving from ${order.store_name}.`
-    : "Pickup: the customer collects each item at the store shown.";
-  const details = ["", ...items, "", fulfilment, `Paystack reference: ${reference}`, "", `Sent by Orderly for ${config().BUSINESS_NAME}.`];
+    ? [
+        `Delivery to ${delivery.address} (phone ${delivery.phone}), leaving from ${order.store_name}.`,
+        ...(bringOver.length
+          ? [`Before the rider leaves, bring these to ${order.store_name}:`, ...bringOver.map((item) => `• ${itemName(item)}${item.quantity > 1 ? ` x${item.quantity}` : ""} from ${item.store_name}`)]
+          : []),
+      ]
+    : ["Pickup: the customer collects each item at the store shown."];
+  const details = ["", ...items, "", ...fulfilment, `Paystack reference: ${reference}`, "", `Sent by Orderly for ${config().BUSINESS_NAME}.`];
   switch (alert) {
     case "paid":
       return { subject: `Paid: ${order.id}, ${total}`, text: [`${order.buyer_name} paid ${total} for ${order.id}.`, ...details].join("\n") };

@@ -17,22 +17,16 @@ type QuoteInput = {
   store_id?: string;
 };
 
-// Owner changes in the main unit of the business currency; null max_km removes the limit.
+// Owner changes in the main unit of the business currency.
 type SettingsInput = {
   base_fee?: number;
   fee_per_km?: number;
-  round_to?: number;
-  max_km?: number | null;
-  prep_minutes?: number;
 };
 
 type SettingsRow = {
   currency: string;
   base_fee_subunit: number;
   fee_per_km_subunit: number;
-  round_to_subunit: number;
-  max_km: number | null;
-  prep_minutes: number;
 };
 
 type CandidateStore = { id: string; name: string; latitude: number; longitude: number };
@@ -60,9 +54,7 @@ export const distanceKm = (meters: number) => Math.round(meters / 100) / 10;
 
 // The owner's delivery pricing, or the environment's defaults until the owner sets any.
 async function loadSettings(db: Db): Promise<SettingsRow & { set_by_owner: boolean }> {
-  const { rows } = await db.query<SettingsRow>(
-    "SELECT currency, base_fee_subunit, fee_per_km_subunit, round_to_subunit, max_km::float8 AS max_km, prep_minutes FROM delivery_settings",
-  );
+  const { rows } = await db.query<SettingsRow>("SELECT currency, base_fee_subunit, fee_per_km_subunit FROM delivery_settings");
   if (rows[0]) return { ...rows[0], set_by_owner: true };
   const env = config();
   const currency = env.BUSINESS_CURRENCY;
@@ -70,17 +62,14 @@ async function loadSettings(db: Db): Promise<SettingsRow & { set_by_owner: boole
     currency,
     base_fee_subunit: toSubunits(env.DELIVERY_BASE_FEE, currency),
     fee_per_km_subunit: toSubunits(env.DELIVERY_FEE_PER_KM, currency),
-    round_to_subunit: toSubunits(env.DELIVERY_FEE_ROUND_TO, currency),
-    max_km: env.DELIVERY_MAX_KM ?? null,
-    prep_minutes: env.DELIVERY_PREP_MINUTES,
     set_by_owner: false,
   };
 }
 
-// Prices a trip: base fee plus a rate per km, rounded up to the configured step.
+// Prices a trip: base fee plus a rate per km, rounded up to a whole 100 (e.g. ₦100).
 function deliveryFee(meters: number, settings: SettingsRow) {
-  const raw = settings.base_fee_subunit + settings.fee_per_km_subunit * (meters / 1000);
-  return Math.ceil(raw / settings.round_to_subunit) * settings.round_to_subunit;
+  const step = toSubunits(100, settings.currency);
+  return Math.ceil((settings.base_fee_subunit + settings.fee_per_km_subunit * (meters / 1000)) / step) * step;
 }
 
 // What the owner sees: the pricing, and what a few typical trips would cost.
@@ -89,35 +78,26 @@ function settingsView(settings: SettingsRow & { set_by_owner: boolean }) {
   return {
     base_fee: money(settings.base_fee_subunit),
     fee_per_km: money(settings.fee_per_km_subunit),
-    round_to: money(settings.round_to_subunit),
-    max_km: settings.max_km,
-    prep_minutes: settings.prep_minutes,
     set_by_owner: settings.set_by_owner,
     examples: [2, 5, 10, 20].map((km) => ({ km, fee: money(deliveryFee(km * 1000, settings)) })),
   };
 }
 
-// Reads the delivery pricing, or changes any part of it and returns the result.
+// Reads the delivery pricing, or changes the base fee or rate per km and returns the result.
 export async function deliverySettings(input: SettingsInput) {
   const current = await loadSettings(pool);
-  const changes = Object.entries(input).filter(([, value]) => value !== undefined);
-  if (!changes.length) return settingsView(current);
+  if (input.base_fee === undefined && input.fee_per_km === undefined) return settingsView(current);
 
   const { currency } = current;
   const next: SettingsRow = {
     currency,
     base_fee_subunit: input.base_fee !== undefined ? toSubunits(input.base_fee, currency) : current.base_fee_subunit,
     fee_per_km_subunit: input.fee_per_km !== undefined ? toSubunits(input.fee_per_km, currency) : current.fee_per_km_subunit,
-    round_to_subunit: input.round_to !== undefined ? toSubunits(input.round_to, currency) : current.round_to_subunit,
-    max_km: input.max_km !== undefined ? input.max_km : current.max_km,
-    prep_minutes: input.prep_minutes ?? current.prep_minutes,
   };
   await pool.query(
-    `INSERT INTO delivery_settings (id, currency, base_fee_subunit, fee_per_km_subunit, round_to_subunit, max_km, prep_minutes)
-     VALUES (true, $1, $2, $3, $4, $5, $6)
-     ON CONFLICT (id) DO UPDATE SET currency = $1, base_fee_subunit = $2, fee_per_km_subunit = $3,
-       round_to_subunit = $4, max_km = $5, prep_minutes = $6, updated_at = now()`,
-    [next.currency, next.base_fee_subunit, next.fee_per_km_subunit, next.round_to_subunit, next.max_km, next.prep_minutes],
+    `INSERT INTO delivery_settings (id, currency, base_fee_subunit, fee_per_km_subunit) VALUES (true, $1, $2, $3)
+     ON CONFLICT (id) DO UPDATE SET currency = $1, base_fee_subunit = $2, fee_per_km_subunit = $3, updated_at = now()`,
+    [next.currency, next.base_fee_subunit, next.fee_per_km_subunit],
   );
   await logEvent(pool, null, "delivery_settings_updated", { before: current, after: next });
   return settingsView({ ...next, set_by_owner: true });
@@ -247,14 +227,6 @@ export async function quoteDelivery(input: QuoteInput) {
   }
 
   const km = distanceKm(best.route.distanceMeters);
-  const maxKm = settings.max_km;
-  if (maxKm !== null && km > maxKm) {
-    throw new ApiError(
-      409,
-      "too_far",
-      `That address is ${km} km from ${best.store.name}, beyond the ${maxKm} km our riders cover. Offer pickup at ${best.store.name} instead.`,
-    );
-  }
 
   // Items from other stores are brought to the delivering store first, which adds a fixed time.
   const sources = [...transfers(best.item_stores, best.store.id)].map((id) => stores.find((store) => store.id === id)!);
@@ -278,7 +250,7 @@ export async function quoteDelivery(input: QuoteInput) {
       best.route.durationSeconds,
       fee,
       currency,
-      settings.prep_minutes,
+      config().DELIVERY_PREP_MINUTES,
       best.item_stores,
       transferMinutes,
       config().DELIVERY_QUOTE_MINUTES,
@@ -288,7 +260,7 @@ export async function quoteDelivery(input: QuoteInput) {
   // A haggled line counts at its agreed price, so the quoted total matches the order.
   const productOf = new Map(products.map((product) => [product.id, product]));
   const subtotal = items.reduce((total, item) => total + linePrice(productOf.get(item.product_id)!, item.price) * item.quantity, 0);
-  const minutes = deliveryMinutes(best.route.durationSeconds, settings.prep_minutes + transferMinutes);
+  const minutes = deliveryMinutes(best.route.durationSeconds, config().DELIVERY_PREP_MINUTES + transferMinutes);
   const broughtFrom = sources.map((source) => source.name).join(" and ");
 
   return {
