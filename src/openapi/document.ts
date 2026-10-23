@@ -21,7 +21,7 @@ Orderly is the source of truth for this business's stores, products, stock, orde
 
 ## Owner workflow
 
-Use \`add_store\` and \`update_store\` for branches, addresses, map pins and opening hours. Use \`add_product\` for new products (several in one call) and \`update_product\` for any mix of price, details, sale status and stock at several stores in one call. Use \`list_orders\` for sales and orders needing attention. Read the whole batch of changes back to the owner once and get confirmation before a write operation.
+Use \`add_store\` and \`update_store\` for branches, addresses, map pins and opening hours. Use \`add_product\` for new products (several in one call) and \`update_product\` for any mix of price, details, sale status and stock at several stores in one call. Use \`list_orders\` for sales and orders needing attention. Use \`delivery_settings\` to read or change delivery pricing. Read the whole batch of changes back to the owner once and get confirmation before a write operation.
 
 ## Responses
 

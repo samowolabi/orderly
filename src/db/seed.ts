@@ -61,7 +61,7 @@ async function seed() {
 
   // Rebuilds all demo rows atomically so partial seeds cannot remain.
   await withTransaction(async (db) => {
-    await db.query("TRUNCATE events, order_items, orders, delivery_quotes, stock, products, store_hours, stores RESTART IDENTITY CASCADE");
+    await db.query("TRUNCATE events, order_items, orders, delivery_quotes, delivery_settings, stock, products, store_hours, stores RESTART IDENTITY CASCADE");
     await db.query("ALTER SEQUENCE order_number_seq RESTART WITH 1001");
 
     for (const s of stores) {

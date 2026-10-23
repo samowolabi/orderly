@@ -94,6 +94,7 @@ type DeliveryRow = {
   delivery_phone: string | null;
   delivery_distance_m: number | null;
   delivery_duration_s: number | null;
+  delivery_prep_minutes: number | null;
 };
 
 type OrderRow = OrderBase & { store_name: string; items: ItemRow[] } & DeliveryRow & AddressRow;
@@ -107,7 +108,7 @@ const ORDER_SELECT = `
   SELECT o.*, s.name AS store_name, s.address_line1, s.address_line2, s.area, s.city, s.state,
          s.country_code, s.postal_code, s.latitude, s.longitude, s.directions_note,
          dq.address AS delivery_address, dq.phone AS delivery_phone,
-         dq.distance_m AS delivery_distance_m, dq.duration_s AS delivery_duration_s
+         dq.distance_m AS delivery_distance_m, dq.duration_s AS delivery_duration_s, dq.prep_minutes AS delivery_prep_minutes
   FROM orders o
   JOIN stores s ON s.id = o.store_id
   LEFT JOIN delivery_quotes dq ON dq.id = o.delivery_quote_id`;
@@ -178,7 +179,7 @@ function deliveryView(order: OrderRow) {
     phone: order.delivery_phone!,
     fee: moneyView(order.delivery_fee_subunit, order.currency),
     distance_km: distanceKm(order.delivery_distance_m!),
-    minutes: deliveryMinutes(order.delivery_duration_s!),
+    minutes: deliveryMinutes(order.delivery_duration_s!, order.delivery_prep_minutes!),
   };
 }
 

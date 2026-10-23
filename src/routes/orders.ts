@@ -5,6 +5,7 @@ import { requireRole } from "../middleware/auth";
 export const orders = Router();
 
 orders.post("/delivery/quote", requireRole("buyer"), controller.quoteDelivery);
+orders.patch("/delivery/settings", requireRole("seller"), controller.deliverySettings);
 orders.post("/orders", requireRole("buyer"), controller.createOrder);
 orders.post("/orders/:id/verify", requireRole("buyer"), controller.verifyPayment);
 orders.get("/orders/:id/receipt", requireRole("buyer", "seller"), controller.getReceipt);

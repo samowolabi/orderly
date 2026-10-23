@@ -70,7 +70,7 @@ expire() { $PSQL -c "UPDATE orders SET expires_at = now() - interval '1 second' 
 
 echo "== Infrastructure"
 call none GET /health;                       check "health checks the database" 200 '.success == true and .data.status == "up"'
-call none GET /openapi.json;                 check "OpenAPI exposes 11 Chord tools" 200 '([.paths[] | to_entries[]] | length) == 11 and (.paths | has("/products/{id}/stock") | not) and .paths["/stores"].get.operationId == "list_stores" and (.paths | has("/webhooks/paystack") | not)'
+call none GET /openapi.json;                 check "OpenAPI exposes 12 Chord tools" 200 '([.paths[] | to_entries[]] | length) == 12 and (.paths | has("/products/{id}/stock") | not) and .paths["/stores"].get.operationId == "list_stores" and (.paths | has("/webhooks/paystack") | not)'
 
 echo "== Auth and roles"
 call none GET /stores;                         check "no key is refused" 401 '.success == false and .error.code == "unauthorized"'
@@ -297,6 +297,25 @@ call "$BUYER" POST /orders '{"items":[{"product_id":"ANKER-20K"}],"delivery_quot
 check "unknown quote" 404 '.error.code == "quote_not_found"'
 call "$BUYER" POST /orders '{"items":[{"product_id":"ANKER-20K"}],"buyer_name":"Uche"}'
 check "neither store_id nor a quote" 400 '.error.message_for_agent | test("delivery_quote_id")'
+
+echo "== Owner: delivery pricing"
+call "$SELLER" PATCH /delivery/settings '{}'
+check "defaults until the owner sets any" 200 '.data.set_by_owner == false and .data.base_fee.amount == 1500 and .data.fee_per_km.amount == 150 and .data.round_to.amount == 100 and .data.max_km == null and .data.prep_minutes == 20 and (.data.examples[] | select(.km == 5) | .fee.amount) == 2300'
+call "$BUYER" PATCH /delivery/settings '{}';                      check "customers can't read or change it" 403
+call "$SELLER" PATCH /delivery/settings '{"fee_per_km":-1}';      check "negative rate" 400
+call "$SELLER" PATCH /delivery/settings '{"round_to":0}';         check "rounding to zero" 400
+call "$SELLER" PATCH /delivery/settings '{"fee_per_km":200,"max_km":10,"prep_minutes":30}'
+check "owner raises the rate, caps the distance, keeps the base fee" 200 '.data.set_by_owner and .data.fee_per_km.amount == 200 and .data.base_fee.amount == 1500 and .data.max_km == 10 and .data.prep_minutes == 30 and (.data.examples[] | select(.km == 5) | .fee.amount) == 2500'
+call "$BUYER" POST /delivery/quote '{"items":[{"product_id":"ANKER-20K"}],"address":"'"$LEKKI_ADDR"'","phone":"08031234567"}'
+check "new quotes use the owner's pricing" 201 '.data.fee.amount == 1600 and .data.minutes == 32'
+call "$BUYER" POST /delivery/quote '{"items":[{"product_id":"IP15P-256"}],"address":"'"$LEKKI_ADDR"'","phone":"08031234567"}'
+check "beyond the owner's limit: offer pickup" 409 '.error.code == "too_far" and (.error.message_for_agent | test("10 km"))'; msg
+call "$BUYER" POST "/orders/$OD/verify";      check "an order keeps the time it was quoted with" 200 '.data.order.delivery.minutes == 22'
+call "$SELLER" PATCH /delivery/settings '{"max_km":null}'
+check "limit removed, other settings kept" 200 '.data.max_km == null and .data.fee_per_km.amount == 200'
+call "$BUYER" POST /delivery/quote '{"items":[{"product_id":"IP15P-256"}],"address":"'"$LEKKI_ADDR"'","phone":"08031234567"}'
+check "far address quotes again" 201 '.data.store.id == "ikeja" and .data.fee.amount > 5000'
+call "$SELLER" PATCH /delivery/settings '{"fee_per_km":150,"prep_minutes":20}'; check "back to the usual pricing" 200 '.data.fee_per_km.amount == 150'
 
 echo "== Bad order input"
 call "$BUYER" POST /orders '{"items":[{"product_id":"IP13-128"}],"store_id":"ikeja"}'; check "missing buyer_name" 400 '.error.message_for_agent | test("buyer_name is required")'; msg

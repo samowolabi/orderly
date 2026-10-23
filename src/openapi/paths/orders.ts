@@ -18,6 +18,21 @@ registry.registerPath({
 });
 
 registry.registerPath({
+  method: "patch",
+  path: "/delivery/settings",
+  operationId: "delivery_settings",
+  summary: "Read or change delivery pricing (owner only)",
+  description:
+    "Send no fields to read the current delivery pricing. Send any of base_fee, fee_per_km, round_to, max_km or prep_minutes to change them, in the main unit of the business currency. The fee for a trip is base_fee plus fee_per_km for each km, rounded up to round_to. Until the owner sets anything, the shop uses default pricing (set_by_owner is false). Read the change back to the owner, with the examples, before saving it. New quotes use the new pricing straight away; quotes already given keep theirs.",
+  security: security.seller,
+  request: { body: body(schema.DeliverySettingsBody) },
+  responses: {
+    200: json(schema.DeliverySettings, "The delivery pricing now in use"),
+    ...errorResponses,
+  },
+});
+
+registry.registerPath({
   method: "post",
   path: "/orders",
   operationId: "create_order",

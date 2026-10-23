@@ -1,5 +1,5 @@
 import type { Request, Response } from "express";
-import { CreateOrderBody, ListOrdersQuery, OrderParams, QuoteDeliveryBody } from "../openapi/schemas/orders";
+import { CreateOrderBody, DeliverySettingsBody, ListOrdersQuery, OrderParams, QuoteDeliveryBody } from "../openapi/schemas/orders";
 import * as deliveryService from "../services/delivery";
 import * as orderService from "../services/orders";
 import { parse, success } from "../utils/http";
@@ -8,6 +8,12 @@ import { parse, success } from "../utils/http";
 export async function quoteDelivery(request: Request, response: Response) {
   const input = parse(QuoteDeliveryBody, request.body);
   success(response, await deliveryService.quoteDelivery(input), 201);
+}
+
+// Reads or changes the owner's delivery pricing.
+export async function deliverySettings(request: Request, response: Response) {
+  const input = parse(DeliverySettingsBody, request.body ?? {});
+  success(response, await deliveryService.deliverySettings(input));
 }
 
 // Validates an order request and returns its payment link.

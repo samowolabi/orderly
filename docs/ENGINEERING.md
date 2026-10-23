@@ -53,7 +53,7 @@ The API is split into focused modules:
 
 ## Data
 
-Eight tables. Stores are rows, not fixed names, so an owner can run any number of them. Addresses are structured and may include coordinates, so agents can quote them consistently and share a map link or WhatsApp pin. Opening hours are rows too, so the API can say whether a store is open now. Money is stored as integer subunits (kobo for NGN), which is what Paystack expects, always next to its ISO 4217 currency code. New products are priced in `BUSINESS_CURRENCY` (default NGN), an order copies its products' currency (one currency per order), and payment checks compare Paystack's currency to the order's. Only `src/utils/money.ts` knows how big a currency's subunit is; the API returns every amount as `{ amount, currency, display }` in the main unit.
+Nine tables. Stores are rows, not fixed names, so an owner can run any number of them. Addresses are structured and may include coordinates, so agents can quote them consistently and share a map link or WhatsApp pin. Opening hours are rows too, so the API can say whether a store is open now. Money is stored as integer subunits (kobo for NGN), which is what Paystack expects, always next to its ISO 4217 currency code. New products are priced in `BUSINESS_CURRENCY` (default NGN), an order copies its products' currency (one currency per order), and payment checks compare Paystack's currency to the order's. Only `src/utils/money.ts` knows how big a currency's subunit is; the API returns every amount as `{ amount, currency, display }` in the main unit.
 
 | Table | Holds | Key columns |
 | --- | --- | --- |
@@ -63,7 +63,8 @@ Eight tables. Stores are rows, not fixed names, so an owner can run any number o
 | stock | Units per product per store | product_id, store_id, available (never below 0) |
 | orders | Each purchase: one store, one payment link | id (e.g. ORD-1042), store_id, amount_subunit (the total), currency, buyer_name, status, payment_references, paid_reference, expires_at |
 | order_items | The lines of an order | order_id, line, product_id, quantity, unit_price_subunit, amount_subunit |
-| delivery_quotes | A priced trip from a store to a customer's address; an order uses at most one | id (e.g. DQ-3F9A2C1B), store_id, address, phone, distance_m, duration_s, fee_subunit, currency, expires_at |
+| delivery_quotes | A priced trip from a store to a customer's address; an order uses at most one | id (e.g. DQ-3F9A2C1B), store_id, address, phone, distance_m, duration_s, fee_subunit, currency, prep_minutes, expires_at |
+| delivery_settings | The owner's delivery pricing (one row; none means the env defaults) | base_fee_subunit, fee_per_km_subunit, round_to_subunit, max_km, prep_minutes, currency |
 | events | A log of everything that happened | order_id, type, detail, created_at |
 
 The demo seeds Kola Gadgets with two stores, Ikeja and Lekki; the owner can add more by chat. When a new store omits `location`, or a store's address changes without one, the API geocodes the structured address (Google when `GOOGLE_MAPS_API_KEY` is set, otherwise Geoapify). Vague matches give no pin rather than a wrong one: Google's `APPROXIMATE` results and Geoapify matches below 0.5 confidence are dropped, and the map link then searches the address. Explicit coordinates always win, and `location: null` deliberately stores no pin.
@@ -88,6 +89,7 @@ Each endpoint becomes one tool in Chord when the OpenAPI spec is imported. Every
 | update_store | `PATCH /stores/{id}` | No | Yes | Change a store's name, structured address, map pin or opening hours |
 | add_product | `POST /products` | No | Yes | One or more new products with stock at any stores, added together or not at all |
 | update_product | `PATCH /products/{id}` | No | Yes | Change any mix of price, discount floor, name, variant, on-sale status and stock at several stores, in one call |
+| delivery_settings | `PATCH /delivery/settings` | No | Yes | Reads (empty body) or changes the delivery pricing: base fee, rate per km, rounding, distance limit, packing time |
 | list_orders | `GET /orders` | No | Yes | Orders by status and store, including handed-over ones |
 
 Chord's built-in tools cover the rest: `schedule_reminder` for the payment nudge and `handover_to_human` for escalation.

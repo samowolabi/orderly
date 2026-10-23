@@ -7,13 +7,31 @@ import { pool } from "../db/pool";
 import { formatLocalClock } from "../utils/format";
 import { ApiError } from "../utils/http";
 import { moneyView, toSubunits } from "../utils/money";
-import { mergeItems, type Db, type HoldItem } from "./stock";
+import { logEvent, mergeItems, type Db, type HoldItem } from "./stock";
 
 type QuoteInput = {
   items: HoldItem[];
   address: string;
   phone: string;
   store_id?: string;
+};
+
+// Owner changes in the main unit of the business currency; null max_km removes the limit.
+type SettingsInput = {
+  base_fee?: number;
+  fee_per_km?: number;
+  round_to?: number;
+  max_km?: number | null;
+  prep_minutes?: number;
+};
+
+type SettingsRow = {
+  currency: string;
+  base_fee_subunit: number;
+  fee_per_km_subunit: number;
+  round_to_subunit: number;
+  max_km: number | null;
+  prep_minutes: number;
 };
 
 type CandidateStore = { id: string; name: string; latitude: number; longitude: number };
@@ -27,20 +45,79 @@ export type DeliveryQuoteRow = {
   duration_s: number;
   fee_subunit: number;
   currency: string;
+  prep_minutes: number;
   expires_at: Date;
 };
 
-// Minutes from now until a rider could arrive: packing time plus the drive.
-export const deliveryMinutes = (durationSeconds: number) => config().DELIVERY_PREP_MINUTES + Math.ceil(durationSeconds / 60);
+// Minutes from when it's paid until a rider could arrive: packing time plus the drive.
+export const deliveryMinutes = (durationSeconds: number, prepMinutes: number) => prepMinutes + Math.ceil(durationSeconds / 60);
 
 // Rounds a distance to one decimal place of a kilometre, e.g. 31783 m to 31.8.
 export const distanceKm = (meters: number) => Math.round(meters / 100) / 10;
 
+// The owner's delivery pricing, or the environment's defaults until the owner sets any.
+async function loadSettings(db: Db): Promise<SettingsRow & { set_by_owner: boolean }> {
+  const { rows } = await db.query<SettingsRow>(
+    "SELECT currency, base_fee_subunit, fee_per_km_subunit, round_to_subunit, max_km::float8 AS max_km, prep_minutes FROM delivery_settings",
+  );
+  if (rows[0]) return { ...rows[0], set_by_owner: true };
+  const env = config();
+  const currency = env.BUSINESS_CURRENCY;
+  return {
+    currency,
+    base_fee_subunit: toSubunits(env.DELIVERY_BASE_FEE, currency),
+    fee_per_km_subunit: toSubunits(env.DELIVERY_FEE_PER_KM, currency),
+    round_to_subunit: toSubunits(env.DELIVERY_FEE_ROUND_TO, currency),
+    max_km: env.DELIVERY_MAX_KM ?? null,
+    prep_minutes: env.DELIVERY_PREP_MINUTES,
+    set_by_owner: false,
+  };
+}
+
 // Prices a trip: base fee plus a rate per km, rounded up to the configured step.
-function deliveryFee(meters: number, currency: string) {
-  const { DELIVERY_BASE_FEE, DELIVERY_FEE_PER_KM, DELIVERY_FEE_ROUND_TO } = config();
-  const raw = DELIVERY_BASE_FEE + DELIVERY_FEE_PER_KM * (meters / 1000);
-  return toSubunits(Math.ceil(raw / DELIVERY_FEE_ROUND_TO) * DELIVERY_FEE_ROUND_TO, currency);
+function deliveryFee(meters: number, settings: SettingsRow) {
+  const raw = settings.base_fee_subunit + settings.fee_per_km_subunit * (meters / 1000);
+  return Math.ceil(raw / settings.round_to_subunit) * settings.round_to_subunit;
+}
+
+// What the owner sees: the pricing, and what a few typical trips would cost.
+function settingsView(settings: SettingsRow & { set_by_owner: boolean }) {
+  const money = (subunits: number) => moneyView(subunits, settings.currency);
+  return {
+    base_fee: money(settings.base_fee_subunit),
+    fee_per_km: money(settings.fee_per_km_subunit),
+    round_to: money(settings.round_to_subunit),
+    max_km: settings.max_km,
+    prep_minutes: settings.prep_minutes,
+    set_by_owner: settings.set_by_owner,
+    examples: [2, 5, 10, 20].map((km) => ({ km, fee: money(deliveryFee(km * 1000, settings)) })),
+  };
+}
+
+// Reads the delivery pricing, or changes any part of it and returns the result.
+export async function deliverySettings(input: SettingsInput) {
+  const current = await loadSettings(pool);
+  const changes = Object.entries(input).filter(([, value]) => value !== undefined);
+  if (!changes.length) return settingsView(current);
+
+  const { currency } = current;
+  const next: SettingsRow = {
+    currency,
+    base_fee_subunit: input.base_fee !== undefined ? toSubunits(input.base_fee, currency) : current.base_fee_subunit,
+    fee_per_km_subunit: input.fee_per_km !== undefined ? toSubunits(input.fee_per_km, currency) : current.fee_per_km_subunit,
+    round_to_subunit: input.round_to !== undefined ? toSubunits(input.round_to, currency) : current.round_to_subunit,
+    max_km: input.max_km !== undefined ? input.max_km : current.max_km,
+    prep_minutes: input.prep_minutes ?? current.prep_minutes,
+  };
+  await pool.query(
+    `INSERT INTO delivery_settings (id, currency, base_fee_subunit, fee_per_km_subunit, round_to_subunit, max_km, prep_minutes)
+     VALUES (true, $1, $2, $3, $4, $5, $6)
+     ON CONFLICT (id) DO UPDATE SET currency = $1, base_fee_subunit = $2, fee_per_km_subunit = $3,
+       round_to_subunit = $4, max_km = $5, prep_minutes = $6, updated_at = now()`,
+    [next.currency, next.base_fee_subunit, next.fee_per_km_subunit, next.round_to_subunit, next.max_km, next.prep_minutes],
+  );
+  await logEvent(pool, null, "delivery_settings_updated", { before: current, after: next });
+  return settingsView({ ...next, set_by_owner: true });
 }
 
 // Finds the stores that have every item in stock and a map pin to drive from.
@@ -66,7 +143,8 @@ export async function quoteDelivery(input: QuoteInput) {
     throw new ApiError(503, "delivery_unavailable", "Delivery isn't set up for this shop. Offer pickup at a store instead.");
   }
   const items = mergeItems(input.items);
-  const currency = config().BUSINESS_CURRENCY;
+  const settings = await loadSettings(pool);
+  const { currency } = settings;
 
   const { rows: products } = await pool.query<{ id: string; price_subunit: number; currency: string }>(
     "SELECT id, price_subunit, currency FROM products WHERE id = ANY($1::text[]) AND active",
@@ -129,8 +207,8 @@ export async function quoteDelivery(input: QuoteInput) {
   }
 
   const km = distanceKm(best.route.distanceMeters);
-  const maxKm = config().DELIVERY_MAX_KM;
-  if (maxKm !== undefined && km > maxKm) {
+  const maxKm = settings.max_km;
+  if (maxKm !== null && km > maxKm) {
     throw new ApiError(
       409,
       "too_far",
@@ -138,11 +216,11 @@ export async function quoteDelivery(input: QuoteInput) {
     );
   }
 
-  const fee = deliveryFee(best.route.distanceMeters, currency);
+  const fee = deliveryFee(best.route.distanceMeters, settings);
   const id = `DQ-${randomBytes(4).toString("hex").toUpperCase()}`;
   const { rows } = await pool.query<{ expires_at: Date }>(
-    `INSERT INTO delivery_quotes (id, store_id, address, phone, latitude, longitude, distance_m, duration_s, fee_subunit, currency, expires_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, now() + make_interval(mins => $11::int))
+    `INSERT INTO delivery_quotes (id, store_id, address, phone, latitude, longitude, distance_m, duration_s, fee_subunit, currency, prep_minutes, expires_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, now() + make_interval(mins => $12::int))
      RETURNING expires_at`,
     [
       id,
@@ -155,13 +233,14 @@ export async function quoteDelivery(input: QuoteInput) {
       best.route.durationSeconds,
       fee,
       currency,
+      settings.prep_minutes,
       config().DELIVERY_QUOTE_MINUTES,
     ],
   );
 
   const priceOf = new Map(products.map((product) => [product.id, product.price_subunit]));
   const subtotal = items.reduce((total, item) => total + priceOf.get(item.product_id)! * item.quantity, 0);
-  const minutes = deliveryMinutes(best.route.durationSeconds);
+  const minutes = deliveryMinutes(best.route.durationSeconds, settings.prep_minutes);
 
   return {
     quote_id: id,
