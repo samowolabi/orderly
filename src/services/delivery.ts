@@ -162,9 +162,6 @@ function assignStores(from: { id: string; has: Map<string, number> }, items: Hol
 // Quotes delivery from the nearest store that has everything, and stores the quote for create_order.
 export async function quoteDelivery(input: QuoteInput) {
   const routing = routingProvider();
-  if (!routing) {
-    throw new ApiError(503, "delivery_unavailable", "Delivery isn't set up for this shop. Offer pickup at a store instead.");
-  }
   const items = mergeItems(input.items);
   const settings = await loadSettings(pool);
   const { currency } = settings;
@@ -259,18 +256,9 @@ export async function quoteDelivery(input: QuoteInput) {
     );
   }
 
-  // Items from other stores travel to the delivering store at the same time; the slowest
-  // of those drives adds to the wait.
+  // Items from other stores are brought to the delivering store first, which adds a fixed time.
   const sources = [...transfers(best.item_stores, best.store.id)].map((id) => stores.find((store) => store.id === id)!);
-  let transferMinutes = 0;
-  try {
-    const legs = await Promise.all(sources.map((source) => routing.drivingRoute(source, best.store)));
-    transferMinutes = Math.max(0, ...legs.map((leg) => (leg ? Math.ceil(leg.durationSeconds / 60) : 0)));
-  } catch (error) {
-    if (!(error instanceof RoutingProviderUnavailable)) throw error;
-    console.error(`[routing] delivery transfer: ${error.message}`);
-    throw new ApiError(503, "maps_unavailable", "The map service isn't answering, so delivery can't be priced right now. Offer pickup, or try again in a minute.");
-  }
+  const transferMinutes = sources.length ? config().DELIVERY_TRANSFER_MINUTES : 0;
 
   const fee = deliveryFee(best.route.distanceMeters, settings);
   const id = `DQ-${randomBytes(4).toString("hex").toUpperCase()}`;

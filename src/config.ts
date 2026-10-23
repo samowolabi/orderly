@@ -24,10 +24,8 @@ function isTimeZone(zone: string) {
 const Env = z.object({
   DATABASE_URL: z.string().url(),
 
-  // Geocoding for new store addresses: Google when its key is set, otherwise Geoapify.
-  GOOGLE_MAPS_API_KEY: z.string().min(1).optional(),
-  GEOAPIFY_API_KEY: z.string().min(1).optional(),
-  GEOCODING_PROVIDER: z.enum(["google", "geoapify"]).optional(),
+  // Google Maps: geocoding for store map pins and routes for delivery quotes.
+  GOOGLE_MAPS_API_KEY: z.string().min(1, "set GOOGLE_MAPS_API_KEY for store map pins and delivery quotes"),
   // Google endpoints; tests point them at the local stand-in in dev/fake-google.ts.
   GOOGLE_GEOCODING_URL: z.string().url().default("https://maps.googleapis.com/maps/api/geocode/json"),
   GOOGLE_ROUTES_URL: z.string().url().default("https://routes.googleapis.com/directions/v2:computeRoutes"),
@@ -72,6 +70,8 @@ const Env = z.object({
   DELIVERY_MAX_KM: z.coerce.number().positive().optional(),
   // Minutes to pack an order and hand it to a rider, added to the drive time.
   DELIVERY_PREP_MINUTES: z.coerce.number().int().nonnegative().default(20),
+  // Added to the delivery time when items have to be brought over from another store first.
+  DELIVERY_TRANSFER_MINUTES: z.coerce.number().int().nonnegative().default(60),
   // How long a delivery quote can be used to place an order.
   DELIVERY_QUOTE_MINUTES: z.coerce.number().int().positive().default(30),
 
@@ -80,7 +80,7 @@ const Env = z.object({
   PORT: z.coerce.number().int().positive().default(3000),
 });
 
-type Config = Omit<z.infer<typeof Env>, "GEOCODING_PROVIDER"> & { GEOCODING_PROVIDER: "google" | "geoapify" };
+type Config = z.infer<typeof Env>;
 
 // The public URL a host publishes for the service, used when PUBLIC_URL isn't set.
 function hostUrl() {
@@ -98,9 +98,6 @@ export function config(): Config {
     const parsed = Env.safeParse({
       ...process.env,
       PUBLIC_URL: process.env.PUBLIC_URL || hostUrl(),
-      // An empty variable means unset, so a blank key doesn't pick that provider.
-      GOOGLE_MAPS_API_KEY: process.env.GOOGLE_MAPS_API_KEY || undefined,
-      GEOAPIFY_API_KEY: process.env.GEOAPIFY_API_KEY || undefined,
       DELIVERY_MAX_KM: process.env.DELIVERY_MAX_KM || undefined,
     });
     if (!parsed.success) {
@@ -115,11 +112,7 @@ export function config(): Config {
       throw new Error("BUYER_API_KEY and SELLER_API_KEY must be different");
     }
 
-    const { GOOGLE_MAPS_API_KEY, GEOAPIFY_API_KEY } = parsed.data;
-    const provider = parsed.data.GEOCODING_PROVIDER ?? (GOOGLE_MAPS_API_KEY ? "google" : "geoapify");
-    if (provider === "google" && !GOOGLE_MAPS_API_KEY) throw new Error("GEOCODING_PROVIDER is google but GOOGLE_MAPS_API_KEY is not set");
-    if (provider === "geoapify" && !GEOAPIFY_API_KEY) throw new Error("Set GOOGLE_MAPS_API_KEY (or GEOAPIFY_API_KEY) for store map pins");
-    cached = { ...parsed.data, GEOCODING_PROVIDER: provider };
+    cached = parsed.data;
   }
   return cached;
 }

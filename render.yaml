@@ -27,8 +27,6 @@ services:
         sync: false
       - key: GOOGLE_MAPS_API_KEY
         sync: false
-      - key: GEOAPIFY_API_KEY
-        sync: false
 
 databases:
   - name: orderly-db

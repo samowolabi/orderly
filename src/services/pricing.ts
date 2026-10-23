@@ -1,30 +1,16 @@
 import { ApiError } from "../utils/http";
 import { fromSubunits, toSubunits } from "../utils/money";
 
-// A natural step for haggled prices, so they read like a person said them:
-// ₦1,000 for big-ticket items, ₦500 or ₦100 for smaller ones.
-export function haggleStep(priceSubunits: number, currency: string) {
-  const main = fromSubunits(priceSubunits, currency);
-  return toSubunits(main >= 100_000 ? 1_000 : main >= 10_000 ? 500 : 100, currency);
-}
-
-// Rounds an amount up to the haggle step.
-function roundUp(amount: number, step: number) {
-  return Math.ceil(amount / step) * step;
-}
-
-// The shop agent's two counter-offers, worked out here so the agent never holds a floor it
-// could repeat. Both sit above a point a quarter of the way up from the owner's floor: the
-// first halfway between that point and the price, the final halfway again. Null when there's
-// no room to move.
+// The shop agent's two counter-offers: a third of the way down from the price towards the
+// owner's floor, then halfway. Rounded up to ₦1,000 (₦100 below ₦100,000) so they read like
+// a person said them, and never below the floor. Null when the price can't move.
 export function counterOffers(priceSubunits: number, floorSubunits: number, currency: string) {
-  if (floorSubunits >= priceSubunits) return null;
-  const step = haggleStep(priceSubunits, currency);
-  const lowest = roundUp(floorSubunits + (priceSubunits - floorSubunits) / 4, step);
-  const first = roundUp((lowest + priceSubunits) / 2, step);
-  const final = roundUp((lowest + first) / 2, step);
-  if (first >= priceSubunits) return null;
-  return { first, final };
+  const step = toSubunits(fromSubunits(priceSubunits, currency) >= 100_000 ? 1_000 : 100, currency);
+  const roundUp = (amount: number) => Math.ceil(amount / step) * step;
+  const gap = priceSubunits - floorSubunits;
+  const first = roundUp(priceSubunits - gap / 3);
+  if (gap <= 0 || first >= priceSubunits) return null;
+  return { first, final: roundUp(priceSubunits - gap / 2) };
 }
 
 type PricedProduct = { id: string; name: string; price_subunit: number; min_price_subunit: number; currency: string };

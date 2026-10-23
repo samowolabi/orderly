@@ -30,7 +30,7 @@ The customer pays on Paystack's own page, so card details never touch the agent,
 | --- | --- | --- |
 | API | TypeScript, Express, Zod | Zod schemas validate input; zod-to-openapi generates the spec Chord imports |
 | Database | Postgres | Atomic stock updates stop overselling |
-| Geocoding | Google Geocoding API (Geoapify as a fallback) | Turns a store address into an optional map pin, and says how precise the match is |
+| Geocoding | Google Geocoding API | Turns a store address into an optional map pin, and says how precise the match is |
 | Payments | Paystack test mode | Real API, test cards, no real money |
 | Hosting | Render, from a Blueprint (`render.yaml`) | Web service and Postgres defined in the repo. A paid instance stays on; the free one sleeps when idle |
 | AI teammates | Chord, two teammates | Conversations, tools, reminders and handover |
@@ -44,12 +44,12 @@ The API is split into focused modules:
 | `src/routes/` | Wires Express endpoints to role checks and controllers |
 | `src/controllers/` | Validates request data, calls a service and writes the HTTP response |
 | `src/services/` | Enforces business rules and owns database, stock and payment workflows |
-| `src/adapters/` | Defines external-provider contracts and translates Google, Geoapify and Paystack responses into application data |
+| `src/adapters/` | Defines external-provider contracts and translates Google and Paystack responses into application data |
 | `src/utils/` | Shared HTTP, currency, time, opening-hours and address helpers |
 | `src/openapi/` | Owns API schemas, path descriptions, the registry and document generation |
 | `src/middleware/` | Handles API-key roles, unknown routes and application errors |
 
-`src/db/` contains connection, migration and seed code. Services do not depend on Express request or response objects, which keeps the business workflows reusable and easier to test. Services call the `PaymentProcessor` and `GeocodingProvider` interfaces. `src/adapters/index.ts` is the single composition point that selects `PaystackAdapter` and `GeoapifyAdapter`, so provider payloads stay out of business logic. OpenAPI does not import Express routes or controllers, so the specification can be generated independently.
+`src/db/` contains connection, migration and seed code. Services do not depend on Express request or response objects, which keeps the business workflows reusable and easier to test. Services call the `PaymentProcessor`, `GeocodingProvider` and `RoutingProvider` interfaces. `src/adapters/index.ts` is the single composition point that creates the Paystack and Google adapters, so provider payloads stay out of business logic. OpenAPI does not import Express routes or controllers, so the specification can be generated independently.
 
 ## Data
 
@@ -67,9 +67,8 @@ Nine tables. Stores are rows, not fixed names, so an owner can run any number of
 | delivery_settings | The owner's delivery pricing (one row; none means the env defaults) | base_fee_subunit, fee_per_km_subunit, round_to_subunit, max_km, prep_minutes, currency |
 | events | A log of everything that happened | order_id, type, detail, created_at |
 
-The demo seeds Kola Gadgets with two stores, Ikeja and Lekki; the owner can add more by chat. When a new store omits `location`, or a store's address changes without one, the API geocodes the structured address (Google when `GOOGLE_MAPS_API_KEY` is set, otherwise Geoapify). Vague matches give no pin rather than a wrong one: Google's `APPROXIMATE` results and Geoapify matches below 0.5 confidence are dropped, and the map link then searches the address. Explicit coordinates always win, and `location: null` deliberately stores no pin.
+The demo seeds Kola Gadgets with two stores, Ikeja and Lekki; the owner can add more by chat. When a new store omits `location`, or a store's address changes without one, the API geocodes the structured address with Google. Vague matches give no pin rather than a wrong one: Google's `APPROXIMATE` results are dropped, and the map link then searches the address. Explicit coordinates always win, and `location: null` deliberately stores no pin.
 
-If Geoapify is the active geocoder, any interface that displays its coordinates must keep the Geoapify and OpenStreetMap attribution its free plan requires.
 
 Order status is one of: `pending_payment`, `paid`, `failed`, `expired`, `paid_no_stock`, `handed_over`.
 

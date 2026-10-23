@@ -1,5 +1,4 @@
 import { config } from "../config";
-import { GeoapifyAdapter } from "./geocoding/geoapify";
 import type { GeocodingProvider } from "./geocoding/geocoding-provider";
 import { GoogleGeocodingAdapter } from "./geocoding/google";
 import { PaystackAdapter } from "./payment/paystack";
@@ -12,16 +11,16 @@ export const paymentProcessor: PaymentProcessor = new PaystackAdapter();
 
 let geocoder: GeocodingProvider | undefined;
 
-// Returns the geocoder chosen by config, created on first use so config is read at run time.
+// Returns the geocoder, created on first use so config is read at run time.
 export function geocodingProvider(): GeocodingProvider {
-  geocoder ??= config().GEOCODING_PROVIDER === "google" ? new GoogleGeocodingAdapter() : new GeoapifyAdapter();
+  geocoder ??= new GoogleGeocodingAdapter();
   return geocoder;
 }
 
-let router: RoutingProvider | null | undefined;
+let router: RoutingProvider | undefined;
 
-// Returns the driving-route provider for delivery quotes, or null when no Google key is set.
-export function routingProvider(): RoutingProvider | null {
-  if (router === undefined) router = config().GOOGLE_MAPS_API_KEY ? new GoogleRoutesAdapter() : null;
+// Returns the driving-route provider for delivery quotes.
+export function routingProvider(): RoutingProvider {
+  router ??= new GoogleRoutesAdapter();
   return router;
 }

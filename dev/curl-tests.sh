@@ -335,9 +335,9 @@ call "$SELLER" PATCH /delivery/settings '{"fee_per_km":150,"prep_minutes":20}'; 
 
 echo "== Haggling: counter offers, agreed prices, the floor"
 call "$BUYER" GET '/products?product_id=IP13-128'
-check "customers see two counters, never a floor" 200 '.data.products[0].counter_offers.first.amount == 639000 and .data.products[0].counter_offers.final.amount == 634000 and (.data.products[0] | has("min_price") or has("lowest_price") | not)'
+check "customers see two counters, never a floor" 200 '.data.products[0].counter_offers.first.amount == 640000 and .data.products[0].counter_offers.final.amount == 635000 and (.data.products[0] | has("min_price") or has("lowest_price") | not)'
 call "$SELLER" GET '/products?product_id=APL-20W'
-check "the owner sees the floor too; small items round to ₦500" 200 '.data.products[0].counter_offers.first.amount == 27000 and .data.products[0].counter_offers.final.amount == 26500 and .data.products[0].min_price.amount == 25000'
+check "the owner sees the floor too; items under ₦100,000 round to ₦100" 200 '.data.products[0].counter_offers.first.amount == 27000 and .data.products[0].counter_offers.final.amount == 26500 and .data.products[0].min_price.amount == 25000'
 call "$BUYER" POST /orders '{"items":[{"product_id":"A15-128","price":199000}],"store_id":"ikeja","buyer_name":"Bisi"}'
 check "below the real floor is refused, without saying the floor" 409 '.error.code == "below_floor" and (.error.message_for_agent | test("200") | not)'; msg
 call "$BUYER" POST /orders '{"items":[{"product_id":"A15-128","price":250000}],"store_id":"ikeja","buyer_name":"Bisi"}'
