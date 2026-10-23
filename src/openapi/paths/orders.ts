@@ -4,11 +4,26 @@ import { body, errorResponses, json, paymentErrorResponses, registry, security, 
 
 registry.registerPath({
   method: "post",
+  path: "/delivery/quote",
+  operationId: "quote_delivery",
+  summary: "Price delivery to the customer's address",
+  description:
+    "Call when the customer wants delivery rather than pickup, once you have their address and phone number. Finds the nearest store with everything in stock, and returns the driving distance, how long it takes with current traffic, the fee and the new total. Tell the customer and ask them to confirm before calling create_order with delivery_quote_id. If it says address_not_found, ask for a fuller address. If they'd rather not pay for delivery, offer pickup.",
+  security: security.buyer,
+  request: { body: body(schema.QuoteDeliveryBody) },
+  responses: {
+    201: json(schema.DeliveryQuote, "The delivery quote"),
+    ...errorResponses,
+  },
+});
+
+registry.registerPath({
+  method: "post",
   path: "/orders",
   operationId: "create_order",
   summary: "Hold one or more items and get one Paystack payment link",
   description:
-    "Holds the units at the chosen store so nobody else can buy them, and returns one Paystack payment_url for the whole order. Put everything the customer wants from one store in items (one entry for a single product), so they pay once and get one receipt; if any item can't be held, nothing is held. Tell the customer how long they have from minutes_left; the hold ends at expires_at. Then schedule a reminder at each time in payment_checks, so the customer gets their receipt without having to say they've paid. The price always comes from the store's records. Confirm item, store and the customer's name before calling. If it says out_of_stock, offer the other stores it names. If it says reserved, the item is held for someone who hasn't paid yet: tell the customer when it may come back, as the message says.",
+    "Holds the units so nobody else can buy them, and returns one Paystack payment_url for the whole order. For pickup, send store_id; for delivery, send the delivery_quote_id the customer agreed to, which sets the store and adds the fee to the total. Put everything the customer wants from one store in items (one entry for a single product), so they pay once and get one receipt; if any item can't be held, nothing is held. Tell the customer how long they have from minutes_left; the hold ends at expires_at. Then schedule a reminder at each time in payment_checks, so the customer gets their receipt without having to say they've paid. The price always comes from the store's records. Confirm item, store and the customer's name before calling. If it says out_of_stock, offer the other stores it names. If it says reserved, the item is held for someone who hasn't paid yet: tell the customer when it may come back, as the message says.",
   security: security.buyer,
   request: { body: body(schema.CreateOrderBody) },
   responses: {

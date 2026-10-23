@@ -14,6 +14,7 @@
     "db:reset": "npm run db:migrate && npm run db:seed",
     "openapi": "tsx src/openapi/write.ts",
     "fake-paystack": "tsx dev/fake-paystack.ts",
+    "fake-google": "tsx dev/fake-google.ts",
     "test:api": "bash dev/curl-tests.sh",
     "test:geocoding": "tsx dev/geocoding-tests.ts",
     "test:hours": "tsx dev/hours-tests.ts",

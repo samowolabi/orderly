@@ -11,7 +11,8 @@ import { formatLocalClock, formatLocalTime } from "../utils/format";
 import { ApiError } from "../utils/http";
 import { formatMoney, moneyView } from "../utils/money";
 import { formatAddress, type AddressRow } from "../utils/store-location";
-import { expireStaleOrders, failOrder, holdItems, logEvent, whenStockFrees, type Db, type HoldItem } from "./stock";
+import { claimDeliveryQuote, deliveryMinutes, distanceKm } from "./delivery";
+import { expireStaleOrders, failOrder, holdItems, logEvent, mergeItems, whenStockFrees, type Db, type HoldItem } from "./stock";
 
 const MAX_DECLINES = 3;
 const IN_PROGRESS = new Set(["ongoing", "pending", "processing", "queued"]);
@@ -30,9 +31,11 @@ type PaymentOutcome =
   | "failed"
   | "handed_over";
 
+// Pickup orders name a store; delivery orders name a quote, which fixes the store and fee.
 type CreateOrderInput = {
   items: HoldItem[];
-  store_id: string;
+  store_id?: string;
+  delivery_quote_id?: string;
 
   buyer_name: string;
   buyer_email?: string;
@@ -65,6 +68,9 @@ type OrderBase = {
   amount_subunit: number;
   currency: string;
 
+  delivery_quote_id: string | null;
+  delivery_fee_subunit: number;
+
   buyer_name: string;
   buyer_email: string | null;
 
@@ -82,7 +88,15 @@ type OrderBase = {
   created_at: Date;
 };
 
-type OrderRow = OrderBase & { store_name: string; items: ItemRow[] } & AddressRow;
+// Delivery details come from the order's quote; they're null for pickup orders.
+type DeliveryRow = {
+  delivery_address: string | null;
+  delivery_phone: string | null;
+  delivery_distance_m: number | null;
+  delivery_duration_s: number | null;
+};
+
+type OrderRow = OrderBase & { store_name: string; items: ItemRow[] } & DeliveryRow & AddressRow;
 
 type VerifyResult =
   | { outcome: PaymentOutcome }
@@ -91,9 +105,12 @@ type VerifyResult =
 
 const ORDER_SELECT = `
   SELECT o.*, s.name AS store_name, s.address_line1, s.address_line2, s.area, s.city, s.state,
-         s.country_code, s.postal_code, s.latitude, s.longitude, s.directions_note
+         s.country_code, s.postal_code, s.latitude, s.longitude, s.directions_note,
+         dq.address AS delivery_address, dq.phone AS delivery_phone,
+         dq.distance_m AS delivery_distance_m, dq.duration_s AS delivery_duration_s
   FROM orders o
-  JOIN stores s ON s.id = o.store_id`;
+  JOIN stores s ON s.id = o.store_id
+  LEFT JOIN delivery_quotes dq ON dq.id = o.delivery_quote_id`;
 
 // Attaches each order's lines, in the order the customer asked for them.
 async function withItems(db: Db, orders: Omit<OrderRow, "items">[]): Promise<OrderRow[]> {
@@ -133,6 +150,9 @@ async function loadOrder(db: Db, id: string): Promise<OrderRow> {
 const itemName = (item: Pick<ItemRow, "product_name" | "product_variant">) =>
   item.product_variant ? `${item.product_name} (${item.product_variant})` : item.product_name;
 
+// The one currency an order's products share; mixed currencies are refused before this is used.
+const currencyOf = (products: { currency: string }[]) => products[0]!.currency;
+
 // Times the shop agent should check for payment while an order waits: the first after
 // PAYMENT_CHECK_FIRST_SECONDS, then doubling, plus a last check a minute before the hold ends.
 // The first check past the halfway point is the one that may nudge the customer.
@@ -150,6 +170,18 @@ function paymentChecks(order: OrderRow) {
     .map((time) => ({ at: new Date(time).toISOString(), nudge: time === nudgeAt }));
 }
 
+// The delivery part of an order, or null for pickup.
+function deliveryView(order: OrderRow) {
+  if (!order.delivery_quote_id) return null;
+  return {
+    address: order.delivery_address!,
+    phone: order.delivery_phone!,
+    fee: moneyView(order.delivery_fee_subunit, order.currency),
+    distance_km: distanceKm(order.delivery_distance_m!),
+    minutes: deliveryMinutes(order.delivery_duration_s!),
+  };
+}
+
 // Converts an order row into the customer-safe API representation.
 function orderView(order: OrderRow) {
   const pending = order.status === "pending_payment";
@@ -163,6 +195,8 @@ function orderView(order: OrderRow) {
       unit_price: moneyView(item.unit_price_subunit, order.currency),
       amount: moneyView(item.amount_subunit, order.currency),
     })),
+    fulfilment: order.delivery_quote_id ? ("delivery" as const) : ("pickup" as const),
+    delivery: deliveryView(order),
     amount: moneyView(order.amount_subunit, order.currency),
     buyer_name: order.buyer_name,
     payment_url: pending ? order.payment_url : null,
@@ -192,12 +226,14 @@ function receiptView(order: OrderRow) {
       ? itemName(item)
       : `${itemName(item)}${item.quantity > 1 ? ` x${item.quantity}` : ""}: ${formatMoney(item.amount_subunit, order.currency)}`,
   );
+  const delivery = deliveryView(order);
   // WhatsApp bolds text between single asterisks, so the header and total stand out on a phone.
   const lines = [
     `*${business} receipt* ${order.id}`,
     `${order.store_name}, ${storeAddress}`,
     "",
     ...itemLines,
+    ...(delivery ? [`Delivery to ${delivery.address}: ${delivery.fee.display}`] : []),
     `*Total paid: ${total}*`,
     "",
     `Paid ${formatLocalTime(paidAt)}${order.payment_channel ? ` by ${channelLabel(order.payment_channel)}` : ""}`,
@@ -215,6 +251,7 @@ function receiptView(order: OrderRow) {
       unit_price: moneyView(item.unit_price_subunit, order.currency),
       amount: moneyView(item.amount_subunit, order.currency),
     })),
+    delivery,
     total: moneyView(order.amount_subunit, order.currency),
     buyer_name: order.buyer_name,
     paid_at: paidAt.toISOString(),
@@ -265,17 +302,10 @@ async function attachPaymentLink(
   await logEvent(pool, order.id, "payment_link_created", { reference });
 }
 
-// Turns the requested items into order lines, adding up repeats of the same product.
-function requestedItems(input: CreateOrderInput): HoldItem[] {
-  const merged = new Map<string, number>();
-  for (const item of input.items) merged.set(item.product_id, (merged.get(item.product_id) ?? 0) + item.quantity);
-  return [...merged].map(([product_id, quantity]) => ({ product_id, quantity }));
-}
-
 // Holds stock, creates an order and attaches its first payment link.
 export async function createOrder(input: CreateOrderInput) {
   await expireStaleOrders(pool);
-  const items = requestedItems(input);
+  const items = mergeItems(input.items);
 
   // Holds every line and inserts the order in one transaction, so it's all or nothing.
   const order = await withTransaction(async (db) => {
@@ -301,10 +331,23 @@ export async function createOrder(input: CreateOrderInput) {
         "These products are priced in different currencies, so they can't be paid with one link. Make a separate order for each currency.",
       );
     }
-    const store = (await db.query<{ id: string; name: string }>("SELECT id, name FROM stores WHERE id = $1 AND active", [input.store_id])).rows[0];
-    if (!store) throw new ApiError(404, "store_not_found", `No store ${input.store_id}. Call list_stores for the right id.`);
+    // A delivery quote fixes the store the rider leaves from and the fee.
+    const quote = input.delivery_quote_id ? await claimDeliveryQuote(db, input.delivery_quote_id) : null;
+    if (quote && input.store_id && input.store_id !== quote.store_id) {
+      throw new ApiError(
+        400,
+        "invalid_input",
+        `Delivery quote ${quote.id} is from ${quote.store_id}, not ${input.store_id}. Leave out store_id, or quote delivery from ${input.store_id}.`,
+      );
+    }
+    if (quote && quote.currency !== currencyOf(products)) {
+      throw new ApiError(400, "invalid_input", "The delivery fee and the items are in different currencies. Offer pickup instead.");
+    }
+    const storeId = quote?.store_id ?? input.store_id!;
+    const store = (await db.query<{ id: string; name: string }>("SELECT id, name FROM stores WHERE id = $1 AND active", [storeId])).rows[0];
+    if (!store) throw new ApiError(404, "store_not_found", `No store ${storeId}. Call list_stores for the right id.`);
 
-    const short = await holdItems(db, input.store_id, items);
+    const short = await holdItems(db, storeId, items);
     if (short) {
       const product = productOf.get(short.product_id)!;
       const name = itemName({ product_name: product.name, product_variant: product.variant });
@@ -312,7 +355,7 @@ export async function createOrder(input: CreateOrderInput) {
         `SELECT s.name, st.available FROM stock st JOIN stores s ON s.id = st.store_id
          WHERE st.product_id = $1 AND st.store_id <> $2 AND s.active AND st.available >= $3
          ORDER BY st.available DESC`,
-        [short.product_id, input.store_id, short.quantity],
+        [short.product_id, storeId, short.quantity],
       );
       const otherStores = elsewhere.map(
         // Formats one alternative store and its available quantity.
@@ -322,7 +365,7 @@ export async function createOrder(input: CreateOrderInput) {
       const nothingHeld = items.length > 1 ? ` Nothing in this order was held. Offer the rest without ${name}, or another store.` : "";
 
       // Held units may come back, so say when instead of calling the item sold out.
-      const freeAt = await whenStockFrees(db, short.product_id, input.store_id, short.quantity);
+      const freeAt = await whenStockFrees(db, short.product_id, storeId, short.quantity);
       if (freeAt) {
         throw new ApiError(
           409,
@@ -337,19 +380,20 @@ export async function createOrder(input: CreateOrderInput) {
       throw new ApiError(409, "out_of_stock", `Not enough ${name} at ${store.name} for ${short.quantity}. ${hint}${nothingHeld}`);
     }
 
-    // Prices and currency come from the product rows, never from the request.
-    const currency = products[0]!.currency;
+    // Prices and currency come from the product rows, and the fee from the quote, never from the request.
+    const currency = currencyOf(products);
+    const fee = quote?.fee_subunit ?? 0;
     const lines = items.map((item, index) => {
       const unit = productOf.get(item.product_id)!.price_subunit;
       return { ...item, line: index + 1, unit_price_subunit: unit, amount_subunit: unit * item.quantity };
     });
-    const amount = lines.reduce((total, line) => total + line.amount_subunit, 0);
+    const amount = lines.reduce((total, line) => total + line.amount_subunit, 0) + fee;
 
     const { rows } = await db.query<{ id: string }>(
-      `INSERT INTO orders (store_id, amount_subunit, currency, buyer_name, buyer_email, expires_at)
-       VALUES ($1, $2, $3, $4, $5, now() + make_interval(mins => $6::int))
+      `INSERT INTO orders (store_id, amount_subunit, currency, buyer_name, buyer_email, expires_at, delivery_quote_id, delivery_fee_subunit)
+       VALUES ($1, $2, $3, $4, $5, now() + make_interval(mins => $6::int), $7, $8)
        RETURNING id`,
-      [input.store_id, amount, currency, input.buyer_name, input.buyer_email ?? null, config().HOLD_MINUTES],
+      [storeId, amount, currency, input.buyer_name, input.buyer_email ?? null, config().HOLD_MINUTES, quote?.id ?? null, fee],
     );
     const id = rows[0]!.id;
     for (const line of lines) {
@@ -359,8 +403,8 @@ export async function createOrder(input: CreateOrderInput) {
         [id, line.line, line.product_id, line.quantity, line.unit_price_subunit, line.amount_subunit],
       );
     }
-    await logEvent(db, id, "order_created", { items, amount_subunit: amount, currency });
-    return { id, amount_subunit: amount, currency };
+    await logEvent(db, id, "order_created", { items, amount_subunit: amount, currency, delivery_quote_id: quote?.id ?? null });
+    return { id, amount_subunit: amount, currency, store_id: storeId };
   });
 
   try {
@@ -370,7 +414,7 @@ export async function createOrder(input: CreateOrderInput) {
       currency: order.currency,
       buyer_name: input.buyer_name,
       buyer_email: input.buyer_email ?? null,
-      store_id: input.store_id,
+      store_id: order.store_id,
     });
   } catch (error) {
     if (!(error instanceof PaymentProcessorUnavailable)) throw error;
@@ -387,15 +431,23 @@ export async function createOrder(input: CreateOrderInput) {
   return orderView(await loadOrder(pool, order.id));
 }
 
+// For a paid delivery order, the follow-up message that tells the customer a rider is on the way.
+function riderFollowUp(order: OrderRow) {
+  const delivery = deliveryView(order);
+  if (!delivery) return "";
+  const arrives = formatLocalClock(new Date(Date.now() + delivery.minutes * 60_000));
+  return ` Then send a second, short message: our rider will bring it to ${delivery.address} in about ${delivery.minutes} minutes (around ${arrives}) and will call ${delivery.phone} on arrival.`;
+}
+
 // Maps a payment outcome to the exact conversational instruction for Chord.
 function nextStep(outcome: PaymentOutcome, order: OrderRow): string {
   switch (outcome) {
     case "paid":
-      return "Paystack confirmed the payment. Send the customer the receipt text. Then cancel any payment reminders still scheduled for this order.";
+      return `Paystack confirmed the payment. Send the customer the receipt text.${riderFollowUp(order)} Then cancel any payment reminders still scheduled for this order.`;
     case "already_paid":
-      return "This order was already confirmed. Send the receipt text again if they need it. Then cancel any payment reminders still scheduled for this order.";
+      return `This order was already confirmed. Send the receipt text again if they need it.${riderFollowUp(order)} Then cancel any payment reminders still scheduled for this order.`;
     case "paid_late_reheld":
-      return "The payment came in after the hold ran out, but everything was still in stock, so the order is confirmed. Send the receipt text. Then cancel any payment reminders still scheduled for this order.";
+      return `The payment came in after the hold ran out, but everything was still in stock, so the order is confirmed. Send the receipt text.${riderFollowUp(order)} Then cancel any payment reminders still scheduled for this order.`;
     case "paid_no_stock":
       return "The customer paid after the hold ran out and something in the order has since sold out. Tell them honestly, say the owner will refund them in full, and hand over to a person. Then cancel any payment reminders still scheduled for this order.";
     case "not_paid_yet":

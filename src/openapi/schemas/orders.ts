@@ -4,6 +4,17 @@ import { Money } from "./money";
 // ISO 8601 timestamps, so agents can compare and convert them reliably.
 const Timestamp = z.string().openapi({ format: "date-time" });
 
+const DeliveryDetails = z
+  .object({
+    address: z.string(),
+    phone: z.string(),
+    fee: Money,
+    distance_km: z.number(),
+    minutes: z.number().int().openapi({ description: "Packing plus driving time, from when it's paid" }),
+  })
+  .nullable()
+  .openapi({ description: "Set for delivery orders, null for pickup" });
+
 export const OrderStatus = z.enum(["pending_payment", "paid", "failed", "expired", "paid_no_stock", "handed_over"]);
 
 export const Order = z
@@ -19,7 +30,9 @@ export const Order = z
         amount: Money,
       }),
     ),
-    amount: Money.openapi({ description: "Total for the whole order, paid with one link" }),
+    fulfilment: z.enum(["pickup", "delivery"]),
+    delivery: DeliveryDetails,
+    amount: Money.openapi({ description: "Total for the whole order, including any delivery fee, paid with one link" }),
     buyer_name: z.string(),
     payment_url: z.string().nullable().openapi({ description: "Paystack page to pay on. Only set while waiting for payment." }),
     expires_at: Timestamp.openapi({ description: "When the hold ends" }),
@@ -54,6 +67,7 @@ export const ReceiptFields = z.object({
       amount: Money,
     }),
   ),
+  delivery: DeliveryDetails,
   total: Money,
   buyer_name: z.string(),
   paid_at: Timestamp,
@@ -65,30 +79,84 @@ export const ReceiptFields = z.object({
 
 export const Receipt = ReceiptFields.openapi("Receipt");
 
-const ProductId = z.string().trim().toUpperCase().min(1).openapi({ description: "From list_products", example: "IP13-128" });
-const Quantity = z.number().int().min(1).max(10);
+const Items = z
+  .array(
+    z.object({
+      product_id: z.string().trim().toUpperCase().min(1).openapi({ description: "From list_products", example: "IP14-128" }),
+      quantity: z.number().int().min(1).max(10).default(1),
+    }),
+  )
+  .min(1)
+  .max(10);
 
-export const CreateOrderBody = z.object({
-  items: z
-    .array(
-      z.object({
-        product_id: z.string().trim().toUpperCase().min(1).openapi({ description: "From list_products", example: "IP14-128" }),
-        quantity: z.number().int().min(1).max(10).default(1),
-      }),
-    )
-    .min(1)
-    .max(10)
-    .openapi({
-      description: "Everything the customer wants from this store, held together and paid with one link. One entry for a single product.",
+export const CreateOrderBody = z
+  .object({
+    items: Items.openapi({
+      description: "Everything the customer wants, held together and paid with one link. One entry for a single product.",
       example: [
         { product_id: "IP14-128", quantity: 1 },
         { product_id: "ANKER-20K", quantity: 1 },
       ],
     }),
-  store_id: z.string().trim().toLowerCase().min(1).openapi({ description: "Store the customer will collect from", example: "ikeja" }),
-  buyer_name: z.string().trim().min(1).max(100).openapi({ example: "Tunde Bakare" }),
-  buyer_email: z.email().optional().openapi({ description: "For the Paystack receipt. Leave out if the customer didn't give one." }),
+    store_id: z
+      .string()
+      .trim()
+      .toLowerCase()
+      .min(1)
+      .optional()
+      .openapi({ description: "For pickup: the store the customer will collect from. Leave out for delivery.", example: "ikeja" }),
+    delivery_quote_id: z
+      .string()
+      .trim()
+      .toUpperCase()
+      .min(1)
+      .optional()
+      .openapi({ description: "For delivery: the quote_id from quote_delivery, once the customer has agreed to the fee. It sets the store and adds the fee.", example: "DQ-3F9A2C1B" }),
+    buyer_name: z.string().trim().min(1).max(100).openapi({ example: "Tunde Bakare" }),
+    buyer_email: z.email().optional().openapi({ description: "For the Paystack receipt. Leave out if the customer didn't give one." }),
+  })
+  .refine((input) => input.store_id !== undefined || input.delivery_quote_id !== undefined, {
+    message: "send store_id for pickup, or delivery_quote_id for delivery",
+  });
+
+export const QuoteDeliveryBody = z.object({
+  items: Items.openapi({ description: "Everything the customer wants delivered, as for create_order" }),
+  address: z
+    .string()
+    .trim()
+    .min(5)
+    .max(300)
+    .openapi({ description: "Delivery address as the customer gave it, with house number, street, area and city", example: "12 Admiralty Way, Lekki Phase 1, Lagos" }),
+  phone: z
+    .string()
+    .trim()
+    .regex(/^\+?[0-9][0-9 ()-]{6,19}$/, "use a phone number, e.g. 08031234567 or +2348031234567")
+    .openapi({ description: "Number the rider calls on arrival", example: "08031234567" }),
+  store_id: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .min(1)
+    .optional()
+    .openapi({ description: "Only if the customer insists on one store. Leave out to deliver from the nearest store that has everything." }),
 });
+
+export const DeliveryQuote = z
+  .object({
+    quote_id: z.string().openapi({ example: "DQ-3F9A2C1B" }),
+    store: z.object({ id: z.string(), name: z.string() }).openapi({ description: "The nearest store with everything in stock" }),
+    address: z.string(),
+    phone: z.string(),
+    distance_km: z.number(),
+    minutes: z.number().int().openapi({ description: "Packing plus driving time with current traffic, from when it's paid" }),
+    arrives_around: z.string().openapi({ description: "Clock time it would arrive if paid now, in the business's time zone" }),
+    fee: Money,
+    items_subtotal: Money,
+    total: Money.openapi({ description: "Items plus delivery" }),
+    expires_at: Timestamp.openapi({ description: "Use the quote in create_order before this" }),
+    next_step: z.string(),
+  })
+  .openapi("DeliveryQuote");
 
 export const OrderParams = z.object({
   // Customers type order numbers loosely in chat ("#ord 1008", "Ord_1008-2678D7"), so this

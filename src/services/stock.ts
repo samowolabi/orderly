@@ -19,6 +19,13 @@ export async function holdStock(db: Db, productId: string, storeId: string, quan
 
 export type HoldItem = { product_id: string; quantity: number };
 
+// Adds up repeats of the same product, keeping the order the customer asked for them in.
+export function mergeItems(items: HoldItem[]): HoldItem[] {
+  const merged = new Map<string, number>();
+  for (const item of items) merged.set(item.product_id, (merged.get(item.product_id) ?? 0) + item.quantity);
+  return [...merged].map(([product_id, quantity]) => ({ product_id, quantity }));
+}
+
 // Holds every line of an order at one store, or none of them. Returns the first line that
 // couldn't be held; the caller must roll back its transaction (or savepoint) when it does.
 export async function holdItems(db: Db, storeId: string, items: HoldItem[]): Promise<HoldItem | null> {

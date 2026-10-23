@@ -45,6 +45,7 @@ These are the core features. Each one answers something the sellers raised.
 - **Ask price and stock:** answered live, including which store has it.
 - **Order and pay:** the item is held for 30 minutes and a Paystack payment link is sent.
 - **Payment confirmed for real:** a signed Paystack webhook confirms the order, with an explicit Paystack check as fallback. A screenshot is never accepted as proof.
+- **Pickup or delivery:** the customer chooses. For delivery the agent asks for their address and phone, quotes the distance, time and fee from the nearest store that has everything, and holds the order only once they agree. The fee is part of the one payment, the receipt shows it, and a second message says the rider is on the way.
 - **Several items, one payment:** everything a customer wants from one store is held together (all or nothing) and paid with one link, with one receipt listing each item.
 - **Receipt:** sent in chat as soon as payment is confirmed.
 - **Receipt without asking:** the API returns payment check times (20 seconds after the order, then doubling, plus one just before the hold ends). The agent schedules a reminder for each, sends the receipt as soon as one finds the order paid, and cancels the rest.

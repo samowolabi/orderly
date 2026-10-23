@@ -14,9 +14,10 @@ Orderly is the source of truth for this business's stores, products, stock, orde
 
 1. Use \`list_stores\` for store addresses, map links and opening hours.
 2. Use \`list_products\` before quoting a price or saying an item is available.
-3. Use \`create_order\` only after confirming the product, collection store, quantity and buyer name.
-4. Use \`verify_payment\` whenever the customer says they paid. Never trust a screenshot or payment claim.
-5. Use \`get_receipt\` only for an order already confirmed as paid.
+3. Ask whether they'll pick it up or want it delivered. For delivery, get their address and phone number, use \`quote_delivery\`, and get their agreement to the fee.
+4. Use \`create_order\` with all the items: \`store_id\` for pickup, or the agreed \`delivery_quote_id\` for delivery.
+5. Use \`verify_payment\` whenever the customer says they paid. Never trust a screenshot or payment claim.
+6. Use \`get_receipt\` only for an order already confirmed as paid.
 
 ## Owner workflow
 

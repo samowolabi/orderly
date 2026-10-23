@@ -53,7 +53,7 @@ The API is split into focused modules:
 
 ## Data
 
-Seven tables. Stores are rows, not fixed names, so an owner can run any number of them. Addresses are structured and may include coordinates, so agents can quote them consistently and share a map link or WhatsApp pin. Opening hours are rows too, so the API can say whether a store is open now. Money is stored as integer subunits (kobo for NGN), which is what Paystack expects, always next to its ISO 4217 currency code. New products are priced in `BUSINESS_CURRENCY` (default NGN), an order copies its products' currency (one currency per order), and payment checks compare Paystack's currency to the order's. Only `src/utils/money.ts` knows how big a currency's subunit is; the API returns every amount as `{ amount, currency, display }` in the main unit.
+Eight tables. Stores are rows, not fixed names, so an owner can run any number of them. Addresses are structured and may include coordinates, so agents can quote them consistently and share a map link or WhatsApp pin. Opening hours are rows too, so the API can say whether a store is open now. Money is stored as integer subunits (kobo for NGN), which is what Paystack expects, always next to its ISO 4217 currency code. New products are priced in `BUSINESS_CURRENCY` (default NGN), an order copies its products' currency (one currency per order), and payment checks compare Paystack's currency to the order's. Only `src/utils/money.ts` knows how big a currency's subunit is; the API returns every amount as `{ amount, currency, display }` in the main unit.
 
 | Table | Holds | Key columns |
 | --- | --- | --- |
@@ -63,6 +63,7 @@ Seven tables. Stores are rows, not fixed names, so an owner can run any number o
 | stock | Units per product per store | product_id, store_id, available (never below 0) |
 | orders | Each purchase: one store, one payment link | id (e.g. ORD-1042), store_id, amount_subunit (the total), currency, buyer_name, status, payment_references, paid_reference, expires_at |
 | order_items | The lines of an order | order_id, line, product_id, quantity, unit_price_subunit, amount_subunit |
+| delivery_quotes | A priced trip from a store to a customer's address; an order uses at most one | id (e.g. DQ-3F9A2C1B), store_id, address, phone, distance_m, duration_s, fee_subunit, currency, expires_at |
 | events | A log of everything that happened | order_id, type, detail, created_at |
 
 The demo seeds Kola Gadgets with two stores, Ikeja and Lekki; the owner can add more by chat. When a new store omits `location`, or a store's address changes without one, the API geocodes the structured address (Google when `GOOGLE_MAPS_API_KEY` is set, otherwise Geoapify). Vague matches give no pin rather than a wrong one: Google's `APPROXIMATE` results and Geoapify matches below 0.5 confidence are dropped, and the map link then searches the address. Explicit coordinates always win, and `location: null` deliberately stores no pin.
@@ -79,6 +80,7 @@ Each endpoint becomes one tool in Chord when the OpenAPI spec is imported. Every
 | --- | --- | --- | --- | --- |
 | list_stores | `GET /stores` | Yes | Yes | Store names, structured addresses, map links, opening hours and whether each is open now |
 | list_products | `GET /products` | Yes | Yes | Prices and stock at each store; filter by store |
+| quote_delivery | `POST /delivery/quote` | Yes | No | Prices delivery from the nearest store that has everything: driving distance, traffic-aware time, fee and total |
 | create_order | `POST /orders` | Yes | No | Holds one or more items at the chosen store for 30 minutes (all or nothing) and returns one Paystack link for the total |
 | verify_payment | `POST /orders/{id}/verify` | Yes | No | Checks Paystack, confirms the order, returns the receipt |
 | get_receipt | `GET /orders/{id}/receipt` | Yes | Yes | The receipt for a paid order |

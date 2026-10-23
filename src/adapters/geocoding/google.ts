@@ -6,7 +6,6 @@ import {
   type GeocodingProvider,
 } from "./geocoding-provider";
 
-const GEOCODING_URL = "https://maps.googleapis.com/maps/api/geocode/json";
 const TIMEOUT_MS = 5_000;
 
 type Fetch = (input: string | URL, init?: RequestInit) => Promise<Response>;
@@ -41,7 +40,7 @@ export class GoogleGeocodingAdapter implements GeocodingProvider {
 
   // Resolves one address through the Google Geocoding API, refusing city-level guesses.
   async geocodeAddress(input: GeocodingInput): Promise<GeocodedCoordinates | null> {
-    const url = new URL(GEOCODING_URL);
+    const url = new URL(config().GOOGLE_GEOCODING_URL);
     url.search = new URLSearchParams({
       address: input.address,
       components: `country:${input.countryCode.toUpperCase()}`,

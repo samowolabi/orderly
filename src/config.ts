@@ -28,6 +28,9 @@ const Env = z.object({
   GOOGLE_MAPS_API_KEY: z.string().min(1).optional(),
   GEOAPIFY_API_KEY: z.string().min(1).optional(),
   GEOCODING_PROVIDER: z.enum(["google", "geoapify"]).optional(),
+  // Google endpoints; tests point them at the local stand-in in dev/fake-google.ts.
+  GOOGLE_GEOCODING_URL: z.string().url().default("https://maps.googleapis.com/maps/api/geocode/json"),
+  GOOGLE_ROUTES_URL: z.string().url().default("https://routes.googleapis.com/directions/v2:computeRoutes"),
 
   PAYSTACK_SECRET_KEY: z
     .string()
@@ -61,6 +64,17 @@ const Env = z.object({
   // First payment check after an order is placed; later checks double the gap (20s, 40s, 80s…).
   PAYMENT_CHECK_FIRST_SECONDS: z.coerce.number().int().positive().default(20),
 
+  // Delivery fee in the business currency's main unit: base plus a rate per km, rounded up.
+  DELIVERY_BASE_FEE: z.coerce.number().nonnegative().default(1500),
+  DELIVERY_FEE_PER_KM: z.coerce.number().nonnegative().default(150),
+  DELIVERY_FEE_ROUND_TO: z.coerce.number().positive().default(100),
+  // Furthest a rider goes, in km; unset means any distance the map can route.
+  DELIVERY_MAX_KM: z.coerce.number().positive().optional(),
+  // Minutes to pack an order and hand it to a rider, added to the drive time.
+  DELIVERY_PREP_MINUTES: z.coerce.number().int().nonnegative().default(20),
+  // How long a delivery quote can be used to place an order.
+  DELIVERY_QUOTE_MINUTES: z.coerce.number().int().positive().default(30),
+
   // Base URL written into the OpenAPI spec's servers list; see hostUrl() for the fallback.
   PUBLIC_URL: z.string().url().optional(),
   PORT: z.coerce.number().int().positive().default(3000),
@@ -87,6 +101,7 @@ export function config(): Config {
       // An empty variable means unset, so a blank key doesn't pick that provider.
       GOOGLE_MAPS_API_KEY: process.env.GOOGLE_MAPS_API_KEY || undefined,
       GEOAPIFY_API_KEY: process.env.GEOAPIFY_API_KEY || undefined,
+      DELIVERY_MAX_KM: process.env.DELIVERY_MAX_KM || undefined,
     });
     if (!parsed.success) {
       // Formats each environment validation issue for the startup error.

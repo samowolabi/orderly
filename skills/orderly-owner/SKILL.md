@@ -110,6 +110,7 @@ Questions and reports (what's in stock, what sold) need no confirmation; just an
 
 - **"How did we do today?"**: `list_orders` with `period: "today"`. Lead with the paid total (from `summary.paid_totals`, using `display`) and number of paid orders, then what sold. Mention pending or expired orders only if there are many, or the owner asks.
 - Other periods are `7d`, `30d` and `all`; filter by store or status when asked.
+- **Deliveries**: orders with `fulfilment: "delivery"` show the customer's address, phone, distance and fee. When the owner asks what to send out, list paid delivery orders with the items, address and phone, so a rider can take them.
 - **Always flag `needs_attention`**, with what to do:
   - `paid_no_stock`: a customer paid after their hold ran out and the item had sold. Refund them in Paystack.
   - `amount_mismatch`: Paystack's amount didn't match the order. Check it in Paystack and refund if needed.

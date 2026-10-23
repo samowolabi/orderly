@@ -1,7 +1,14 @@
 import type { Request, Response } from "express";
-import { CreateOrderBody, ListOrdersQuery, OrderParams } from "../openapi/schemas/orders";
+import { CreateOrderBody, ListOrdersQuery, OrderParams, QuoteDeliveryBody } from "../openapi/schemas/orders";
+import * as deliveryService from "../services/delivery";
 import * as orderService from "../services/orders";
 import { parse, success } from "../utils/http";
+
+// Validates a delivery request and returns a stored quote from the nearest store.
+export async function quoteDelivery(request: Request, response: Response) {
+  const input = parse(QuoteDeliveryBody, request.body);
+  success(response, await deliveryService.quoteDelivery(input), 201);
+}
 
 // Validates an order request and returns its payment link.
 export async function createOrder(request: Request, response: Response) {

@@ -4,6 +4,7 @@
 cd "$(dirname "$0")/.." || exit 1
 API=${API:-http://localhost:3000}
 FAKE=${FAKE:-http://localhost:4010}
+FAKE_GOOGLE=${FAKE_GOOGLE:-http://localhost:4020}
 BUYER=$(grep '^BUYER_API_KEY=' .env | cut -d= -f2)
 SELLER=$(grep '^SELLER_API_KEY=' .env | cut -d= -f2)
 PAYSTACK_SECRET_KEY=$(grep '^PAYSTACK_SECRET_KEY=' .env | cut -d= -f2-)
@@ -69,7 +70,7 @@ expire() { $PSQL -c "UPDATE orders SET expires_at = now() - interval '1 second' 
 
 echo "== Infrastructure"
 call none GET /health;                       check "health checks the database" 200 '.success == true and .data.status == "up"'
-call none GET /openapi.json;                 check "OpenAPI exposes 10 Chord tools" 200 '([.paths[] | to_entries[]] | length) == 10 and (.paths | has("/products/{id}/stock") | not) and .paths["/stores"].get.operationId == "list_stores" and (.paths | has("/webhooks/paystack") | not)'
+call none GET /openapi.json;                 check "OpenAPI exposes 11 Chord tools" 200 '([.paths[] | to_entries[]] | length) == 11 and (.paths | has("/products/{id}/stock") | not) and .paths["/stores"].get.operationId == "list_stores" and (.paths | has("/webhooks/paystack") | not)'
 
 echo "== Auth and roles"
 call none GET /stores;                         check "no key is refused" 401 '.success == false and .error.code == "unauthorized"'
@@ -186,6 +187,7 @@ before=$(stock IP13-128 ikeja)
 call "$BUYER" POST /orders '{"items":[{"product_id":"ip13-128"}],"store_id":"Ikeja","buyer_name":"Tunde Bakare"}'
 check "create_order" 201 '.data.status == "pending_payment" and (.data.payment_url | startswith("http")) and .data.minutes_left == 30 and .data.amount == {"amount":650000,"currency":"NGN","display":"₦650,000"} and .data.items == [{"product":{"id":"IP13-128","name":"iPhone 13","variant":"128GB"},"quantity":1,"unit_price":{"amount":650000,"currency":"NGN","display":"₦650,000"},"amount":{"amount":650000,"currency":"NGN","display":"₦650,000"}}]'
 O1=$(jq -r .data.order_id <<<"$BODY"); echo "        order $O1"
+check "a store_id order is pickup, with no delivery" 201 '.data.fulfilment == "pickup" and .data.delivery == null'
 check "payment checks: 20s, doubling, last a minute before expiry, one nudge" 201 '(.data.created_at | sub("\\.[0-9]+Z$"; "Z") | fromdate) as $t0 | (.data.expires_at | sub("\\.[0-9]+Z$"; "Z") | fromdate) as $end | [.data.payment_checks[].at | sub("\\.[0-9]+Z$"; "Z") | fromdate - $t0] == [20, 40, 80, 160, 320, 640, 1280, ($end - $t0 - 60)] and ([.data.payment_checks[] | select(.nudge)] | length == 1) and (.data.payment_checks[6].nudge)'
 jq -r '.data.payment_checks[] | "        | \(.at)\(if .nudge then "  nudge" else "" end)"' <<<"$BODY"
 [ "$(stock IP13-128 ikeja)" = "$((before-1))" ] && { PASS=$((PASS+1)); echo "  ok    stock held ($before -> $((before-1)))"; } || { FAILS=$((FAILS+1)); echo "  FAIL  stock not held"; }
@@ -250,6 +252,51 @@ pay "$OG"
 call "$BUYER" POST "/orders/$OG/verify";      check "late payment, one line gone: paid_no_stock" 200 '.data.outcome == "paid_no_stock" and .data.receipt == null'; msg
 eq "power bank not re-held when the iPhone is gone" "$(stock ANKER-20K ikeja)" "$anker"
 $PSQL -c "UPDATE stock SET available = $ip14_left WHERE product_id='IP14-128' AND store_id='ikeja'"
+
+echo "== Delivery: quote from the nearest store"
+LEKKI_ADDR="12 Admiralty Way, Lekki Phase 1, Lagos"
+call "$BUYER" POST /delivery/quote '{"items":[{"product_id":"ANKER-20K"}],"address":"'"$LEKKI_ADDR"'","phone":"08031234567"}'
+check "nearest store with stock, fee from distance" 201 '.data.store.id == "lekki" and .data.distance_km == 0.5 and .data.fee.amount == 1600 and .data.minutes == 22 and .data.items_subtotal.amount == 45000 and .data.total.amount == 46600 and (.data.quote_id | startswith("DQ-")) and (.data.next_step | test("delivery_quote_id"))'; msg
+Q1=$(jq -r .data.quote_id <<<"$BODY")
+call "$BUYER" POST /delivery/quote '{"items":[{"product_id":"IP15P-256"}],"address":"'"$LEKKI_ADDR"'","phone":"08031234567"}'
+check "only Ikeja has it, so it comes from Ikeja and costs more" 201 '.data.store.id == "ikeja" and .data.fee.amount > 1600 and .data.distance_km > 20'
+call "$BUYER" POST /delivery/quote '{"items":[{"product_id":"ANKER-20K"}],"address":"'"$LEKKI_ADDR"'","phone":"08031234567","store_id":"ikeja"}'
+check "customer insists on Ikeja" 201 '.data.store.id == "ikeja"'
+call "$BUYER" POST /delivery/quote '{"items":[{"product_id":"AIRPODS-PRO2"},{"product_id":"IP15P-256"}],"address":"'"$LEKKI_ADDR"'","phone":"08031234567"}'
+check "no single store has everything" 409 '.error.code == "out_of_stock" and (.error.message_for_agent | test("No single store"))'
+call "$BUYER" POST /delivery/quote '{"items":[{"product_id":"ANKER-20K"}],"address":"5 Nowhere Close","phone":"08031234567"}'
+check "address not on the map" 422 '.error.code == "address_not_found"'; msg
+call "$BUYER" POST /delivery/quote '{"items":[{"product_id":"ANKER-20K"}],"address":"1 Lost Road, Atlantis","phone":"08031234567"}'
+check "no road to the address" 422 '.error.code == "no_route"'
+call "$BUYER" POST /delivery/quote '{"items":[{"product_id":"ANKER-20K"}],"address":"'"$LEKKI_ADDR"'","phone":"call me"}'
+check "bad phone number" 400
+curl -s -X POST -H 'content-type: application/json' -d '{"routes":"down"}' "$FAKE_GOOGLE/_fake/mode" >/dev/null
+call "$BUYER" POST /delivery/quote '{"items":[{"product_id":"ANKER-20K"}],"address":"'"$LEKKI_ADDR"'","phone":"08031234567"}'
+check "maps down: offer pickup" 503 '.error.code == "maps_unavailable"'
+curl -s -X POST -H 'content-type: application/json' -d '{"routes":"ok"}' "$FAKE_GOOGLE/_fake/mode" >/dev/null
+
+echo "== Delivery: order, pay, receipt and rider follow-up"
+anker=$(stock ANKER-20K lekki)
+call "$BUYER" POST /orders '{"items":[{"product_id":"ANKER-20K"}],"delivery_quote_id":"'"$(tr '[:upper:]' '[:lower:]' <<<"$Q1")"'","buyer_name":"Uche"}'
+check "the quote sets the store and adds the fee" 201 '.data.fulfilment == "delivery" and .data.store.id == "lekki" and .data.amount.amount == 46600 and .data.delivery.fee.amount == 1600 and .data.delivery.address == "12 Admiralty Way, Lekki Phase 1, Lagos" and .data.delivery.phone == "08031234567"'
+OD=$(jq -r .data.order_id <<<"$BODY")
+eq "held at Lekki" "$(stock ANKER-20K lekki)" "$((anker-1))"
+pay "$OD"
+call "$BUYER" POST "/orders/$OD/verify"
+check "paid: receipt shows delivery, next_step adds the rider message" 200 '.data.outcome == "paid" and (.data.receipt.text | test("Delivery to 12 Admiralty Way, Lekki Phase 1, Lagos: ₦1,600")) and (.data.receipt.text | test("Total paid: ₦46,600")) and .data.receipt.delivery.fee.amount == 1600 and (.data.next_step | test("rider")) and (.data.next_step | test("08031234567"))'; msg
+jq -r .data.receipt.text <<<"$BODY" | sed 's/^/        | /'
+call "$BUYER" POST /orders '{"items":[{"product_id":"ANKER-20K"}],"delivery_quote_id":"'"$Q1"'","buyer_name":"Uche"}'
+check "a quote pays for one order only" 409 '.error.code == "quote_used"'
+call "$BUYER" POST /delivery/quote '{"items":[{"product_id":"ANKER-20K"}],"address":"'"$LEKKI_ADDR"'","phone":"08031234567"}'; Q2=$(jq -r .data.quote_id <<<"$BODY")
+call "$BUYER" POST /orders '{"items":[{"product_id":"ANKER-20K"}],"delivery_quote_id":"'"$Q2"'","store_id":"ikeja","buyer_name":"Uche"}'
+check "store_id that disagrees with the quote" 400 '.error.message_for_agent | test("Leave out store_id")'
+$PSQL -c "UPDATE delivery_quotes SET expires_at = now() - interval '1 second' WHERE id='$Q2'"
+call "$BUYER" POST /orders '{"items":[{"product_id":"ANKER-20K"}],"delivery_quote_id":"'"$Q2"'","buyer_name":"Uche"}'
+check "expired quote" 409 '.error.code == "quote_expired"'
+call "$BUYER" POST /orders '{"items":[{"product_id":"ANKER-20K"}],"delivery_quote_id":"DQ-NOPE","buyer_name":"Uche"}'
+check "unknown quote" 404 '.error.code == "quote_not_found"'
+call "$BUYER" POST /orders '{"items":[{"product_id":"ANKER-20K"}],"buyer_name":"Uche"}'
+check "neither store_id nor a quote" 400 '.error.message_for_agent | test("delivery_quote_id")'
 
 echo "== Bad order input"
 call "$BUYER" POST /orders '{"items":[{"product_id":"IP13-128"}],"store_id":"ikeja"}'; check "missing buyer_name" 400 '.error.message_for_agent | test("buyer_name is required")'; msg
@@ -341,7 +388,7 @@ mode '{"initialize":"ok"}'
 [ "$(stock ANKER-20K ikeja)" = "$anker" ] && { PASS=$((PASS+1)); echo "  ok    held unit released after link failure"; } || { FAILS=$((FAILS+1)); echo "  FAIL  stock: $(stock ANKER-20K ikeja)"; }
 
 echo "== Owner: list_orders"
-call "$SELLER" GET /orders;                   check "today's orders and summary" 200 '.data.period == "today" and .data.summary.counts.paid == 5 and .data.summary.paid_totals == [{"amount":3415000,"currency":"NGN","display":"₦3,415,000"}]'
+call "$SELLER" GET /orders;                   check "today's orders and summary" 200 '.data.period == "today" and .data.summary.counts.paid == 6 and .data.summary.paid_totals == [{"amount":3461600,"currency":"NGN","display":"₦3,461,600"}]'
 check "list_orders shows each order's lines" 200 '[.data.orders[] | select(.order_id == "'"$OM"'") | .items[].product.id] == ["IP14-128", "ANKER-20K"]'
 jq -c '.data.summary' <<<"$BODY" | sed 's/^/        /'
 check "paid_no_stock and mismatch need attention" 200 '[.data.needs_attention[].order_id] | contains(["'"$RACE"'", "'"$O5"'"])'
