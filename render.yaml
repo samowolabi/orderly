@@ -1,0 +1,36 @@
+# Render Blueprint: the Orderly API and its Postgres database.
+services:
+  - type: web
+    name: orderly
+    runtime: node
+    plan: free
+    region: frankfurt
+    # NODE_ENV=production applies to the build too, so dev dependencies (tsc) are included explicitly.
+    buildCommand: npm ci --include=dev && npm run build
+    # Free instances have no pre-deploy step, so migrations run before the server starts.
+    startCommand: npm run db:migrate:prod && npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: orderly-db
+          property: connectionString
+      - key: BUSINESS_NAME
+        value: Kola Gadgets
+      - key: BUYER_API_KEY
+        generateValue: true
+      - key: SELLER_API_KEY
+        generateValue: true
+      - key: PAYSTACK_SECRET_KEY
+        sync: false
+      - key: GEOAPIFY_API_KEY
+        sync: false
+
+databases:
+  - name: orderly-db
+    plan: free
+    region: frankfurt
+    databaseName: orderly
+    user: orderly

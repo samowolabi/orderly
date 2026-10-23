@@ -14,7 +14,7 @@ flowchart TB
   end
   OO -- seller key --> API
   OS -- buyer key --> API
-  API[Orderly REST API<br/>imported into Chord via OpenAPI<br/>TypeScript on Railway]
+  API[Orderly REST API<br/>imported into Chord via OpenAPI<br/>TypeScript on Render]
   API -- stores, stock, orders --> DB[(Postgres)]
   API -- new store address --> GA[Geoapify]
   API -- create link, verify --> PS[Paystack test mode]
@@ -32,7 +32,7 @@ The customer pays on Paystack's own page, so card details never touch the agent,
 | Database | Postgres | Atomic stock updates stop overselling |
 | Geocoding | Geoapify | Converts a new store address into an optional map pin |
 | Payments | Paystack test mode | Real API, test cards, no real money |
-| Hosting | Railway, always on | No cold starts while reviewers test |
+| Hosting | Render, from a Blueprint (`render.yaml`) | Web service and Postgres defined in the repo. A paid instance stays on; the free one sleeps when idle |
 | AI teammates | Chord, two teammates | Conversations, tools, reminders and handover |
 
 ## Application structure
@@ -111,7 +111,7 @@ stateDiagram-v2
 
 Only a verified Paystack payment marks an order paid. The signed webhook is the primary confirmation path. `verify_payment` remains the fallback when the webhook is delayed and lets Chord retrieve the final state and receipt during the conversation.
 
-- **Paystack references.** Each payment link gets its own reference: the order id plus a random suffix (`ORD-1001-3fa9c2`). Paystack references are unique across the account forever, so plain order ids would collide after a reseed, or between local dev and Railway on the same test key. An order keeps every reference it has had, and verify checks all of them, newest first, so a payment finished on an older page is still found.
+- **Paystack references.** Each payment link gets its own reference: the order id plus a random suffix (`ORD-1001-3fa9c2`). Paystack references are unique across the account forever, so plain order ids would collide after a reseed, or between local dev and the deployed API on the same test key. An order keeps every reference it has had, and verify checks all of them, newest first, so a payment finished on an older page is still found.
 - **Webhook authentication.** The API computes an HMAC-SHA512 digest from the unparsed request bytes and the Paystack secret, then compares it with `x-paystack-signature`. Invalid signatures are rejected before any payment data is used.
 - **Payment adapter.** `PaystackAdapter` owns checkout initialization, verification retries, signature validation and webhook normalization. Order workflows consume only normalized transaction and webhook types.
 - **Idempotency.** Both webhook and polling confirmation lock the order row and use the same payment transition. A repeated notification returns the existing outcome without taking stock or writing another payment event. The exact successful reference is stored in `paid_reference` for the receipt.
@@ -162,7 +162,7 @@ About 5 hours of build, each step done before the next starts. Chord credits are
 
 1. **Database and seed data** (30 min): the six tables, Kola Gadgets' two stores and their products.
 2. **Endpoints** (1 hr): all eleven, with Paystack test calls, tested with curl including the failure cases.
-3. **Deploy and import** (30 min): Railway, generate the OpenAPI spec, import into Chord, assign tools and keys per teammate.
+3. **Deploy and import** (30 min): Render, generate the OpenAPI spec, import into Chord, assign tools and keys per teammate.
 4. **Orderly Shop skill** (1 hr): real skill, escalation triggers, full order test in the simulator.
 5. **Orderly Owner skill** (45 min): add stock by chat, then a customer buys it.
 6. **Edge cases** (45 min): two buyers on the last unit, declined card, quiet customer, late payment, handover.

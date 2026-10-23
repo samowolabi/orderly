@@ -11,7 +11,7 @@ import { ok } from "./utils/http";
 // Builds the Express application with infrastructure and Chord-facing routes.
 export function createApp() {
   const app = express();
-  // Railway terminates TLS at one proxy hop; trust its X-Forwarded-Proto so
+  // The host terminates TLS at one proxy hop; trust its X-Forwarded-Proto so
   // req.protocol is https and the fallback spec URL is right.
   app.set("trust proxy", 1);
 

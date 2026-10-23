@@ -56,12 +56,19 @@ const Env = z.object({
   BUSINESS_TIMEZONE: z.string().default("Africa/Lagos").refine(isTimeZone, "use an IANA time zone, e.g. Africa/Lagos"),
   HOLD_MINUTES: z.coerce.number().int().positive().default(30),
 
-  // Base URL written into the OpenAPI spec's servers list.
+  // Base URL written into the OpenAPI spec's servers list; see hostUrl() for the fallback.
   PUBLIC_URL: z.string().url().optional(),
   PORT: z.coerce.number().int().positive().default(3000),
 });
 
 type Config = z.infer<typeof Env>;
+
+// The public URL a host publishes for the service, used when PUBLIC_URL isn't set.
+function hostUrl() {
+  if (process.env.RENDER_EXTERNAL_URL) return process.env.RENDER_EXTERNAL_URL;
+  if (process.env.RAILWAY_PUBLIC_DOMAIN) return `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`;
+  return undefined;
+}
 
 // Parsed on first use so the db scripts only need DATABASE_URL.
 let cached: Config | undefined;
@@ -69,14 +76,14 @@ let cached: Config | undefined;
 // Parses, validates and caches the process environment.
 export function config(): Config {
   if (!cached) {
-    const parsed = Env.safeParse(process.env);
+    const parsed = Env.safeParse({ ...process.env, PUBLIC_URL: process.env.PUBLIC_URL || hostUrl() });
     if (!parsed.success) {
       // Formats each environment validation issue for the startup error.
       const fields = parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`);
       throw new Error(`Invalid environment:\n  ${fields.join("\n  ")}`);
     }
     if (process.env.NODE_ENV === "production" && !parsed.data.PUBLIC_URL) {
-      throw new Error("PUBLIC_URL is required in production, so the OpenAPI spec gives Chord the public https URL");
+      throw new Error("Set PUBLIC_URL in production (Render and Railway set their own URL), so the OpenAPI spec gives Chord the public https URL");
     }
     if (parsed.data.BUYER_API_KEY === parsed.data.SELLER_API_KEY) {
       throw new Error("BUYER_API_KEY and SELLER_API_KEY must be different");

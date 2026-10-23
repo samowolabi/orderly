@@ -10,7 +10,7 @@ if (!connectionString) throw new Error("DATABASE_URL is not set");
 
 export const pool = new pg.Pool({
   connectionString,
-  // Railway's managed Postgres needs TLS; local dev does not.
+  // Hosted Postgres needs TLS; local dev does not. An sslmode in the URL overrides this.
   ssl: /localhost|127\.0\.0\.1/.test(connectionString) ? false : { rejectUnauthorized: false },
 });
 
