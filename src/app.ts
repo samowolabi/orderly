@@ -39,8 +39,6 @@ export function createApp() {
   tools.use(catalog);
   tools.use(orders);
   app.use(API_PREFIX, tools);
-  // Unversioned aliases while Chord's connections move to /v1; remove once they have.
-  app.use(tools);
 
   app.use(notFound);
   app.use(errorHandler);

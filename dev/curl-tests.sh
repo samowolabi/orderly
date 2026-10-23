@@ -20,7 +20,7 @@ call() {
   [ "$key" != none ] && hdr=(-H "X-Api-Key: $key")
   local out
   # Tool routes are versioned; /health, /openapi.json and the webhook aren't. A path given
-  # as /legacy/... calls the unversioned alias instead.
+  # as /legacy/... calls it without the version, to check that's refused.
   case $path in
     /health*|/openapi.json|/webhooks/*) ;;
     /legacy/*) path=${path#/legacy} ;;
@@ -81,7 +81,7 @@ call none GET /openapi.json;                 check "OpenAPI exposes 12 Chord too
 
 check "the spec's server is the /v1 base" 200 '(.servers[0].url | endswith("/v1")) and (.paths | keys | all(startswith("/v1") | not))'
 call "$BUYER" GET /stores;                   check "tools answer under /v1" 200 '.success == true'
-call "$BUYER" GET /legacy/stores;            check "old unversioned path still answers, until Chord moves" 200 '.success == true'
+call "$BUYER" GET /legacy/stores;            check "the old unversioned path is gone" 404 '.error.code == "not_found"'
 
 echo "== Auth and roles"
 call none GET /stores;                         check "no key is refused" 401 '.success == false and .error.code == "unauthorized"'
@@ -381,7 +381,7 @@ call "$BUYER" POST /orders/ORD-9999/verify;   check "unknown order" 404 '.error.
 echo "== Never sell twice: two buyers, last unit, at the same moment"
 for who in Ada Bola; do
   curl -s -o "/tmp/claude-501/race-$who.json" -w '%{http_code}\n' -X POST -H "X-Api-Key: $BUYER" -H 'content-type: application/json' \
-    -d "{\"items\":[{\"product_id\":\"IP15P-256\"}],\"store_id\":\"ikeja\",\"buyer_name\":\"$who\"}" "$API/orders" &
+    -d "{\"items\":[{\"product_id\":\"IP15P-256\"}],\"store_id\":\"ikeja\",\"buyer_name\":\"$who\"}" "$API/v1/orders" &
 done > /tmp/claude-501/race-codes.txt; wait
 codes=$(sort /tmp/claude-501/race-codes.txt | tr '\n' ' ')
 [ "$codes" = "201 409 " ] && { PASS=$((PASS+1)); echo "  ok    one 201, one 409 ($codes)"; } || { FAILS=$((FAILS+1)); echo "  FAIL  race codes: $codes"; }
@@ -494,7 +494,7 @@ echo "== Ten buyers at once, two units (S23-256 at Lekki)"
 $PSQL -c "UPDATE stock SET available = 2 WHERE product_id='S23-256' AND store_id='lekki'"
 for i in $(seq 1 10); do
   curl -s -o /dev/null -w '%{http_code}\n' -X POST -H "X-Api-Key: $BUYER" -H 'content-type: application/json' \
-    -d "{\"items\":[{\"product_id\":\"S23-256\"}],\"store_id\":\"lekki\",\"buyer_name\":\"Buyer $i\"}" "$API/orders" &
+    -d "{\"items\":[{\"product_id\":\"S23-256\"}],\"store_id\":\"lekki\",\"buyer_name\":\"Buyer $i\"}" "$API/v1/orders" &
 done > "$RACE_FILE"; wait
 won=$(grep -c 201 "$RACE_FILE"); lost=$(grep -c 409 "$RACE_FILE")
 [ "$won" = 2 ] && [ "$lost" = 8 ] && [ "$(stock S23-256 lekki)" = 0 ] \
