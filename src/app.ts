@@ -7,7 +7,7 @@ import { openApiDocument } from "./openapi/document";
 import { catalog } from "./routes/catalog";
 import { orders } from "./routes/orders";
 import { webhooks } from "./routes/webhooks";
-import { success } from "./utils/http";
+import { API_PREFIX, success } from "./utils/http";
 
 // Builds the Express application with infrastructure and Chord-facing routes.
 export function createApp() {
@@ -34,8 +34,13 @@ export function createApp() {
     res.json(openApiDocument(config().PUBLIC_URL ?? `${req.protocol}://${req.get("host")}`));
   });
 
-  app.use(catalog);
-  app.use(orders);
+  // Every Chord tool lives under the version prefix.
+  const tools = express.Router();
+  tools.use(catalog);
+  tools.use(orders);
+  app.use(API_PREFIX, tools);
+  // Unversioned aliases while Chord's connections move to /v1; remove once they have.
+  app.use(tools);
 
   app.use(notFound);
   app.use(errorHandler);

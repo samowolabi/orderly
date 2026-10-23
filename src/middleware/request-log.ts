@@ -1,4 +1,5 @@
 import type { RequestHandler } from "express";
+import { API_PREFIX } from "../utils/http";
 
 // Chord tool names by route, so each log line says which tool was called.
 const TOOLS: Record<string, string> = {
@@ -27,7 +28,8 @@ const PATTERNS = Object.entries(TOOLS).map(([route, tool]) => {
 // Finds the tool for a request from its matched route, or from its method and path.
 function toolFor(method: string, routePath: string | undefined, path: string) {
   if (routePath && TOOLS[`${method} ${routePath}`]) return TOOLS[`${method} ${routePath}`];
-  return PATTERNS.find((entry) => entry.method === method && entry.pattern.test(path))?.tool ?? "unknown";
+  const unversioned = path.startsWith(`${API_PREFIX}/`) ? path.slice(API_PREFIX.length) : path;
+  return PATTERNS.find((entry) => entry.method === method && entry.pattern.test(unversioned))?.tool ?? "unknown";
 }
 
 // Uptime pings and the host's root probes would drown out the tool calls.
@@ -54,15 +56,17 @@ export const requestLog: RequestHandler = (request, response, next) => {
   // Logs after the response is sent, when the route, role and status are known.
   response.on("finish", () => {
     const ms = Number(process.hrtime.bigint() - started) / 1e6;
+    // The full path as called; a router trims its mount prefix (/v1) from request.path.
+    const path = request.originalUrl.split("?")[0]!;
     const fields = [
       new Date().toISOString(),
-      `tool=${toolFor(request.method, request.route?.path, request.path)}`,
+      `tool=${toolFor(request.method, request.route?.path, path)}`,
       `role=${response.locals.role ?? "none"}`,
       `status=${response.statusCode}`,
       `ms=${Math.round(ms)}`,
       outcome && `outcome=${outcome}`,
       errorCode && `error=${errorCode}`,
-      `${request.method} ${request.path}`,
+      `${request.method} ${path}`,
     ];
     console.log(fields.filter(Boolean).join(" "));
   });

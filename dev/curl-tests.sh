@@ -19,6 +19,13 @@ call() {
   local key=$1 method=$2 path=$3 data=$4 hdr=()
   [ "$key" != none ] && hdr=(-H "X-Api-Key: $key")
   local out
+  # Tool routes are versioned; /health, /openapi.json and the webhook aren't. A path given
+  # as /legacy/... calls the unversioned alias instead.
+  case $path in
+    /health*|/openapi.json|/webhooks/*) ;;
+    /legacy/*) path=${path#/legacy} ;;
+    *) path="/v1$path" ;;
+  esac
   out=$(curl -s -w $'\n%{http_code}' -X "$method" "${hdr[@]}" -H 'content-type: application/json' ${data:+-d "$data"} "$API$path")
   STATUS=${out##*$'\n'}; BODY=${out%$'\n'*}
 }
@@ -71,6 +78,10 @@ expire() { $PSQL -c "UPDATE orders SET expires_at = now() - interval '1 second' 
 echo "== Infrastructure"
 call none GET /health;                       check "health checks the database" 200 '.success == true and .data.status == "up"'
 call none GET /openapi.json;                 check "OpenAPI exposes 12 Chord tools" 200 '([.paths[] | to_entries[]] | length) == 12 and (.paths | has("/products/{id}/stock") | not) and .paths["/stores"].get.operationId == "list_stores" and (.paths | has("/webhooks/paystack") | not)'
+
+check "the spec's server is the /v1 base" 200 '(.servers[0].url | endswith("/v1")) and (.paths | keys | all(startswith("/v1") | not))'
+call "$BUYER" GET /stores;                   check "tools answer under /v1" 200 '.success == true'
+call "$BUYER" GET /legacy/stores;            check "old unversioned path still answers, until Chord moves" 200 '.success == true'
 
 echo "== Auth and roles"
 call none GET /stores;                         check "no key is refused" 401 '.success == false and .error.code == "unauthorized"'

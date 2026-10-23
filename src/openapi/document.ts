@@ -1,4 +1,5 @@
 import { OpenApiGeneratorV3 } from "@asteasolutions/zod-to-openapi";
+import { API_PREFIX } from "../utils/http";
 import { registry } from "./registry";
 
 // Importing the path modules registers every operation.
@@ -28,7 +29,8 @@ Use \`add_store\` and \`update_store\` for branches, addresses, map pins and ope
 Every response has \`{ success, data, error }\`. When \`success\` is false, follow \`error.message_for_agent\`. Payment verification also returns \`next_step\`; follow it exactly. Every amount comes back as \`{ amount, currency, display }\`; quote \`display\` to customers. Send prices as plain numbers in the main unit of the currency shown by \`list_products\`, never in subunits.
 `.trim();
 
-// Generates the standalone OpenAPI document imported by Chord.
+// Generates the standalone OpenAPI document imported by Chord. Paths are relative to the
+// versioned server URL, so each operation's full URL is <public url>/v1/<path>.
 export function openApiDocument(serverUrl?: string) {
   return new OpenApiGeneratorV3(registry.definitions).generateDocument({
     openapi: "3.0.3",
@@ -37,6 +39,6 @@ export function openApiDocument(serverUrl?: string) {
       version: "1.0.0",
       description: readme,
     },
-    servers: serverUrl ? [{ url: serverUrl }] : [],
+    servers: serverUrl ? [{ url: `${serverUrl.replace(/\/+$/, "")}${API_PREFIX}` }] : [],
   });
 }

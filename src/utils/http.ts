@@ -2,6 +2,10 @@ import type { Response } from "express";
 import type { z } from "zod";
 
 // Sends a successful response in Orderly's standard envelope.
+// The version prefix for the Chord tool routes. Infrastructure (/health, the Paystack
+// webhook, /openapi.json) stays unversioned, since its callers fix those URLs.
+export const API_PREFIX = "/v1";
+
 export function success<T>(response: Response, data: T, status = 200) {
   return response.status(status).json({ success: true, data, error: null });
 }

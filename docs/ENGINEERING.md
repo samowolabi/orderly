@@ -77,6 +77,8 @@ Order status is one of: `pending_payment`, `paid`, `failed`, `expired`, `paid_no
 
 Each endpoint becomes one tool in Chord when the OpenAPI spec is imported. Every response looks the same: `{ success, data, error: { code, message_for_agent } }`.
 
+Tool endpoints below are relative to `/v1` (for example `POST /v1/orders`); the spec's server URL includes it. `/health`, `/openapi.json` and `/webhooks/paystack` are unversioned.
+
 | Tool | Endpoint | Orderly Shop | Orderly Owner | What it does |
 | --- | --- | --- | --- | --- |
 | list_stores | `GET /stores` | Yes | Yes | Store names, structured addresses, map links, opening hours and whether each is open now |
