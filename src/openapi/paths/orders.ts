@@ -6,7 +6,7 @@ registry.registerPath({
   method: "post",
   path: "/orders",
   operationId: "create_order",
-  summary: "Hold an item and get a Paystack payment link",
+  summary: "Hold one or more items and get one Paystack payment link",
   description:
     "Holds the units at the chosen store so nobody else can buy them, and returns one Paystack payment_url for the whole order. Put everything the customer wants from one store in items, so they pay once and get one receipt; if any item can't be held, nothing is held. Tell the customer how long they have from minutes_left; the hold ends at expires_at. Then schedule a reminder at each time in payment_checks, so the customer gets their receipt without having to say they've paid. The price always comes from the store's records. Confirm item, store and the customer's name before calling. If it says out_of_stock, offer the other stores it names. If it says reserved, the item is held for someone who hasn't paid yet: tell the customer when it may come back, as the message says.",
   security: security.buyer,
