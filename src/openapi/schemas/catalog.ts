@@ -17,7 +17,7 @@ export const AddressInput = z
     area: Text(80).openapi({ example: "Yaba" }),
     city: Text(80).openapi({ example: "Lagos" }),
     state: Text(80).openapi({ example: "Lagos" }),
-    country_code: CountryCode.default("NG").openapi({ example: "NG" }),
+    country_code: CountryCode.optional().openapi({ description: "Defaults to the business country", example: "NG" }),
     postal_code: z.string().trim().min(3).max(20).optional().openapi({ example: "101233" }),
     directions_note: z.string().trim().min(3).max(200).optional()
       .openapi({ example: "Inside Centage Plaza, opposite the bus stop" }),

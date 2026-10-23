@@ -4,6 +4,13 @@ import { z } from "zod";
 // Validates BUSINESS_CURRENCY at startup; kept here so config has no app imports.
 const isCurrencyCode = (code: string) => Intl.supportedValuesOf("currency").includes(code);
 
+// Validates BUSINESS_COUNTRY as an ISO 3166 region Intl recognises.
+function isCountryCode(code: string) {
+  if (!/^[A-Z]{2}$/.test(code)) return false;
+  const name = new Intl.DisplayNames(["en"], { type: "region" }).of(code);
+  return !!name && name !== code && name !== "Unknown Region";
+}
+
 // Validates BUSINESS_TIMEZONE at startup by asking Intl to use it.
 function isTimeZone(zone: string) {
   try {
@@ -28,7 +35,15 @@ const Env = z.object({
   BUYER_API_KEY: z.string().min(16),
   SELLER_API_KEY: z.string().min(16),
 
-  BUSINESS_NAME: z.string().default("Kola Gadgets"),
+  // No default: a business name can't be guessed, and a wrong one would reach customers.
+  BUSINESS_NAME: z.string().trim().min(1, "set the business name customers will see"),
+  // Two-letter country for new store addresses; addresses here leave it off when formatted.
+  BUSINESS_COUNTRY: z
+    .string()
+    .trim()
+    .toUpperCase()
+    .default("NG")
+    .refine(isCountryCode, "use an ISO 3166 two-letter country code, e.g. NG"),
   // Currency new products are priced in, and the locale prices are shown in.
   BUSINESS_CURRENCY: z
     .string()

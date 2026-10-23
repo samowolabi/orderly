@@ -94,6 +94,8 @@ call "$BUYER" GET '/products?q=100%25';        check "LIKE wildcards are escaped
 echo "== Owner: add_store"
 call "$SELLER" POST /stores '{"name":"Kola Gadgets Yaba","address":{"line1":"3 Herbert Macaulay Way","area":"Yaba","city":"Lagos","state":"Lagos"},"location":null,"hours":[{"days":["mon","tue","wed","thu","fri"],"opens":"08:30","closes":"18:00"},{"days":["sat"],"opens":"10:00","closes":"16:00"}]}'
 check "add Yaba (id made from name)" 201 '.data.id == "yaba" and .data.address == "3 Herbert Macaulay Way, Yaba, Lagos" and .data.address_details.country_code == "NG" and .data.location.latitude == null and (.data.location.map_url | contains("Herbert%20Macaulay")) and .data.opening_hours == "Mon to Fri, 8:30am to 6pm; Sat, 10am to 4pm; Sun, closed"'
+call "$SELLER" POST /stores '{"name":"Kola Gadgets Accra","address":{"line1":"12 Oxford Street","area":"Osu","city":"Accra","state":"Greater Accra","country_code":"GH"},"location":null,"hours":[{"days":["mon"],"opens":"09:00","closes":"17:00"}]}'
+check "store abroad keeps its country in the address" 201 '.data.id == "accra" and .data.address_details.country_code == "GH" and .data.address == "12 Oxford Street, Osu, Accra, Greater Accra, GH"'
 for bad in '[]' '[{"days":["mon"],"opens":"9am","closes":"17:00"}]' '[{"days":["mon"],"opens":"18:00","closes":"09:00"}]' \
            '[{"days":["mon","tue"],"opens":"09:00","closes":"17:00"},{"days":["tue"],"opens":"10:00","closes":"12:00"}]' \
            '[{"days":["monday"],"opens":"09:00","closes":"17:00"}]'; do
@@ -157,6 +159,7 @@ pay "$O1" '{"outcome":"ongoing"}'
 call "$BUYER" POST "/orders/$O1/verify";      check "payment still processing" 200 '.data.outcome == "payment_processing"'
 pay "$O1"
 call "$BUYER" POST "/orders/$O1/verify";      check "verify after paying" 200 '.data.outcome == "paid" and .data.order.status == "paid" and .data.receipt.total.amount == 650000 and .data.receipt.total.currency == "NGN"'
+check "receipt names the payment provider" 200 '.data.receipt.text | test("Paystack reference: '"$O1"'-")'
 jq -r .data.receipt.text <<<"$BODY" | sed 's/^/        | /'
 call "$BUYER" POST "/orders/$O1/verify";      check "verify again is idempotent" 200 '.data.outcome == "already_paid"'
 call "$SELLER" GET "/orders/$O1/receipt";     check "owner can get the receipt" 200 '.data.receipt_number == "'"$O1"'"'

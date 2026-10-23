@@ -5,11 +5,15 @@ export type AddressInputValue = {
   area: string;
   city: string;
   state: string;
-  country_code: string;
+  // Left out by the owner means the business country; services fill it in.
+  country_code?: string;
   postal_code?: string;
 
   directions_note?: string;
 };
+
+// An address whose country is known, as stored.
+export type ResolvedAddressValue = AddressInputValue & { country_code: string };
 
 export type AddressPatchValue = {
   line1?: string;
@@ -53,18 +57,19 @@ export function addressSearchText(address: AddressInputValue) {
   return parts.filter(Boolean).join(", ");
 }
 
-// Joins normalized address columns into one readable address line.
-export function formatAddress(row: AddressRow) {
+// Joins normalized address columns into one readable address line, naming the
+// country only when it differs from the business's home country.
+export function formatAddress(row: AddressRow, homeCountry: string) {
   const parts = [row.address_line1, row.address_line2, row.area, row.city];
   if (row.state.toLowerCase() !== row.city.toLowerCase()) parts.push(row.state);
   if (row.postal_code) parts.push(row.postal_code);
-  if (row.country_code !== "NG") parts.push(row.country_code);
+  if (row.country_code !== homeCountry) parts.push(row.country_code);
   return parts.filter(Boolean).join(", ");
 }
 
 // Builds structured address data and a shareable Google Maps URL.
-export function addressView(row: AddressRow) {
-  const address = formatAddress(row);
+export function addressView(row: AddressRow, homeCountry: string) {
+  const address = formatAddress(row, homeCountry);
   const hasCoordinates = row.latitude !== null && row.longitude !== null;
   const query = hasCoordinates ? `${row.latitude},${row.longitude}` : address;
 

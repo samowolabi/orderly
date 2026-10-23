@@ -12,6 +12,7 @@ import {
   type AddressPatchValue,
   type AddressRow,
   type CoordinatesInputValue,
+  type ResolvedAddressValue,
 } from "../utils/store-location";
 import { expireStaleOrders, logEvent, type Db } from "./stock";
 
@@ -166,12 +167,12 @@ async function findStores(db: Db, id?: string) {
     [id ?? null],
   );
   const now = new Date();
-  const timeZone = config().BUSINESS_TIMEZONE;
+  const { BUSINESS_COUNTRY: homeCountry, BUSINESS_TIMEZONE: timeZone } = config();
   // Converts one store row into its customer-facing location and hours view.
   return rows.map((store) => ({
     id: store.id,
     name: store.name,
-    ...addressView(store),
+    ...addressView(store, homeCountry),
     ...hoursView(store.hours, timeZone, now),
   }));
 }
@@ -183,8 +184,11 @@ const escapeLike = (value: string) => value.replace(
   (character) => `\\${character}`,
 );
 
+// Escapes text so it matches literally inside a regular expression.
+const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
 // Uses an explicit map pin or resolves the store address through the configured geocoder.
-async function resolveStoreLocation(address: AddressInputValue, location: CoordinatesInputValue | null | undefined) {
+async function resolveStoreLocation(address: ResolvedAddressValue, location: CoordinatesInputValue | null | undefined) {
   if (location !== undefined) return location;
 
   try {
@@ -212,16 +216,20 @@ export async function listStores() {
 
 // Creates a store, its hours and zeroed stock rows in one transaction.
 export async function addStore(input: AddStoreInput) {
+  const { BUSINESS_COUNTRY, BUSINESS_NAME } = config();
+  // "Acme Yaba" becomes "yaba": the business name adds nothing to a store id.
+  const businessPrefix = new RegExp(`^${escapeRegExp(BUSINESS_NAME.toLowerCase())}\\s*`);
   const id =
     input.id ??
     input.name
       .toLowerCase()
-      .replace(/^kola gadgets\s*/, "")
+      .replace(businessPrefix, "")
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/^-|-$/g, "");
   if (!id) throw new ApiError(400, "invalid_input", "Give the store a short id, e.g. yaba.");
 
-  const location = await resolveStoreLocation(input.address, input.location);
+  const address: ResolvedAddressValue = { ...input.address, country_code: input.address.country_code ?? BUSINESS_COUNTRY };
+  const location = await resolveStoreLocation(address, input.location);
 
   // Persists the store and all dependent rows atomically.
   return withTransaction(async (db) => {
@@ -234,16 +242,16 @@ export async function addStore(input: AddStoreInput) {
       [
         id,
         input.name,
-        input.address.line1,
-        input.address.line2 ?? null,
-        input.address.area,
-        input.address.city,
-        input.address.state,
-        input.address.country_code,
-        input.address.postal_code ?? null,
+        address.line1,
+        address.line2 ?? null,
+        address.area,
+        address.city,
+        address.state,
+        address.country_code,
+        address.postal_code ?? null,
         location?.latitude ?? null,
         location?.longitude ?? null,
-        input.address.directions_note ?? null,
+        address.directions_note ?? null,
       ],
     );
     if (!rowCount) {

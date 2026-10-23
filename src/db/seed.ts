@@ -1,6 +1,6 @@
 import { toSubunits } from "../utils/money";
 import { toRows } from "../utils/store-hours";
-import type { AddressInputValue, CoordinatesInputValue } from "../utils/store-location";
+import type { CoordinatesInputValue, ResolvedAddressValue } from "../utils/store-location";
 import { pool, withTransaction } from "./pool";
 
 // Kola Gadgets: a made-up Lagos phone and gadget store. All data is fictional.
@@ -13,7 +13,7 @@ type SeedStore = {
   id: string;
   name: string;
 
-  address: AddressInputValue;
+  address: ResolvedAddressValue;
   location: CoordinatesInputValue;
 
   hours: Parameters<typeof toRows>[0];

@@ -24,9 +24,26 @@ const ikeja = addressView({
   latitude: 6.604718,
   longitude: 3.350299,
   directions_note: null,
-});
+}, "NG");
 
 assert.equal(ikeja.address, "14 Allen Avenue, Ikeja, Lagos");
+
+// The same address names its country once the business is based elsewhere.
+assert.equal(
+  addressView({
+    address_line1: "14 Allen Avenue",
+    address_line2: null,
+    area: "Ikeja",
+    city: "Lagos",
+    state: "Lagos",
+    country_code: "NG",
+    postal_code: null,
+    latitude: null,
+    longitude: null,
+    directions_note: null,
+  }, "GH").address,
+  "14 Allen Avenue, Ikeja, Lagos, NG",
+);
 assert.equal(ikeja.location.map_url.includes("6.604718%2C3.350299"), true);
 
 const noPin = addressView({
@@ -40,7 +57,7 @@ const noPin = addressView({
   latitude: null,
   longitude: null,
   directions_note: "Opposite the bus stop",
-});
+}, "NG");
 
 assert.equal(noPin.location.latitude, null);
 assert.equal(noPin.location.map_url.includes("3%20Herbert%20Macaulay%20Way%2C%20Yaba%2C%20Lagos"), true);

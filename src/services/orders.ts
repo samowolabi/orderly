@@ -130,7 +130,7 @@ function receiptView(order: OrderRow) {
   const paidAt = order.paid_at ?? new Date();
   const business = config().BUSINESS_NAME;
   const reference = order.paid_reference ?? order.payment_references.at(-1) ?? order.id;
-  const storeAddress = formatAddress(order);
+  const storeAddress = formatAddress(order, config().BUSINESS_COUNTRY);
   const total = formatMoney(order.amount_subunit, order.currency);
   const lines = [
     `${business} receipt ${order.id}`,
@@ -140,7 +140,7 @@ function receiptView(order: OrderRow) {
     `Total paid: ${total}`,
     "",
     `Paid ${formatLocalTime(paidAt)}${order.payment_channel ? ` by ${order.payment_channel}` : ""}`,
-    `Paystack reference: ${reference}`,
+    `${paymentProcessor.name} reference: ${reference}`,
     `Thank you for shopping with ${business}.`,
   ];
 
