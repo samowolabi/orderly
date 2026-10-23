@@ -86,7 +86,7 @@ Each endpoint becomes one tool in Chord when the OpenAPI spec is imported. Every
 | verify_payment | `POST /orders/{id}/verify` | Yes | No | Checks Paystack, confirms the order, returns the receipt |
 | get_receipt | `GET /orders/{id}/receipt` | Yes | Yes | The receipt for a paid order |
 | add_store | `POST /stores` | No | Yes | A new store or branch, with automatic address geocoding when no location is supplied |
-| update_store | `PATCH /stores/{id}` | No | Yes | Change a store's name, structured address, map pin or opening hours |
+| update_store | `PATCH /stores/{id}` | No | Yes | Change a store's name, structured address, map pin or opening hours; close (active false) or reopen it; move all its free stock to another store (move_stock_to) |
 | add_product | `POST /products` | No | Yes | One or more new products with stock at any stores, added together or not at all |
 | update_product | `PATCH /products/{id}` | No | Yes | Change any mix of price, discount floor, name, variant, on-sale status and stock at several stores, in one call |
 | delivery_settings | `PATCH /delivery/settings` | No | Yes | Reads (empty body) or changes the delivery pricing: base fee, rate per km, rounding, distance limit, packing time |

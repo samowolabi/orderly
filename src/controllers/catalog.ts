@@ -13,7 +13,7 @@ import { parse, success } from "../utils/http";
 
 // Returns all stores through the catalog service.
 export async function listStores(_request: Request, response: Response) {
-  success(response, await catalogService.listStores());
+  success(response, await catalogService.listStores(response.locals.role));
 }
 
 // Validates and creates a new store.

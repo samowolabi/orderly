@@ -38,6 +38,7 @@ type ProductRow = {
 type StoreRow = {
   id: string;
   name: string;
+  active: boolean;
 
   hours: HourRow[];
 } & AddressRow;
@@ -62,6 +63,9 @@ type UpdateStoreInput = {
 
   hours?: HoursInputValue;
   closed_days?: (typeof DAYS)[number][];
+
+  active?: boolean;
+  move_stock_to?: string;
 };
 
 type NewProductInput = {
@@ -176,20 +180,20 @@ async function assertStore(db: Db, storeId: string) {
   }
 }
 
-// Loads active stores with structured addresses and opening hours.
-async function findStores(db: Db, id?: string) {
+// Loads open stores (and closed ones too, for the owner) with structured addresses and opening hours.
+async function findStores(db: Db, id?: string, includeClosed = false) {
   const { rows } = await db.query<StoreRow>(
-    `SELECT s.id, s.name, s.address_line1, s.address_line2, s.area, s.city, s.state,
+    `SELECT s.id, s.name, s.active, s.address_line1, s.address_line2, s.area, s.city, s.state,
             s.country_code, s.postal_code, s.latitude, s.longitude, s.directions_note,
             coalesce(json_agg(json_build_object(
                        'weekday', h.weekday, 'opens', to_char(h.opens, 'HH24:MI'), 'closes', to_char(h.closes, 'HH24:MI'))
                      ORDER BY h.weekday) FILTER (WHERE h.store_id IS NOT NULL), '[]') AS hours
      FROM stores s
      LEFT JOIN store_hours h ON h.store_id = s.id
-     WHERE s.active AND ($1::text IS NULL OR s.id = $1)
+     WHERE (s.active OR $2) AND ($1::text IS NULL OR s.id = $1)
      GROUP BY s.id
-     ORDER BY s.created_at, s.id`,
-    [id ?? null],
+     ORDER BY s.active DESC, s.created_at, s.id`,
+    [id ?? null, includeClosed],
   );
   const now = new Date();
   const { BUSINESS_COUNTRY: homeCountry, BUSINESS_TIMEZONE: timeZone } = config();
@@ -197,8 +201,11 @@ async function findStores(db: Db, id?: string) {
   return rows.map((store) => ({
     id: store.id,
     name: store.name,
+    active: store.active,
     ...addressView(store, homeCountry),
     ...hoursView(store.hours, timeZone, now),
+    // A closed store is never open, whatever its hours say.
+    ...(store.active ? {} : { open_now: false }),
   }));
 }
 
@@ -251,8 +258,8 @@ function patchedAddress(current: ReturnType<typeof addressView>["address_details
 }
 
 // Returns every active store with normalized location and hours data.
-export async function listStores() {
-  return { stores: await findStores(pool) };
+export async function listStores(role: Role) {
+  return { stores: await findStores(pool, undefined, role === "seller") };
 }
 
 // Creates a store, its hours and zeroed stock rows in one transaction.
@@ -296,7 +303,7 @@ export async function addStore(input: AddStoreInput) {
       ],
     );
     if (!rowCount) {
-      throw new ApiError(409, "store_exists", `A store with id ${id} already exists. Pick another id, or call list_stores.`);
+      throw new ApiError(409, "store_exists", `A store with id ${id} already exists (it may be closed; list_stores shows closed stores to the owner). Reopen it with update_store active true, or pick another id.`);
     }
 
     await db.query("INSERT INTO stock (product_id, store_id, available) SELECT id, $1, 0 FROM products", [id]);
@@ -317,9 +324,21 @@ export async function addStore(input: AddStoreInput) {
 export async function updateStore(id: string, input: UpdateStoreInput) {
   // Locks and updates the store atomically.
   return withTransaction(async (db) => {
-    const locked = await db.query("SELECT id FROM stores WHERE id = $1 AND active FOR UPDATE", [id]);
+    const locked = await db.query<{ active: boolean }>("SELECT active FROM stores WHERE id = $1 FOR UPDATE", [id]);
     if (!locked.rows[0]) throw new ApiError(404, "store_not_found", `No store ${id}. Call list_stores for the right id.`);
-    const before = (await findStores(db, id))[0]!;
+    const before = (await findStores(db, id, true))[0]!;
+    const closing = input.active === false && locked.rows[0].active;
+    if (closing) {
+      const { rows } = await db.query("SELECT 1 FROM stores WHERE active AND id <> $1 FOR UPDATE", [id]);
+      if (!rows.length) {
+        throw new ApiError(
+          409,
+          "last_store",
+          `${before.name} is the only open store, so closing it would stop all sales. Nothing was changed. To pause for a while, close it on certain days (closed_days), or take products off sale.`,
+        );
+      }
+    }
+    const moved = input.move_stock_to ? await moveAllStock(db, id, input.move_stock_to) : [];
 
     if (input.name !== undefined) await db.query("UPDATE stores SET name = $2 WHERE id = $1", [id, input.name]);
     if (input.address) {
@@ -370,14 +389,57 @@ export async function updateStore(id: string, input: UpdateStoreInput) {
       ]);
     }
 
-    const after = (await findStores(db, id))[0]!;
+    if (input.active !== undefined) await db.query("UPDATE stores SET active = $2 WHERE id = $1", [id, input.active]);
+
+    const after = (await findStores(db, id, true))[0]!;
+    // Units still at the store, and unpaid orders holding items there, so the owner can deal with them.
+    const { rows: left } = await db.query<{ units: number }>("SELECT coalesce(sum(available), 0)::int AS units FROM stock WHERE store_id = $1", [id]);
+    const { rows: pending } = await db.query<{ id: string }>(
+      `SELECT DISTINCT o.id FROM orders o JOIN order_items i ON i.order_id = o.id
+       WHERE i.store_id = $1 AND o.status = 'pending_payment' ORDER BY o.id`,
+      [id],
+    );
     await logEvent(db, null, "store_updated", {
       store_id: id,
-      from: { name: before.name, address: before.address_details, location: before.location, hours: before.hours },
-      to: { name: after.name, address: after.address_details, location: after.location, hours: after.hours },
+      from: { name: before.name, address: before.address_details, location: before.location, hours: before.hours, active: before.active },
+      to: { name: after.name, address: after.address_details, location: after.location, hours: after.hours, active: after.active },
+      moved,
     });
-    return { store: after, previous: before };
+    return {
+      store: after,
+      previous: before,
+      moved_stock: moved,
+      units_left: left[0]!.units,
+      pending_orders: pending.map((row) => row.id),
+    };
   });
+}
+
+// Moves every free unit at one store to another, product by product. Units held for
+// unpaid orders stay, so those orders can still be paid for.
+async function moveAllStock(db: Db, fromId: string, toId: string) {
+  if (toId === fromId) throw new ApiError(400, "invalid_input", "move_stock_to must be a different store. Nothing was changed.");
+  await assertStore(db, toId);
+  const { rows } = await db.query<{ product_id: string; name: string; variant: string | null; quantity: number }>(
+    `WITH source AS (
+       SELECT product_id, available FROM stock WHERE store_id = $1 AND available > 0 FOR UPDATE
+     ), added AS (
+       UPDATE stock st SET available = st.available + source.available, updated_at = now()
+       FROM source WHERE st.store_id = $2 AND st.product_id = source.product_id
+     ), emptied AS (
+       UPDATE stock st SET available = 0, updated_at = now()
+       FROM source WHERE st.store_id = $1 AND st.product_id = source.product_id
+     )
+     SELECT source.product_id, p.name, p.variant, source.available AS quantity
+     FROM source JOIN products p ON p.id = source.product_id
+     ORDER BY p.name`,
+    [fromId, toId],
+  );
+  return rows.map((row) => ({
+    product: { id: row.product_id, name: row.name, variant: row.variant },
+    quantity: row.quantity,
+    to_store_id: toId,
+  }));
 }
 
 // Searches active products after expiring stale stock holds.

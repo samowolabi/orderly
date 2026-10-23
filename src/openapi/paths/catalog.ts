@@ -8,7 +8,7 @@ registry.registerPath({
   operationId: "list_stores",
   summary: "List the stores",
   description:
-    "Every store with its address, opening hours (in the business's local time) and whether it is open right now. Quote opening_hours as written. Use the id with other tools.",
+    "Every open store with its address, opening hours (in the business's local time) and whether it is open right now. The owner also sees closed stores, with active false. Quote opening_hours as written. Use the id with other tools.",
   security: security.buyerOrSeller,
   responses: { 200: json(z.object({ stores: z.array(schema.Store) }), "The stores"), 401: errorResponses[401] },
 });
@@ -29,15 +29,27 @@ registry.registerPath({
   method: "patch",
   path: "/stores/{id}",
   operationId: "update_store",
-  summary: "Change a store's name, address or hours (owner only)",
+  summary: "Change a store's name, address or hours, close or reopen it, or move its stock (owner only)",
   description:
-    "Send only what changes, and at least one of name, address, location, hours or closed_days. A day can't be in both hours and closed_days. hours updates just the days listed and leaves the rest alone; closed_days closes days. Turn 'Saturdays now 10 to 4' into 24-hour times, and read the change back to the owner before calling.",
+    "Send only what changes, and at least one of name, address, location, hours, closed_days, active or move_stock_to. To close a store for good, send active false, usually with move_stock_to so its stock goes to another store; the store is kept and can be reopened with active true. The only open store can't be closed (last_store). The reply lists what moved (moved_stock), units still there (units_left) and unpaid orders holding items there (pending_orders); tell the owner about any of those. A day can't be in both hours and closed_days. hours updates just the days listed and leaves the rest alone; closed_days closes days. Turn 'Saturdays now 10 to 4' into 24-hour times, and read the change back to the owner before calling.",
   security: security.seller,
   request: { params: schema.StoreParams, body: body(schema.UpdateStoreBody) },
   responses: {
     200: json(
-      z.object({ store: schema.Store, previous: schema.Store }),
-      "The store after the change, and what it was before",
+      z.object({
+        store: schema.Store,
+        previous: schema.Store,
+        moved_stock: z.array(
+          z.object({
+            product: z.object({ id: z.string(), name: z.string(), variant: z.string().nullable() }),
+            quantity: z.number().int(),
+            to_store_id: z.string(),
+          }),
+        ),
+        units_left: z.number().int().openapi({ description: "Free units still at this store after the change" }),
+        pending_orders: z.array(z.string()).openapi({ description: "Unpaid orders still holding items at this store" }),
+      }),
+      "The store after the change, what it was before, and what happened to its stock",
     ),
     ...errorResponses,
   },

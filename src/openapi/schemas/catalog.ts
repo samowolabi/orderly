@@ -115,6 +115,7 @@ export const Store = z
   .object({
     id: z.string().openapi({ example: "ikeja" }),
     name: z.string().openapi({ example: "Kola Gadgets Ikeja" }),
+    active: z.boolean().openapi({ description: "False when the owner has closed the store. Customers only ever see open stores." }),
     ...AddressView,
     ...HoursView,
   })
@@ -180,13 +181,21 @@ export const UpdateStoreBody = z
       description: "Days the store will now be closed on",
       example: ["sun"],
     }),
+    active: z.boolean().optional().openapi({
+      description:
+        "false closes the store: it's kept, not deleted, but customers can't see it, buy from it or get deliveries from it. true reopens it. The only open store can't be closed.",
+    }),
+    move_stock_to: z.string().trim().toLowerCase().min(1).optional().openapi({
+      description: "Moves every free unit at this store to that open store, in the same change. Use it when closing a store, or to empty one.",
+      example: "ikeja",
+    }),
   })
   // Requires a store patch to contain at least one change.
   .refine((input) => Object.values(input).some(
     // Detects whether a store field was supplied.
     (value) => value !== undefined,
   ), {
-    message: "send at least one of name, address, location, hours or closed_days",
+    message: "send at least one of name, address, location, hours, closed_days, active or move_stock_to",
   })
   // Prevents a weekday from being opened and closed in the same request.
   .refine((input) => !input.closed_days?.some(

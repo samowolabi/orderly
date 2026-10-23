@@ -456,6 +456,29 @@ call "$SELLER" GET '/orders?period=yesterday'; check "bad period" 400
 echo
 echo "Passed $PASS, failed $FAILS"
 
+echo "== Owner: close a store, move its stock, reopen it"
+call "$SELLER" PATCH /products/ANKER-20K '{"stock":[{"store_id":"yaba","change":2}]}'; check "put 2 power banks in Yaba" 200
+IKEJA_BEFORE=$(jq '.data.product.stores[] | select(.store_id=="ikeja") | .available' <<<"$BODY")
+call "$SELLER" PATCH /stores/yaba '{"move_stock_to":"yaba"}'; check "can't move stock to the same store" 400
+call "$SELLER" PATCH /stores/yaba '{"active":false,"move_stock_to":"nowhere"}'; check "can't move stock to an unknown store" 404
+call "$SELLER" PATCH /stores/yaba '{"active":false,"move_stock_to":"ikeja"}'
+check "Yaba closes and its stock moves to Ikeja" 200 '.data.store.active == false and .data.store.open_now == false and .data.units_left == 0 and ([.data.moved_stock[] | select(.product.id=="ANKER-20K") | .quantity] == [2]) and .data.pending_orders == []'
+call "$SELLER" GET '/products?product_id=ANKER-20K'
+check "Ikeja has the moved units" 200 "(.data.products[0].stores[] | select(.store_id==\"ikeja\") | .available) == $((IKEJA_BEFORE + 2))"
+call "$BUYER" GET /stores;  check "customers no longer see Yaba" 200 '[.data.stores[].id] | index("yaba") == null'
+call "$SELLER" GET /stores; check "the owner still sees it, closed" 200 '[.data.stores[] | select(.id=="yaba") | .active] == [false]'
+call "$BUYER" GET '/products?product_id=IP13-128'; check "products show no Yaba stock" 200 '[.data.products[0].stores[].store_id] | index("yaba") == null'
+call "$BUYER" POST /orders '{"items":[{"product_id":"ANKER-20K"}],"store_id":"yaba","buyer_name":"A"}'; check "can't order from a closed store" 404 '.error.code == "store_not_found"'
+call "$SELLER" POST /stores '{"id":"yaba","name":"Kola Gadgets Yaba","address":{"line1":"1 Herbert Macaulay Way","area":"Yaba","city":"Lagos","state":"Lagos"},"location":null,"hours":[{"days":["mon"],"opens":"09:00","closes":"17:00"}]}'
+check "adding it again points to reopening" 409 '.error.code == "store_exists" and (.error.message_for_agent | test("Reopen"))'
+call "$SELLER" PATCH /stores/lekki '{"active":false}'; check "close Lekki too" 200 '.data.store.active == false'
+call "$SELLER" PATCH /stores/accra '{"active":false}'; check "and Accra" 200 '.data.store.active == false'
+call "$SELLER" PATCH /stores/ikeja '{"active":false}'; check "the only open store can't close" 409 '.error.code == "last_store"'; msg
+call "$SELLER" PATCH /stores/lekki '{"active":true}'; check "reopen Lekki" 200 '.data.store.active == true'
+call "$SELLER" PATCH /stores/accra '{"active":true}'; check "reopen Accra" 200 '.data.store.active == true'
+call "$SELLER" PATCH /stores/yaba '{"active":true}'; check "reopen Yaba, empty" 200 '.data.store.active == true and .data.units_left == 0'
+call "$BUYER" GET /stores;  check "customers see Yaba again" 200 '[.data.stores[].id] | index("yaba") != null'
+
 echo "== Ten buyers at once, two units (S23-256 at Lekki)"
 $PSQL -c "UPDATE stock SET available = 2 WHERE product_id='S23-256' AND store_id='lekki'"
 for i in $(seq 1 10); do
