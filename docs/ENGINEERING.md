@@ -16,7 +16,7 @@ flowchart TB
   OS -- buyer key --> API
   API[Orderly REST API<br/>imported into Chord via OpenAPI<br/>TypeScript on Render]
   API -- stores, stock, orders --> DB[(Postgres)]
-  API -- new store address --> GA[Geoapify]
+  API -- store address --> GA[Google Geocoding]
   API -- create link, verify --> PS[Paystack test mode]
   PS -- signed payment webhook --> API
   CW -. pays by link .-> PS
@@ -30,7 +30,7 @@ The customer pays on Paystack's own page, so card details never touch the agent,
 | --- | --- | --- |
 | API | TypeScript, Express, Zod | Zod schemas validate input; zod-to-openapi generates the spec Chord imports |
 | Database | Postgres | Atomic stock updates stop overselling |
-| Geocoding | Geoapify | Converts a new store address into an optional map pin |
+| Geocoding | Google Geocoding API (Geoapify as a fallback) | Turns a store address into an optional map pin, and says how precise the match is |
 | Payments | Paystack test mode | Real API, test cards, no real money |
 | Hosting | Render, from a Blueprint (`render.yaml`) | Web service and Postgres defined in the repo. A paid instance stays on; the free one sleeps when idle |
 | AI teammates | Chord, two teammates | Conversations, tools, reminders and handover |
@@ -44,7 +44,7 @@ The API is split into focused modules:
 | `src/routes/` | Wires Express endpoints to role checks and controllers |
 | `src/controllers/` | Validates request data, calls a service and writes the HTTP response |
 | `src/services/` | Enforces business rules and owns database, stock and payment workflows |
-| `src/adapters/` | Defines external-provider contracts and translates Geoapify and Paystack responses into application data |
+| `src/adapters/` | Defines external-provider contracts and translates Google, Geoapify and Paystack responses into application data |
 | `src/utils/` | Shared HTTP, currency, time, opening-hours and address helpers |
 | `src/openapi/` | Owns API schemas, path descriptions, the registry and document generation |
 | `src/middleware/` | Handles API-key roles, unknown routes and application errors |
@@ -64,9 +64,9 @@ Six tables. Stores are rows, not fixed names, so an owner can run any number of 
 | orders | Each purchase | id (e.g. ORD-1042), product_id, store_id, amount_subunit, currency, buyer_name, status, payment_references, paid_reference, expires_at |
 | events | A log of everything that happened | order_id, type, detail, created_at |
 
-The demo seeds Kola Gadgets with two stores, Ikeja and Lekki; the owner can add more by chat. When a new store omits `location`, the API geocodes its structured address through Geoapify before opening the database transaction. Explicit coordinates always win, and `location: null` deliberately creates the store without a pin.
+The demo seeds Kola Gadgets with two stores, Ikeja and Lekki; the owner can add more by chat. When a new store omits `location`, or a store's address changes without one, the API geocodes the structured address (Google when `GOOGLE_MAPS_API_KEY` is set, otherwise Geoapify). Vague matches give no pin rather than a wrong one: Google's `APPROXIMATE` results and Geoapify matches below 0.5 confidence are dropped, and the map link then searches the address. Explicit coordinates always win, and `location: null` deliberately stores no pin.
 
-Any interface that displays Geoapify-derived coordinates must retain the Geoapify and OpenStreetMap attribution required by the free plan.
+If Geoapify is the active geocoder, any interface that displays its coordinates must keep the Geoapify and OpenStreetMap attribution its free plan requires.
 
 Order status is one of: `pending_payment`, `paid`, `failed`, `expired`, `paid_no_stock`, `handed_over`.
 

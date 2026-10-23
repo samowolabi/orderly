@@ -209,7 +209,7 @@ async function resolveStoreLocation(address: ResolvedAddressValue, location: Coo
   if (location !== undefined) return location;
 
   try {
-    return await geocodingProvider.geocodeAddress({
+    return await geocodingProvider().geocodeAddress({
       address: addressSearchText(address),
       countryCode: address.country_code,
     });
@@ -224,6 +224,22 @@ async function resolveStoreLocation(address: ResolvedAddressValue, location: Coo
 
     throw error;
   }
+}
+
+// Applies an address patch over a store's current address, for geocoding the result.
+function patchedAddress(current: ReturnType<typeof addressView>["address_details"], patch: AddressPatchValue): ResolvedAddressValue {
+  // Picks the patched value when one was sent (null clears it), otherwise the current one.
+  const pick = (next: string | null | undefined, now: string | null) => (next === undefined ? now : next) ?? undefined;
+  return {
+    line1: patch.line1 ?? current.line1,
+    line2: pick(patch.line2, current.line2),
+    area: patch.area ?? current.area,
+    city: patch.city ?? current.city,
+    state: patch.state ?? current.state,
+    country_code: patch.country_code ?? current.country_code,
+    postal_code: pick(patch.postal_code, current.postal_code),
+    directions_note: pick(patch.directions_note, current.directions_note),
+  };
 }
 
 // Returns every active store with normalized location and hours data.
@@ -317,11 +333,18 @@ export async function updateStore(id: string, input: UpdateStoreInput) {
       const set = updates.map(([column], index) => `${column} = $${index + 2}`).join(", ");
       await db.query(`UPDATE stores SET ${set} WHERE id = $1`, values);
     }
-    if (input.location !== undefined) {
+    // A new address gets a new pin unless one was sent; keeping the old pin would point at the old place.
+    const location =
+      input.location !== undefined
+        ? input.location
+        : input.address
+          ? await resolveStoreLocation(patchedAddress(before.address_details, input.address), undefined)
+          : undefined;
+    if (location !== undefined) {
       await db.query("UPDATE stores SET latitude = $2, longitude = $3 WHERE id = $1", [
         id,
-        input.location?.latitude ?? null,
-        input.location?.longitude ?? null,
+        location?.latitude ?? null,
+        location?.longitude ?? null,
       ]);
     }
     for (const hours of input.hours ? toRows(input.hours) : []) {

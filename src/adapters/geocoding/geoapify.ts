@@ -36,7 +36,7 @@ export class GeoapifyAdapter implements GeocodingProvider {
       format: "json",
       limit: "1",
       filter: `countrycode:${input.countryCode.toLowerCase()}`,
-      apiKey: this.apiKey ?? config().GEOAPIFY_API_KEY,
+      apiKey: this.apiKey ?? config().GEOAPIFY_API_KEY ?? "",
     }).toString();
 
     let response: Response;
@@ -57,8 +57,10 @@ export class GeoapifyAdapter implements GeocodingProvider {
     const body = (await response.json().catch(
       // Treats a non-JSON response as an invalid provider response.
       () => null,
-    )) as { results?: { lat?: unknown; lon?: unknown }[] } | null;
+    )) as { results?: { lat?: unknown; lon?: unknown; rank?: { confidence?: unknown } }[] } | null;
     const result = body?.results?.[0];
+    // Below 0.5 Geoapify is often matching a different building; no pin beats a wrong one.
+    if (result && typeof result.rank?.confidence === "number" && result.rank.confidence < 0.5) return null;
     if (!result) return null;
 
     if (

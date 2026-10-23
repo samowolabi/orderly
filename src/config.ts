@@ -24,7 +24,10 @@ function isTimeZone(zone: string) {
 const Env = z.object({
   DATABASE_URL: z.string().url(),
 
-  GEOAPIFY_API_KEY: z.string().min(1),
+  // Geocoding for new store addresses: Google when its key is set, otherwise Geoapify.
+  GOOGLE_MAPS_API_KEY: z.string().min(1).optional(),
+  GEOAPIFY_API_KEY: z.string().min(1).optional(),
+  GEOCODING_PROVIDER: z.enum(["google", "geoapify"]).optional(),
 
   PAYSTACK_SECRET_KEY: z
     .string()
@@ -61,7 +64,7 @@ const Env = z.object({
   PORT: z.coerce.number().int().positive().default(3000),
 });
 
-type Config = z.infer<typeof Env>;
+type Config = Omit<z.infer<typeof Env>, "GEOCODING_PROVIDER"> & { GEOCODING_PROVIDER: "google" | "geoapify" };
 
 // The public URL a host publishes for the service, used when PUBLIC_URL isn't set.
 function hostUrl() {
@@ -76,7 +79,13 @@ let cached: Config | undefined;
 // Parses, validates and caches the process environment.
 export function config(): Config {
   if (!cached) {
-    const parsed = Env.safeParse({ ...process.env, PUBLIC_URL: process.env.PUBLIC_URL || hostUrl() });
+    const parsed = Env.safeParse({
+      ...process.env,
+      PUBLIC_URL: process.env.PUBLIC_URL || hostUrl(),
+      // An empty variable means unset, so a blank key doesn't pick that provider.
+      GOOGLE_MAPS_API_KEY: process.env.GOOGLE_MAPS_API_KEY || undefined,
+      GEOAPIFY_API_KEY: process.env.GEOAPIFY_API_KEY || undefined,
+    });
     if (!parsed.success) {
       // Formats each environment validation issue for the startup error.
       const fields = parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`);
@@ -88,7 +97,12 @@ export function config(): Config {
     if (parsed.data.BUYER_API_KEY === parsed.data.SELLER_API_KEY) {
       throw new Error("BUYER_API_KEY and SELLER_API_KEY must be different");
     }
-    cached = parsed.data;
+
+    const { GOOGLE_MAPS_API_KEY, GEOAPIFY_API_KEY } = parsed.data;
+    const provider = parsed.data.GEOCODING_PROVIDER ?? (GOOGLE_MAPS_API_KEY ? "google" : "geoapify");
+    if (provider === "google" && !GOOGLE_MAPS_API_KEY) throw new Error("GEOCODING_PROVIDER is google but GOOGLE_MAPS_API_KEY is not set");
+    if (provider === "geoapify" && !GEOAPIFY_API_KEY) throw new Error("Set GOOGLE_MAPS_API_KEY (or GEOAPIFY_API_KEY) for store map pins");
+    cached = { ...parsed.data, GEOCODING_PROVIDER: provider };
   }
   return cached;
 }

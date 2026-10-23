@@ -163,7 +163,9 @@ export const UpdateStoreBody = z
   .object({
     name: AddStoreBody.shape.name.optional(),
     address: AddressPatch.optional(),
-    location: CoordinatesInput.nullable().optional().openapi({ description: "New map pin, or null to remove the current pin." }),
+    location: CoordinatesInput.nullable().optional().openapi({
+      description: "New map pin, or null to remove it. Leave out when changing the address and the pin is found from the new address.",
+    }),
     hours: HoursInput.optional().openapi({
       description: "New times for the days listed only. Other days keep their hours. In the business's local time.",
     }),
