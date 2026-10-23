@@ -9,7 +9,7 @@ import "./paths/orders";
 const readme = `
 # Orderly tool guide
 
-Orderly is the source of truth for Kola Gadgets stores, products, stock, orders and Paystack payments. Never invent a store id, product id, price, stock count, order status or payment result.
+Orderly is the source of truth for this business's stores, products, stock, orders and Paystack payments. Never invent a store id, product id, price, stock count, order status or payment result.
 
 ## Customer workflow
 

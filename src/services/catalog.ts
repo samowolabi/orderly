@@ -166,8 +166,14 @@ async function findStores(db: Db, id?: string) {
     [id ?? null],
   );
   const now = new Date();
+  const timeZone = config().BUSINESS_TIMEZONE;
   // Converts one store row into its customer-facing location and hours view.
-  return rows.map((store) => ({ id: store.id, name: store.name, ...addressView(store), ...hoursView(store.hours, now) }));
+  return rows.map((store) => ({
+    id: store.id,
+    name: store.name,
+    ...addressView(store),
+    ...hoursView(store.hours, timeZone, now),
+  }));
 }
 
 // Escapes SQL LIKE wildcard characters in product search words.

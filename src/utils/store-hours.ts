@@ -60,10 +60,10 @@ export function formatHours(rows: HourRow[]): string {
   return parts.join("; ");
 }
 
-// Extracts the current Lagos weekday and 24-hour clock value.
-function lagosNow(now: Date) {
+// Extracts the weekday and 24-hour clock value in the given time zone.
+function localNow(now: Date, timeZone: string) {
   const parts = new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Africa/Lagos",
+    timeZone,
     weekday: "short",
     hour: "2-digit",
     minute: "2-digit",
@@ -77,20 +77,20 @@ function lagosNow(now: Date) {
   return { weekday: SHORT.indexOf(get("weekday")) + 1, time: `${get("hour")}:${get("minute")}` };
 }
 
-// Reports whether the supplied weekly schedule is open at a given time.
-export function isOpen(rows: HourRow[], now = new Date()): boolean {
-  const { weekday, time } = lagosNow(now);
+// Reports whether the supplied weekly schedule is open at a given time in a time zone.
+export function isOpen(rows: HourRow[], timeZone: string, now = new Date()): boolean {
+  const { weekday, time } = localNow(now, timeZone);
   // Finds today's opening-hours row if the store opens today.
   const today = rows.find((row) => row.weekday === weekday);
   return !!today && time >= today.opens && time < today.closes;
 }
 
 // Builds the text, structured schedule and live open state returned by the API.
-export function hoursView(rows: HourRow[], now = new Date()) {
+export function hoursView(rows: HourRow[], timeZone: string, now = new Date()) {
   return {
     opening_hours: formatHours(rows),
     // Converts one database hours row into its API representation.
     hours: rows.map((row) => ({ day: LONG[row.weekday - 1]!, opens: row.opens, closes: row.closes })),
-    open_now: isOpen(rows, now),
+    open_now: isOpen(rows, timeZone, now),
   };
 }

@@ -76,7 +76,7 @@ export const HoursInput = z
   ).length, {
     message: "each day can appear only once",
   })
-  .openapi({ description: "Open days and times, Lagos time. Days left out are closed." });
+  .openapi({ description: "Open days and times, in the business's local time. Days left out are closed." });
 
 const OptionalText = z.string().nullable();
 const AddressView = {
@@ -108,7 +108,7 @@ const HoursView = {
       closes: Time.openapi({ example: "19:00" }),
     }),
   ),
-  open_now: z.boolean().openapi({ description: "Open right now, Lagos time" }),
+  open_now: z.boolean().openapi({ description: "Open right now, in the business's local time" }),
 };
 
 export const Store = z
@@ -164,7 +164,7 @@ export const UpdateStoreBody = z
     address: AddressPatch.optional(),
     location: CoordinatesInput.nullable().optional().openapi({ description: "New map pin, or null to remove the current pin." }),
     hours: HoursInput.optional().openapi({
-      description: "New times for the days listed only. Other days keep their hours. Lagos time.",
+      description: "New times for the days listed only. Other days keep their hours. In the business's local time.",
     }),
     closed_days: z.array(z.enum(DAYS)).min(1).optional().openapi({
       description: "Days the store will now be closed on",
@@ -205,7 +205,7 @@ export const AddProductBody = z
       .openapi({ description: "Product code, e.g. IP16-256. Made from name and variant if left out." }),
     name: z.string().trim().min(2).max(80).openapi({ example: "iPhone 16" }),
     variant: z.string().trim().max(60).optional().openapi({ example: "256GB" }),
-    price: PriceInput.openapi({ description: "In the store's currency, main unit (not subunits)", example: 1150000 }),
+    price: PriceInput.openapi({ description: "In the business currency (the one list_products shows), main unit, not subunits", example: 1150000 }),
     min_price: PriceInput.optional().openapi({ description: "Discount floor, same currency. Defaults to the price (no discounts)." }),
     stock: z
       .array(z.object({ store_id: z.string(), quantity: z.number().int().min(0).max(10_000) }))

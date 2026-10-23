@@ -4,6 +4,16 @@ import { z } from "zod";
 // Validates BUSINESS_CURRENCY at startup; kept here so config has no app imports.
 const isCurrencyCode = (code: string) => Intl.supportedValuesOf("currency").includes(code);
 
+// Validates BUSINESS_TIMEZONE at startup by asking Intl to use it.
+function isTimeZone(zone: string) {
+  try {
+    new Intl.DateTimeFormat("en", { timeZone: zone });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 const Env = z.object({
   DATABASE_URL: z.string().url(),
 
@@ -27,6 +37,8 @@ const Env = z.object({
     .default("NGN")
     .refine(isCurrencyCode, "use an ISO 4217 currency code, e.g. NGN"),
   BUSINESS_LOCALE: z.string().default("en-NG"),
+  // IANA zone for opening hours, "today" and receipt times.
+  BUSINESS_TIMEZONE: z.string().default("Africa/Lagos").refine(isTimeZone, "use an IANA time zone, e.g. Africa/Lagos"),
   HOLD_MINUTES: z.coerce.number().int().positive().default(30),
 
   // Base URL written into the OpenAPI spec's servers list.
@@ -47,6 +59,9 @@ export function config(): Config {
       // Formats each environment validation issue for the startup error.
       const fields = parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`);
       throw new Error(`Invalid environment:\n  ${fields.join("\n  ")}`);
+    }
+    if (process.env.NODE_ENV === "production" && !parsed.data.PUBLIC_URL) {
+      throw new Error("PUBLIC_URL is required in production, so the OpenAPI spec gives Chord the public https URL");
     }
     if (parsed.data.BUYER_API_KEY === parsed.data.SELLER_API_KEY) {
       throw new Error("BUYER_API_KEY and SELLER_API_KEY must be different");

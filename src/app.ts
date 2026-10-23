@@ -11,6 +11,9 @@ import { ok } from "./utils/http";
 // Builds the Express application with infrastructure and Chord-facing routes.
 export function createApp() {
   const app = express();
+  // Railway terminates TLS at one proxy hop; trust its X-Forwarded-Proto so
+  // req.protocol is https and the fallback spec URL is right.
+  app.set("trust proxy", 1);
 
   // Paystack signs the exact request bytes, so this route must run before JSON parsing.
   app.use(webhooks);

@@ -7,12 +7,18 @@ extendZodWithOpenApi(z);
 // separate, so the OpenAPI document can be generated on its own.
 export const registry = new OpenAPIRegistry();
 
-export const apiKey = registry.registerComponent("securitySchemes", "ApiKey", {
-  type: "apiKey",
-  in: "header",
-  name: "X-Api-Key",
-  description: "Buyer key for Orderly Shop, seller key for Orderly Owner.",
-});
+// Both keys travel in the same header; the scheme says which one a tool accepts.
+const keyScheme = (description: string) => ({ type: "apiKey" as const, in: "header" as const, name: "X-Api-Key", description });
+
+const buyerKey = registry.registerComponent("securitySchemes", "BuyerKey", keyScheme("Orderly Shop's buyer key. Customer tools."));
+const sellerKey = registry.registerComponent("securitySchemes", "SellerKey", keyScheme("Orderly Owner's seller key. Owner tools."));
+
+// Which key each tool accepts. Mirrors requireRole in src/routes; keep the two in step.
+export const security = {
+  buyer: [{ [buyerKey.name]: [] }],
+  seller: [{ [sellerKey.name]: [] }],
+  buyerOrSeller: [{ [buyerKey.name]: [] }, { [sellerKey.name]: [] }],
+};
 
 const ErrorBody = z
   .object({

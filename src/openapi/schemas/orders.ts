@@ -1,6 +1,9 @@
 import { z } from "../registry";
 import { Money } from "./money";
 
+// ISO 8601 timestamps, so agents can compare and convert them reliably.
+const Timestamp = z.string().openapi({ format: "date-time" });
+
 export const OrderStatus = z.enum(["pending_payment", "paid", "failed", "expired", "paid_no_stock", "handed_over"]);
 
 export const Order = z
@@ -14,31 +17,33 @@ export const Order = z
     amount: Money,
     buyer_name: z.string(),
     payment_url: z.string().nullable().openapi({ description: "Paystack page to pay on. Only set while waiting for payment." }),
-    expires_at: z.string().openapi({ description: "When the hold ends (ISO time)" }),
+    expires_at: Timestamp.openapi({ description: "When the hold ends" }),
     minutes_left: z.number().int().openapi({ description: "Minutes left to pay. 0 unless waiting for payment." }),
     declined_attempts: z.number().int(),
-    paid_at: z.string().nullable(),
-    created_at: z.string(),
+    paid_at: Timestamp.nullable(),
+    created_at: Timestamp,
   })
   .openapi("Order");
 
-export const Receipt = z
-  .object({
-    receipt_number: z.string(),
-    business: z.string(),
-    store: z.object({ name: z.string(), address: z.string() }),
-    item: z.string().openapi({ example: "iPhone 13 (128GB)" }),
-    quantity: z.number().int(),
-    unit_price: Money,
-    total: Money,
-    buyer_name: z.string(),
-    paid_at: z.string(),
-    paid_at_display: z.string().openapi({ description: "Lagos time" }),
-    payment_reference: z.string(),
-    payment_channel: z.string().nullable(),
-    text: z.string().openapi({ description: "Ready-to-send receipt. Send it as is." }),
-  })
-  .openapi("Receipt");
+// Unnamed so it can also be used as nullable: the generator drops `nullable`
+// from a named component's reference, which would hide `receipt: null`.
+export const ReceiptFields = z.object({
+  receipt_number: z.string(),
+  business: z.string(),
+  store: z.object({ name: z.string(), address: z.string() }),
+  item: z.string().openapi({ example: "iPhone 13 (128GB)" }),
+  quantity: z.number().int(),
+  unit_price: Money,
+  total: Money,
+  buyer_name: z.string(),
+  paid_at: Timestamp,
+  paid_at_display: z.string().openapi({ description: "In the business's local time" }),
+  payment_reference: z.string(),
+  payment_channel: z.string().nullable(),
+  text: z.string().openapi({ description: "Ready-to-send receipt. Send it as is." }),
+});
+
+export const Receipt = ReceiptFields.openapi("Receipt");
 
 export const CreateOrderBody = z.object({
   product_id: z.string().trim().toUpperCase().min(1).openapi({ description: "From list_products", example: "IP13-128" }),
@@ -53,7 +58,7 @@ export const OrderParams = z.object({ id: z.string().trim().toUpperCase().openap
 export const ListOrdersQuery = z.object({
   status: OrderStatus.optional(),
   store_id: z.string().optional(),
-  period: z.enum(["today", "7d", "30d", "all"]).default("today").openapi({ description: "today is Lagos time" }),
+  period: z.enum(["today", "7d", "30d", "all"]).default("today").openapi({ description: "today starts at midnight in the business's local time" }),
   limit: z.coerce.number().int().min(1).max(200).default(50),
 });
 

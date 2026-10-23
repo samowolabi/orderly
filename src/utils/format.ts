@@ -1,7 +1,13 @@
-// Formats a timestamp in the store's Lagos timezone.
-export const lagosTime = (date: Date) =>
-  date.toLocaleString("en-NG", {
-    timeZone: "Africa/Lagos",
+import { config } from "../config";
+
+// Formats a timestamp for people in the business's time zone and locale.
+export const formatLocalTime = (
+  date: Date,
+  timeZone = config().BUSINESS_TIMEZONE,
+  locale = config().BUSINESS_LOCALE,
+) =>
+  date.toLocaleString(locale, {
+    timeZone,
     day: "numeric",
     month: "short",
     year: "numeric",

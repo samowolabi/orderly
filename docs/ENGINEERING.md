@@ -58,7 +58,7 @@ Six tables. Stores are rows, not fixed names, so an owner can run any number of 
 | Table | Holds | Key columns |
 | --- | --- | --- |
 | stores | Each store or branch | id, name, structured address fields, optional latitude and longitude, active |
-| store_hours | When each store is open, Lagos time | store_id, weekday (1 = Monday), opens, closes; a day with no row is closed |
+| store_hours | When each store is open, in `BUSINESS_TIMEZONE` | store_id, weekday (1 = Monday), opens, closes; a day with no row is closed |
 | products | What the business sells | id (e.g. IP13-128), name, variant, price_subunit, min_price_subunit, currency |
 | stock | Units per product per store | product_id, store_id, available (never below 0) |
 | orders | Each purchase | id (e.g. ORD-1042), product_id, store_id, amount_subunit, currency, buyer_name, status, payment_references, paid_reference, expires_at |

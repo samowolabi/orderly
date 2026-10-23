@@ -1,8 +1,6 @@
 import { Money } from "../schemas/money";
 import * as schema from "../schemas/orders";
-import { apiKey, body, errorResponses, json, paymentErrorResponses, registry, z } from "../registry";
-
-const security = [{ [apiKey.name]: [] }];
+import { body, errorResponses, json, paymentErrorResponses, registry, security, z } from "../registry";
 
 registry.registerPath({
   method: "post",
@@ -10,8 +8,8 @@ registry.registerPath({
   operationId: "create_order",
   summary: "Hold an item and get a Paystack payment link",
   description:
-    "Holds the units at the chosen store for 30 minutes so nobody else can buy them, and returns a Paystack payment_url to send the customer. The price always comes from the store's records. Confirm item, store and the customer's name before calling. If it says out_of_stock, offer the other stores it names.",
-  security,
+    "Holds the units at the chosen store so nobody else can buy them, and returns a Paystack payment_url to send the customer. Tell the customer how long they have from minutes_left; the hold ends at expires_at. The price always comes from the store's records. Confirm item, store and the customer's name before calling. If it says out_of_stock, offer the other stores it names.",
+  security: security.buyer,
   request: { body: body(schema.CreateOrderBody) },
   responses: {
     201: json(schema.Order, "The held order with its payment link"),
@@ -26,8 +24,8 @@ registry.registerPath({
   operationId: "verify_payment",
   summary: "Check with Paystack whether an order is paid",
   description:
-    "The only way to know if a customer has paid. Call it whenever they say they've paid; never trust a screenshot or their word. Returns an outcome and next_step: follow next_step. On paid it includes the receipt.",
-  security,
+    "The only way to know if a customer has paid. Call it whenever they say they've paid; never trust a screenshot or their word. Returns an outcome and next_step: follow next_step. receipt is set when the payment is confirmed and null otherwise.",
+  security: security.buyer,
   request: { params: schema.OrderParams },
   responses: {
     200: json(
@@ -35,7 +33,7 @@ registry.registerPath({
         outcome: schema.Outcome,
         next_step: z.string(),
         order: schema.Order,
-        receipt: schema.Receipt.nullable(),
+        receipt: schema.ReceiptFields.nullable().openapi({ description: "The receipt when the payment is confirmed, otherwise null" }),
       }),
       "What Paystack says, and what to do next",
     ),
@@ -50,7 +48,7 @@ registry.registerPath({
   operationId: "get_receipt",
   summary: "Get the receipt for a paid order",
   description: "Only works once verify_payment has confirmed the order. Send the text field as is.",
-  security,
+  security: security.buyerOrSeller,
   request: { params: schema.OrderParams },
   responses: { 200: json(schema.Receipt, "The receipt"), ...errorResponses },
 });
@@ -62,7 +60,7 @@ registry.registerPath({
   summary: "List orders (owner only)",
   description:
     "Orders with a summary by status, for questions like 'what sold today?'. needs_attention lists orders the owner must act on, such as refunds for paid_no_stock.",
-  security,
+  security: security.seller,
   request: { query: schema.ListOrdersQuery },
   responses: {
     200: json(

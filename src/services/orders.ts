@@ -7,7 +7,7 @@ import {
 } from "../adapters/payment/payment-processor";
 import { config } from "../config";
 import { pool, withTransaction } from "../db/pool";
-import { lagosTime } from "../utils/format";
+import { formatLocalTime } from "../utils/format";
 import { ApiError } from "../utils/http";
 import { formatMoney, moneyView } from "../utils/money";
 import { formatAddress, type AddressRow } from "../utils/store-location";
@@ -139,7 +139,7 @@ function receiptView(order: OrderRow) {
     `${itemName(order)} x${order.quantity}: ${total}`,
     `Total paid: ${total}`,
     "",
-    `Paid ${lagosTime(paidAt)}${order.payment_channel ? ` by ${order.payment_channel}` : ""}`,
+    `Paid ${formatLocalTime(paidAt)}${order.payment_channel ? ` by ${order.payment_channel}` : ""}`,
     `Paystack reference: ${reference}`,
     `Thank you for shopping with ${business}.`,
   ];
@@ -154,7 +154,7 @@ function receiptView(order: OrderRow) {
     total: moneyView(order.amount_subunit, order.currency),
     buyer_name: order.buyer_name,
     paid_at: paidAt.toISOString(),
-    paid_at_display: lagosTime(paidAt),
+    paid_at_display: formatLocalTime(paidAt),
     payment_reference: reference,
     payment_channel: order.payment_channel,
     text: lines.join("\n"),
@@ -285,7 +285,7 @@ function nextStep(outcome: PaymentOutcome, order: OrderRow): string {
     case "declined_final":
       return "Payment was declined too many times, so the order was cancelled and the item released. Hand over to a person.";
     case "expired":
-      return "The 30-minute hold ran out without payment and the item went back on sale. Ask if they still want it; if so, create a new order.";
+      return `The ${config().HOLD_MINUTES}-minute hold ran out without payment and the item went back on sale. Ask if they still want it; if so, create a new order.`;
     case "failed":
       return "This order was cancelled and nothing was charged. If the customer still wants the item, create a new order.";
     case "handed_over":
@@ -488,25 +488,27 @@ export async function getReceipt(id: string) {
 export async function listOrders(input: ListOrdersInput) {
   await expireStaleOrders(pool);
 
+  // $1 is the period and $2 the business time zone, so "today" starts at local midnight.
   const since = `(CASE $1::text
-      WHEN 'today' THEN date_trunc('day', now() AT TIME ZONE 'Africa/Lagos') AT TIME ZONE 'Africa/Lagos'
+      WHEN 'today' THEN date_trunc('day', now() AT TIME ZONE $2::text) AT TIME ZONE $2::text
       WHEN '7d' THEN now() - interval '7 days'
       WHEN '30d' THEN now() - interval '30 days'
     END)`;
   const inPeriod = `(${since} IS NULL OR o.created_at >= ${since} OR o.paid_at >= ${since})
-    AND ($2::text IS NULL OR o.store_id = $2)`;
+    AND ($3::text IS NULL OR o.store_id = $3)`;
+  const timeZone = config().BUSINESS_TIMEZONE;
 
   const [list, summary] = await Promise.all([
     pool.query<OrderRow>(
-      `${ORDER_SELECT} WHERE ${inPeriod} AND ($3::text IS NULL OR o.status = $3)
-       ORDER BY o.created_at DESC LIMIT $4`,
-      [input.period, input.store_id ?? null, input.status ?? null, input.limit],
+      `${ORDER_SELECT} WHERE ${inPeriod} AND ($4::text IS NULL OR o.status = $4)
+       ORDER BY o.created_at DESC LIMIT $5`,
+      [input.period, timeZone, input.store_id ?? null, input.status ?? null, input.limit],
     ),
     pool.query<{ status: string; currency: string; n: number; paid_subunit: number }>(
       `SELECT o.status, o.currency, count(*)::int AS n,
               coalesce(sum(o.amount_subunit) FILTER (WHERE o.status = 'paid'), 0)::bigint AS paid_subunit
        FROM orders o WHERE ${inPeriod} GROUP BY o.status, o.currency`,
-      [input.period, input.store_id ?? null],
+      [input.period, timeZone, input.store_id ?? null],
     ),
   ]);
 

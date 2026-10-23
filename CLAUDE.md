@@ -51,7 +51,9 @@ Every response has the shape `{ ok, data, error: { code, message_for_agent } }`.
 - Migrations are plain SQL in `migrations/`, applied in name order and tracked in `schema_migrations`.
 - Seed: Kola Gadgets, 2 stores, 9 products. `IP15P-256` has a single unit (Ikeja) for the last-unit race test.
 - `GEOAPIFY_API_KEY` geocodes a new store when `location` is omitted. Send explicit coordinates to use an exact pin, or `location: null` to skip geocoding.
-- API keys: send `X-Api-Key` (or `Authorization: Bearer`). Buyer key for Orderly Shop, seller key for Orderly Owner.
+- API keys: send `X-Api-Key` (or `Authorization: Bearer`). Buyer key for Orderly Shop, seller key for Orderly Owner. The spec has matching `BuyerKey` and `SellerKey` schemes, set per tool in `src/openapi/paths/`; keep them in step with `requireRole` in `src/routes/`.
+- Business settings: `BUSINESS_NAME`, `BUSINESS_CURRENCY`, `BUSINESS_LOCALE` and `BUSINESS_TIMEZONE` (IANA, default `Africa/Lagos`, used for opening hours, `open_now`, `period=today` and receipt times). Agent-facing text must not hardcode any of them.
+- Production: `PUBLIC_URL` is required when `NODE_ENV=production`, so the spec's server URL is the public https address. The app trusts one proxy hop for `X-Forwarded-Proto`.
 - `npm run openapi -- <public url>` writes `openapi.json` for Chord (gitignored); the running API also serves it at `/openapi.json`. The independent `src/openapi/` module owns the spec, and each `operationId` is the Chord tool name.
 - `POST /webhooks/paystack` is Paystack infrastructure, not a Chord tool, so it must stay out of OpenAPI. It needs the raw request body to validate `x-paystack-signature` before processing JSON.
 - Curl tests: `npm run fake-paystack` (a local stand-in on :4010 that can decline, fail or go down on demand), start the API with `PAYSTACK_BASE_URL=http://localhost:4010 npm run dev`, run `npm run db:seed`, then `npm run test:api`. Then repeat the happy path against real Paystack test mode.

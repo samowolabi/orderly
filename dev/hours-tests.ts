@@ -8,18 +8,22 @@ const rows: HourRow[] = toRows([
 ]);
 
 assert.equal(formatHours(rows), "Mon to Fri, 9am to 7pm; Sat, 10am to 4:30pm; Sun, closed");
-assert.deepEqual(hoursView(rows, new Date("2025-01-06T08:00:00Z")).hours[0], {
+assert.deepEqual(hoursView(rows, "Africa/Lagos", new Date("2025-01-06T08:00:00Z")).hours[0], {
   day: "Monday",
   opens: "09:00",
   closes: "19:00",
 });
 
 // Lagos is UTC+1 and has no daylight-saving clock changes.
-assert.equal(isOpen(rows, new Date("2025-01-06T07:59:00Z")), false);
-assert.equal(isOpen(rows, new Date("2025-01-06T08:00:00Z")), true);
-assert.equal(isOpen(rows, new Date("2025-01-06T17:59:00Z")), true);
-assert.equal(isOpen(rows, new Date("2025-01-06T18:00:00Z")), false);
-assert.equal(isOpen(rows, new Date("2025-01-05T12:00:00Z")), false);
+assert.equal(isOpen(rows, "Africa/Lagos", new Date("2025-01-06T07:59:00Z")), false);
+assert.equal(isOpen(rows, "Africa/Lagos", new Date("2025-01-06T08:00:00Z")), true);
+assert.equal(isOpen(rows, "Africa/Lagos", new Date("2025-01-06T17:59:00Z")), true);
+assert.equal(isOpen(rows, "Africa/Lagos", new Date("2025-01-06T18:00:00Z")), false);
+assert.equal(isOpen(rows, "Africa/Lagos", new Date("2025-01-05T12:00:00Z")), false);
+
+// The same instant is outside opening hours in New York (UTC-5 in January).
+assert.equal(isOpen(rows, "America/New_York", new Date("2025-01-06T08:00:00Z")), false);
+assert.equal(isOpen(rows, "America/New_York", new Date("2025-01-06T14:00:00Z")), true);
 
 assert.equal(
   HoursInput.safeParse([{ days: ["mon"], opens: "19:00", closes: "09:00" }]).success,
