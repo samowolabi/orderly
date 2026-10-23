@@ -15,6 +15,7 @@ const TOOLS: Record<string, string> = {
   "GET /orders": "list_orders",
   "POST /orders/:id/verify": "verify_payment",
   "GET /orders/:id/receipt": "get_receipt",
+  "POST /owner/contact": "contact_owner",
   "POST /webhooks/paystack": "paystack_webhook",
   "GET /openapi.json": "openapi",
 };

@@ -221,3 +221,23 @@ export const Outcome = z.enum([
   "failed",
   "handed_over",
 ]);
+
+export const ContactOwnerBody = z.object({
+  name: z.string().trim().min(1).max(100).openapi({ example: "Tunde Bakare" }),
+  phone: z
+    .string()
+    .trim()
+    .regex(/^\+?[0-9][0-9 ()-]{6,19}$/, "use a phone number, e.g. 08031234567 or +2348031234567")
+    .openapi({ description: "The number the owner should call or WhatsApp back, as the customer gave it", example: "08031234567" }),
+  reason: z.string().trim().min(1).max(500).openapi({ description: "What they want to talk about, in a sentence", example: "Wants a bulk price for 5 iPhone 13s" }),
+  order_id: OrderParams.shape.id.optional().openapi({ description: "Their order number, if the chat has one" }),
+});
+
+export const ContactOwnerResult = z
+  .object({
+    status: z.enum(["sent", "already_requested", "not_sent"]).openapi({
+      description: "sent: the owner was emailed. already_requested: this number asked in the last 30 minutes. not_sent: the email couldn't go out.",
+    }),
+    next_step: z.string(),
+  })
+  .openapi("ContactOwnerResult");

@@ -10,3 +10,4 @@ orders.post("/orders", requireRole("buyer"), controller.createOrder);
 orders.post("/orders/:id/verify", requireRole("buyer"), controller.verifyPayment);
 orders.get("/orders/:id/receipt", requireRole("buyer", "seller"), controller.getReceipt);
 orders.get("/orders", requireRole("seller"), controller.listOrders);
+orders.post("/owner/contact", requireRole("buyer"), controller.contactOwner);

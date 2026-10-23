@@ -7,7 +7,7 @@
 import express from "express";
 
 const PORT = Number(process.env.FAKE_RESEND_PORT ?? 4030);
-let emails: { from: string; to: string[]; subject: string; text: string }[] = [];
+let emails: { from: string; to: string[]; subject: string; text: string; html?: string }[] = [];
 
 const app = express();
 app.use(express.json());
@@ -15,9 +15,9 @@ app.use(express.json());
 // Accepts one email the way Resend does, checking only that a key was sent.
 app.post("/emails", (req, res) => {
   if (!req.get("authorization")?.startsWith("Bearer ")) return res.status(401).json({ message: "Missing API key" });
-  const { from, to, subject, text } = req.body ?? {};
+  const { from, to, subject, text, html } = req.body ?? {};
   if (!from || !Array.isArray(to) || !subject) return res.status(422).json({ message: "from, to and subject are required" });
-  emails.push({ from, to, subject, text });
+  emails.push({ from, to, subject, text, html });
   res.json({ id: `fake_${emails.length}` });
 });
 

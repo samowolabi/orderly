@@ -3,6 +3,7 @@ export class NotifierUnavailable extends Error {}
 export type OwnerMessage = {
   subject: string;
   text: string;
+  html?: string;
 };
 
 export interface Notifier {

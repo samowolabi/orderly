@@ -110,3 +110,18 @@ registry.registerPath({
     ...errorResponses,
   },
 });
+
+registry.registerPath({
+  method: "post",
+  path: "/owner/contact",
+  operationId: "contact_owner",
+  summary: "Ask the owner to call a customer back",
+  description:
+    "Call when a customer asks to talk to the owner, a manager or a real person. First ask, in one message, for their name (if you don't have it), the best number to reach them and what it's about. This emails the owner, who calls or WhatsApps them back. Then follow next_step: tell the customer, and call handover_to_human. A number can only send one request every 30 minutes (already_requested).",
+  security: security.buyer,
+  request: { body: body(schema.ContactOwnerBody) },
+  responses: {
+    200: json(schema.ContactOwnerResult, "Whether the owner was emailed, and what to tell the customer"),
+    ...errorResponses,
+  },
+});

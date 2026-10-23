@@ -5,11 +5,13 @@ import {
   type PaymentTransaction,
   type PaymentWebhookEvent,
 } from "../adapters/payment/payment-processor";
+import type { OwnerMessage } from "../adapters/notify/notifier";
 import { config } from "../config";
 import { pool, withTransaction } from "../db/pool";
 import { formatLocalClock, formatLocalTime } from "../utils/format";
 import { ApiError } from "../utils/http";
 import { formatMoney, moneyView, toSubunits } from "../utils/money";
+import { ownerEmailHtml, ownerEmailText, type OwnerEmail } from "../utils/email-template";
 import { formatAddress, type AddressRow } from "../utils/store-location";
 import { claimDeliveryQuote, deliveryMinutes, distanceKm } from "./delivery";
 import { retry } from "../utils/retry";
@@ -661,43 +663,59 @@ async function confirmSuccessfulPayment(db: Db, order: OrderBase, transaction: P
 }
 
 // The owner's email for a payment event: what happened, what's in the order, and what to do.
-function ownerMessage(order: OrderRow, alert: OwnerAlert) {
+function ownerMessage(order: OrderRow, alert: OwnerAlert): OwnerMessage {
   const total = formatMoney(order.amount_subunit, order.currency);
   const reference = order.paid_reference ?? order.payment_references.at(-1) ?? order.id;
   const delivery = deliveryView(order);
-  const items = order.items.map(
-    (item) => `• ${itemName(item)}${item.quantity > 1 ? ` x${item.quantity}` : ""}: ${formatMoney(item.amount_subunit, order.currency)}, held at ${item.store_name}`,
-  );
+  const lineName = (item: ItemRow) => `${itemName(item)}${item.quantity > 1 ? ` x${item.quantity}` : ""}`;
   // A delivery leaves from one store; items held elsewhere have to be brought there first.
   const bringOver = delivery ? order.items.filter((item) => item.store_id !== order.store_id) : [];
-  const fulfilment = delivery
-    ? [
-        `Delivery to ${delivery.address} (phone ${delivery.phone}), leaving from ${order.store_name}.`,
-        ...(bringOver.length
-          ? [`Before the rider leaves, bring these to ${order.store_name}:`, ...bringOver.map((item) => `• ${itemName(item)}${item.quantity > 1 ? ` x${item.quantity}` : ""} from ${item.store_name}`)]
-          : []),
-      ]
-    : ["Pickup: the customer collects each item at the store shown."];
-  const details = ["", ...items, "", ...fulfilment, `Paystack reference: ${reference}`, "", `Sent by Orderly for ${config().BUSINESS_NAME}.`];
-  switch (alert) {
-    case "paid":
-      return { subject: `Paid: ${order.id}, ${total}`, text: [`${order.buyer_name} paid ${total} for ${order.id}.`, ...details].join("\n") };
-    case "paid_late_reheld":
-      return {
-        subject: `Paid late, still in stock: ${order.id}, ${total}`,
-        text: [`${order.buyer_name} paid ${total} for ${order.id} after the hold ran out. Everything was still in stock, so it's confirmed.`, ...details].join("\n"),
-      };
-    case "paid_no_stock":
-      return {
-        subject: `Refund needed: ${order.id}, ${total}`,
-        text: [`${order.buyer_name} paid ${total} for ${order.id} after the hold ran out, and something in the order had sold. Refund them in Paystack.`, ...details].join("\n"),
-      };
-    case "amount_mismatch":
-      return {
-        subject: `Check payment: ${order.id}`,
-        text: [`Paystack's amount for ${order.id} didn't match the order total of ${total}, so the order wasn't confirmed. Check it in Paystack and refund if needed.`, ...details].join("\n"),
-      };
-  }
+  const details: [string, string][] = [
+    ["Order", order.id],
+    ["Customer", order.buyer_name],
+    ["Total", total],
+    ...(delivery
+      ? ([
+          ["Delivery to", delivery.address],
+          ["Customer phone", delivery.phone],
+          ["Leaves from", order.store_name],
+        ] as [string, string][])
+      : ([["Pickup", "The customer collects each item at the store shown"]] as [string, string][])),
+    ...(bringOver.length
+      ? ([[`Bring these to ${order.store_name} first`, bringOver.map((item) => `${lineName(item)} from ${item.store_name}`).join("; ")]] as [string, string][])
+      : []),
+    ["Paystack reference", reference],
+  ];
+  const wording: Record<OwnerAlert, [subject: string, heading: string, intro: string]> = {
+    paid: [`Paid: ${order.id}, ${total}`, `New paid order: ${order.id}`, `${order.buyer_name} paid ${total} for ${order.id}.`],
+    paid_late_reheld: [
+      `Paid late, still in stock: ${order.id}, ${total}`,
+      `Paid late, still in stock: ${order.id}`,
+      `${order.buyer_name} paid ${total} for ${order.id} after the hold ran out. Everything was still in stock, so it's confirmed.`,
+    ],
+    paid_no_stock: [
+      `Refund needed: ${order.id}, ${total}`,
+      `Refund needed: ${order.id}`,
+      `${order.buyer_name} paid ${total} for ${order.id} after the hold ran out, and something in the order had sold. Refund them in Paystack.`,
+    ],
+    amount_mismatch: [
+      `Check payment: ${order.id}`,
+      `Check payment: ${order.id}`,
+      `Paystack's amount for ${order.id} didn't match the order total of ${total}, so the order wasn't confirmed. Check it in Paystack and refund if needed.`,
+    ],
+  };
+  const [subject, heading, intro] = wording[alert];
+  const email: OwnerEmail = {
+    heading,
+    intro,
+    details,
+    list: {
+      title: "Items",
+      items: order.items.map((item) => `${lineName(item)}: ${formatMoney(item.amount_subunit, order.currency)}, held at ${item.store_name}`),
+    },
+    footer: `Sent by Orderly for ${config().BUSINESS_NAME}.`,
+  };
+  return { subject, text: ownerEmailText(email), html: ownerEmailHtml(email) };
 }
 
 // Emails the owner about a payment event. Never throws: a failed email mustn't fail the payment.
@@ -851,5 +869,22 @@ export async function listOrders(input: ListOrdersInput) {
             : "Paystack amount did not match the order: check and refund if needed",
     })),
     orders: (await withItems(pool, list.rows)).map(orderView),
+  };
+}
+
+// A short summary of an order for an owner email, or null when there's no such order.
+export async function orderSummary(id: string) {
+  let order: OrderRow;
+  try {
+    order = await loadOrder(pool, id);
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) return null;
+    throw error;
+  }
+  return {
+    id: order.id,
+    status: order.status,
+    total: formatMoney(order.amount_subunit, order.currency),
+    items: order.items.map((item) => `${itemName(item)}${item.quantity > 1 ? ` x${item.quantity}` : ""}, held at ${item.store_name}`),
   };
 }

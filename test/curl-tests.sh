@@ -79,8 +79,8 @@ expire() { $PSQL -c "UPDATE orders SET expires_at = now() - interval '1 second' 
 
 echo "== Infrastructure"
 call none GET /health;                       check "health checks the database" 200 '.success == true and .data.status == "up"'
-call none GET /openapi.json;                 check "OpenAPI exposes 12 Chord tools" 200 '([.paths[] | to_entries[]] | length) == 12 and (.paths | has("/products/{id}/stock") | not) and .paths["/stores"].get.operationId == "list_stores" and (.paths | has("/webhooks/paystack") | not)'
-check "6 tools take the buyer key and 9 the seller key, 3 of them shared" 200 '[.paths[][] | [.security[]? | keys[]]] as $s | ($s | map(select(index("BuyerKey"))) | length) == 6 and ($s | map(select(index("SellerKey"))) | length) == 9 and ($s | map(select(index("BuyerKey") and index("SellerKey"))) | length) == 3'
+call none GET /openapi.json;                 check "OpenAPI exposes 13 Chord tools" 200 '([.paths[] | to_entries[]] | length) == 13 and (.paths | has("/products/{id}/stock") | not) and .paths["/stores"].get.operationId == "list_stores" and (.paths | has("/webhooks/paystack") | not)'
+check "7 tools take the buyer key and 9 the seller key, 3 of them shared" 200 '[.paths[][] | [.security[]? | keys[]]] as $s | ($s | map(select(index("BuyerKey"))) | length) == 7 and ($s | map(select(index("SellerKey"))) | length) == 9 and ($s | map(select(index("BuyerKey") and index("SellerKey"))) | length) == 3'
 
 check "the spec's server is the /v1 base" 200 '(.servers[0].url | endswith("/v1")) and (.paths | keys | all(startswith("/v1") | not))'
 call "$BUYER" GET /stores;                   check "tools answer under /v1" 200 '.success == true'
@@ -516,6 +516,14 @@ call "$BUYER" POST /orders '{"items":[{"product_id":"ANKER-20K"}],"store_id":"ik
 check "a longer outage still fails cleanly after the retries" 502 '.error.code == "payment_link_failed"'
 mode '{"fail_next":{"initialize":0}}'
 
+echo "== A customer asks for a real person"
+call "$SELLER" POST /owner/contact '{"name":"Tunde Bakare","phone":"08031234567","reason":"Complaint about a late delivery"}'; check "only the shop assistant can ask" 403
+call "$BUYER" POST /owner/contact '{"name":"Tunde Bakare","phone":"call me","reason":"x"}'; check "a phone number is needed" 400
+call "$BUYER" POST /owner/contact '{"name":"Tunde Bakare","phone":"08031234567","reason":"Complaint about a late delivery","order_id":"'"$O1"'"}'
+check "the owner is emailed the customer's number" 200 '.data.status == "sent" and (.data.next_step | test("08031234567")) and (.data.next_step | test("handover_to_human"))'; msg
+call "$BUYER" POST /owner/contact '{"name":"Tunde","phone":"+234 803 123 4567","reason":"Still waiting"}'
+check "the same number again within 30 minutes isn't emailed twice" 200 '.data.status == "already_requested"'
+
 echo "== Owner email alerts"
 sleep 1  # alerts are sent after the reply, without holding it up
 EMAILS=$(curl -s "$FAKE_RESEND/_fake/emails")
@@ -528,7 +536,9 @@ email_check "a paid order emails the owner, with where each item is held" '[.[] 
 email_check "a late payment with nothing left asks for a refund" '[.[] | select(.subject | startswith("Refund needed: '"$RACE"'"))] | length == 1'
 email_check "a re-held late payment emails once, though the webhook came twice" '[.[] | select(.subject | startswith("Paid late, still in stock: '"$O2"'"))] | length == 1'
 email_check "a wrong amount asks the owner to check" '[.[] | select(.subject | startswith("Check payment: "))] | length >= 1'
-email_check "a delivery email lists what to bring to the delivering store" '[.[] | select(.subject | startswith("Paid: '"$ODM"'"))] | length == 1 and (.[0].text | test("bring these to Kola Gadgets Lekki")) and (.[0].text | test("Apple USB-C charger \\(20W\\) from Kola Gadgets Ikeja"))'
+email_check "a delivery email lists what to bring to the delivering store" '[.[] | select(.subject | startswith("Paid: '"$ODM"'"))] | length == 1 and (.[0].text | test("Bring these to Kola Gadgets Lekki first")) and (.[0].text | test("Apple USB-C charger \\(20W\\) from Kola Gadgets Ikeja"))'
+email_check "the call-back email names the customer, their number and the order" '[.[] | select(.subject == "Call back: Tunde Bakare wants to talk to you")] | length == 1 and (.[0].html | test("08031234567")) and (.[0].html | test("Complaint about a late delivery")) and (.[0].text | test("'"$O1"'"))'
+email_check "owner emails are HTML with a plain-text fallback" 'all(.[]; (.html | test("<h1")) and (.text | length > 0))'
 email_check "never the same email twice" 'group_by(.subject) | all(length == 1)'
 jq -r '[.[] | select(.subject | startswith("Paid: '"$O1"'"))][0] | "        | \(.subject)", (.text | split("\n")[] | "        | \(.)")' <<<"$EMAILS"
 

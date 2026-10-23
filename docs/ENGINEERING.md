@@ -32,7 +32,7 @@ The customer pays on Paystack's own page, so card details never touch the agent,
 | Database | Postgres | Atomic stock updates stop overselling |
 | Geocoding | Google Geocoding API | Turns a store address into an optional map pin, and says how precise the match is |
 | Payments | Paystack test mode | Real API, test cards, no real money |
-| Owner alerts | Resend (email) | Tells the owner about paid orders and refunds needed, since Chord can't start a conversation |
+| Owner alerts | Resend (email) | Tells the owner about paid orders, refunds needed and customers asking for a person, since Chord can't start a conversation |
 | Hosting | Render, from a Blueprint (`render.yaml`) | Web service and Postgres defined in the repo. A paid instance stays on; the free one sleeps when idle |
 | AI teammates | Chord, two teammates | Conversations, tools and handover |
 
@@ -86,6 +86,7 @@ Tool endpoints below are relative to `/v1` (for example `POST /v1/orders`); the 
 | list_stores | `GET /stores` | Yes | Yes | Store names, structured addresses, map links, opening hours and whether each is open now |
 | list_products | `GET /products` | Yes | Yes | Prices and stock at each store; filter by store |
 | quote_delivery | `POST /delivery/quote` | Yes | No | Prices delivery from one store (the nearest with everything, or the nearest with some of it, the rest brought over first): driving distance, traffic-aware time, fee and total |
+| contact_owner | `POST /owner/contact` | Yes | No | Emails the owner a customer's name, number and reason so the owner calls back (one per number every 30 minutes) |
 | create_order | `POST /orders` | Yes | No | Holds one or more items at the chosen store for 30 minutes (all or nothing) and returns one Paystack link for the total |
 | verify_payment | `POST /orders/{id}/verify` | Yes | No | Checks Paystack, confirms the order, returns the receipt |
 | get_receipt | `GET /orders/{id}/receipt` | Yes | Yes | The receipt for a paid order |
@@ -136,7 +137,7 @@ Both teammates exist with placeholder skills; the real skills go in once the API
 | Role | Sales assistant | Store operations assistant |
 | Autonomy | Act independently | Act independently |
 | Chat link business name | Kola Gadgets | Kola Gadgets (Owner) |
-| API tools | 6 customer tools (buyer key) | 9 owner tools (seller key); 12 in all, 3 shared |
+| API tools | 7 customer tools (buyer key) | 9 owner tools (seller key); 13 in all, 3 shared |
 | Built-in tools | handover_to_human | none yet |
 | Escalation triggers | Payment failed twice; amount mismatch or Paystack unreachable; paid after stock sold; complaint or refund; final haggled price refused; question it cannot answer | none |
 | Other | Credit budget | Credit budget; accepts requests from teammates |

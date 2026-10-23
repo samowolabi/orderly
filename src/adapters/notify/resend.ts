@@ -8,7 +8,7 @@ const TIMEOUT_MS = 5_000;
 export class ResendNotifier implements Notifier {
   readonly name = "Resend";
 
-  // Sends one plain-text email to OWNER_EMAIL.
+  // Sends one email to OWNER_EMAIL, as HTML with a plain-text fallback.
   async notifyOwner(message: OwnerMessage) {
     const { RESEND_API_KEY, RESEND_URL, EMAIL_FROM, OWNER_EMAIL } = config();
     let response: Response;
@@ -16,7 +16,7 @@ export class ResendNotifier implements Notifier {
       response = await fetch(RESEND_URL, {
         method: "POST",
         headers: { Authorization: `Bearer ${RESEND_API_KEY}`, "content-type": "application/json" },
-        body: JSON.stringify({ from: EMAIL_FROM, to: [OWNER_EMAIL], subject: message.subject, text: message.text }),
+        body: JSON.stringify({ from: EMAIL_FROM, to: [OWNER_EMAIL], subject: message.subject, text: message.text, html: message.html }),
         signal: AbortSignal.timeout(TIMEOUT_MS),
       });
     } catch (error) {

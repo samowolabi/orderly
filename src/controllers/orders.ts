@@ -1,5 +1,6 @@
 import type { Request, Response } from "express";
-import { CreateOrderBody, DeliverySettingsBody, ListOrdersQuery, OrderParams, QuoteDeliveryBody } from "../openapi/schemas/orders";
+import { ContactOwnerBody, CreateOrderBody, DeliverySettingsBody, ListOrdersQuery, OrderParams, QuoteDeliveryBody } from "../openapi/schemas/orders";
+import * as contactService from "../services/contact";
 import * as deliveryService from "../services/delivery";
 import * as orderService from "../services/orders";
 import { parse, success } from "../utils/http";
@@ -38,4 +39,10 @@ export async function getReceipt(request: Request, response: Response) {
 export async function listOrders(request: Request, response: Response) {
   const input = parse(ListOrdersQuery, request.query);
   success(response, await orderService.listOrders(input));
+}
+
+// Emails the owner a customer's request to talk to a person.
+export async function contactOwner(request: Request, response: Response) {
+  const input = parse(ContactOwnerBody, request.body);
+  success(response, await contactService.contactOwner(input));
 }
