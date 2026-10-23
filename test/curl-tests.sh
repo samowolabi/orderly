@@ -315,9 +315,12 @@ gmode '{"routes_down_from":[]}'
 
 echo "== Delivery: order, pay, receipt and rider follow-up"
 anker=$(stock ANKER-20K lekki)
+call "$SELLER" PATCH /products/ANKER-20K '{"price":50000}'; check "the owner raises the price after the quote" 200 '.data.product.price.amount == 50000'
 call "$BUYER" POST /orders '{"items":[{"product_id":"ANKER-20K"}],"delivery_quote_id":"'"$(tr '[:upper:]' '[:lower:]' <<<"$Q1")"'","buyer_name":"Uche"}'
 check "the quote sets the store and adds the fee" 201 '.data.fulfilment == "delivery" and .data.store.id == "lekki" and .data.amount.amount == 46600 and .data.delivery.fee.amount == 1600 and .data.delivery.address == "12 Admiralty Way, Lekki Phase 1, Lagos" and .data.delivery.phone == "08031234567"'
 OD=$(jq -r .data.order_id <<<"$BODY")
+check "the order charges the quoted ₦45,000, not the new price" 201 '.data.items[0].unit_price.amount == 45000 and .data.amount.amount == 46600'
+call "$SELLER" PATCH /products/ANKER-20K '{"price":45000}'; check "price back to ₦45,000" 200
 eq "held at Lekki" "$(stock ANKER-20K lekki)" "$((anker-1))"
 pay "$OD"
 call "$BUYER" POST "/orders/$OD/verify"
@@ -331,6 +334,13 @@ check "store_id that disagrees with the quote" 400 '.error.message_for_agent | t
 $PSQL -c "UPDATE delivery_quotes SET expires_at = now() - interval '1 second' WHERE id='$Q2'"
 call "$BUYER" POST /orders '{"items":[{"product_id":"ANKER-20K"}],"delivery_quote_id":"'"$Q2"'","buyer_name":"Uche"}'
 check "expired quote" 409 '.error.code == "quote_expired"'
+call "$BUYER" POST /delivery/quote '{"items":[{"product_id":"ANKER-20K"}],"address":"'"$LEKKI_ADDR"'","phone":"08031234567"}'; Q3=$(jq -r .data.quote_id <<<"$BODY")
+call "$SELLER" PATCH /products/ANKER-20K '{"price":44000}'; check "the owner lowers the price after a quote" 200
+call "$BUYER" POST /orders '{"items":[{"product_id":"ANKER-20K","quantity":2}],"delivery_quote_id":"'"$Q3"'","buyer_name":"Uche"}'
+check "items that differ from the quote are refused" 409 '.error.code == "quote_mismatch"'; msg
+call "$BUYER" POST /orders '{"items":[{"product_id":"ANKER-20K"}],"delivery_quote_id":"'"$Q3"'","buyer_name":"Uche"}'
+check "the quoted items still charge the quoted total" 201 '.data.amount.amount == 46600 and .data.items[0].unit_price.amount == 45000 and .data.items[0].saving.amount == 0'
+call "$SELLER" PATCH /products/ANKER-20K '{"price":45000}'; check "price back to ₦45,000 again" 200
 call "$BUYER" POST /orders '{"items":[{"product_id":"ANKER-20K"}],"delivery_quote_id":"DQ-NOPE","buyer_name":"Uche"}'
 check "unknown quote" 404 '.error.code == "quote_not_found"'
 call "$BUYER" POST /orders '{"items":[{"product_id":"ANKER-20K"}],"buyer_name":"Uche"}'

@@ -42,6 +42,9 @@ export type DeliveryQuoteRow = {
   currency: string;
   prep_minutes: number;
   item_stores: Record<string, string>;
+  // What the customer agreed to: each product, its quantity, its unit price and the list price
+  // at the time, in subunits.
+  items: { product_id: string; quantity: number; unit_price_subunit: number; list_price_subunit: number }[];
   transfer_minutes: number;
   expires_at: Date;
 };
@@ -252,11 +255,21 @@ export async function quoteDelivery(input: QuoteInput) {
   const transferMinutes = sources.length ? config().DELIVERY_TRANSFER_MINUTES : 0;
 
   const fee = deliveryFee(best.route.distanceMeters, settings);
+  // The prices are fixed now (a haggled line at its agreed price), so the order charges exactly this total.
+  const productOf = new Map(products.map((product) => [product.id, product]));
+  const quotedItems = items.map((item) => ({
+    product_id: item.product_id,
+    quantity: item.quantity,
+    unit_price_subunit: linePrice(productOf.get(item.product_id)!, item.price),
+    list_price_subunit: productOf.get(item.product_id)!.price_subunit,
+  }));
+  const subtotal = quotedItems.reduce((total, item) => total + item.unit_price_subunit * item.quantity, 0);
+
   const id = `DQ-${randomBytes(4).toString("hex").toUpperCase()}`;
   const { rows } = await pool.query<{ expires_at: Date }>(
     `INSERT INTO delivery_quotes (id, store_id, address, phone, latitude, longitude, distance_m, duration_s, fee_subunit, currency, prep_minutes,
-                                  item_stores, transfer_minutes, expires_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, now() + make_interval(mins => $14::int))
+                                  item_stores, items, transfer_minutes, expires_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, now() + make_interval(mins => $15::int))
      RETURNING expires_at`,
     [
       id,
@@ -271,14 +284,12 @@ export async function quoteDelivery(input: QuoteInput) {
       currency,
       config().DELIVERY_PREP_MINUTES,
       best.item_stores,
+      JSON.stringify(quotedItems),
       transferMinutes,
       config().DELIVERY_QUOTE_MINUTES,
     ],
   );
 
-  // A haggled line counts at its agreed price, so the quoted total matches the order.
-  const productOf = new Map(products.map((product) => [product.id, product]));
-  const subtotal = items.reduce((total, item) => total + linePrice(productOf.get(item.product_id)!, item.price) * item.quantity, 0);
   const minutes = deliveryMinutes(best.route.durationSeconds, config().DELIVERY_PREP_MINUTES + transferMinutes);
   const broughtFrom = sources.map((source) => source.name).join(" and ");
 

@@ -390,8 +390,23 @@ export async function createOrder(input: CreateOrderInput) {
     // The order's main store: where a delivery leaves from, or the first pickup store.
     const storeId = quote?.store_id ?? lines[0]!.store_id;
 
-    // Agreed prices are checked against the floor before anything is held.
-    const unitPrice = new Map(items.map((item) => [item.product_id, linePrice(productOf.get(item.product_id)!, item.price)]));
+    // A delivery order charges the prices in its quote, which the customer agreed to, so the
+    // items must match the quote. Otherwise agreed prices are checked against the floor now.
+    if (quote) {
+      const quoted = new Map(quote.items.map((item) => [item.product_id, item.quantity]));
+      const same = quoted.size === items.length && items.every((item) => quoted.get(item.product_id) === item.quantity);
+      if (!same) {
+        throw new ApiError(
+          409,
+          "quote_mismatch",
+          `These items don't match delivery quote ${quote.id}. Call quote_delivery again with exactly what the customer wants, and confirm the new total with them.`,
+        );
+      }
+    }
+    const quotedList = new Map((quote?.items ?? []).map((item) => [item.product_id, item.list_price_subunit]));
+    const unitPrice = quote
+      ? new Map(quote.items.map((item) => [item.product_id, item.unit_price_subunit]))
+      : new Map(items.map((item) => [item.product_id, linePrice(productOf.get(item.product_id)!, item.price)]));
 
     const short = await holdItems(db, lines);
     if (short) {
@@ -434,7 +449,7 @@ export async function createOrder(input: CreateOrderInput) {
     const fee = quote?.fee_subunit ?? 0;
     const priced = lines.map((item, index) => {
       const unit = unitPrice.get(item.product_id)!;
-      const list = productOf.get(item.product_id)!.price_subunit;
+      const list = quotedList.get(item.product_id) ?? productOf.get(item.product_id)!.price_subunit;
       return { ...item, line: index + 1, unit_price_subunit: unit, list_price_subunit: list, amount_subunit: unit * item.quantity };
     });
     const amount = priced.reduce((total, line) => total + line.amount_subunit, 0) + fee;
