@@ -199,15 +199,14 @@ call "$BUYER" POST /orders '{"items":[{"product_id":"ip13-128"}],"store_id":"Ike
 check "create_order" 201 '.data.status == "pending_payment" and (.data.payment_url | startswith("http")) and .data.minutes_left == 30 and .data.amount == {"amount":650000,"currency":"NGN","display":"₦650,000"} and .data.items == [{"product":{"id":"IP13-128","name":"iPhone 13","variant":"128GB"},"store":{"id":"ikeja","name":"Kola Gadgets Ikeja"},"quantity":1,"unit_price":{"amount":650000,"currency":"NGN","display":"₦650,000"},"amount":{"amount":650000,"currency":"NGN","display":"₦650,000"},"saving":{"amount":0,"currency":"NGN","display":"₦0"}}]'
 O1=$(jq -r .data.order_id <<<"$BODY"); echo "        order $O1"
 check "a store_id order is pickup, with no delivery" 201 '.data.fulfilment == "pickup" and .data.delivery == null'
-check "payment checks: 20s, doubling, last a minute before expiry, one nudge" 201 '(.data.created_at | sub("\\.[0-9]+Z$"; "Z") | fromdate) as $t0 | (.data.expires_at | sub("\\.[0-9]+Z$"; "Z") | fromdate) as $end | [.data.payment_checks[].at | sub("\\.[0-9]+Z$"; "Z") | fromdate - $t0] == [20, 40, 80, 160, 320, 640, 1280, ($end - $t0 - 60)] and ([.data.payment_checks[] | select(.nudge)] | length == 1) and (.data.payment_checks[6].nudge)'
-jq -r '.data.payment_checks[] | "        | \(.at)\(if .nudge then "  nudge" else "" end)"' <<<"$BODY"
+check "no reminders to schedule: the customer replies PAID" 201 '(.data | has("payment_checks") | not)'
 [ "$(stock IP13-128 ikeja)" = "$((before-1))" ] && { PASS=$((PASS+1)); echo "  ok    stock held ($before -> $((before-1)))"; } || { FAILS=$((FAILS+1)); echo "  FAIL  stock not held"; }
 call "$BUYER" GET "/orders/$O1/receipt";      check "no receipt before payment" 409 '.error.code == "not_paid"'
 call "$BUYER" POST "/orders/$O1/verify";      check "'I've paid' before paying" 200 '.data.outcome == "not_paid_yet" and .data.receipt == null and (.data.order.payment_url | length > 0)'; msg
 pay "$O1" '{"outcome":"ongoing"}'
 call "$BUYER" POST "/orders/$O1/verify";      check "payment still processing" 200 '.data.outcome == "payment_processing"'
 pay "$O1"
-call "$BUYER" POST "/orders/$O1/verify";      check "verify after paying" 200 '(.data.next_step | test("cancel any payment reminders")) and .data.order.payment_checks == [] and .data.outcome == "paid" and .data.order.status == "paid" and .data.receipt.total.amount == 650000 and .data.receipt.total.currency == "NGN"'
+call "$BUYER" POST "/orders/$O1/verify";      check "verify after paying" 200 '(.data.next_step | test("reminder") | not) and .data.outcome == "paid" and .data.order.status == "paid" and .data.receipt.total.amount == 650000 and .data.receipt.total.currency == "NGN"'
 check "receipt names the payment provider" 200 '.data.receipt.text | test("Paystack reference: '"$O1"'-")'
 jq -r .data.receipt.text <<<"$BODY" | sed 's/^/        | /'
 call "$BUYER" POST "/orders/$O1/verify";      check "verify again is idempotent" 200 '.data.outcome == "already_paid"'

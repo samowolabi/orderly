@@ -163,23 +163,6 @@ const itemName = (item: Pick<ItemRow, "product_name" | "product_variant">) =>
 // The one currency an order's products share; mixed currencies are refused before this is used.
 const currencyOf = (products: { currency: string }[]) => products[0]!.currency;
 
-// Times the shop agent should check for payment while an order waits: the first after
-// PAYMENT_CHECK_FIRST_SECONDS, then doubling, plus a last check a minute before the hold ends.
-// The first check past the halfway point is the one that may nudge the customer.
-function paymentChecks(order: OrderRow) {
-  if (order.status !== "pending_payment") return [];
-  const start = order.created_at.getTime();
-  const end = order.expires_at.getTime();
-  const last = end - 60_000;
-  const times: number[] = [];
-  for (let gap = config().PAYMENT_CHECK_FIRST_SECONDS * 1000; start + gap < last; gap *= 2) times.push(start + gap);
-  if (last > start) times.push(last);
-  const nudgeAt = times.find((time) => time >= start + (end - start) / 2);
-  return times
-    .filter((time) => time > Date.now())
-    .map((time) => ({ at: new Date(time).toISOString(), nudge: time === nudgeAt }));
-}
-
 // What haggling took off a line, or 0 at the list price.
 const lineSaving = (item: ItemRow) => (item.list_price_subunit - item.unit_price_subunit) * item.quantity;
 
@@ -216,7 +199,6 @@ function orderView(order: OrderRow) {
     buyer_name: order.buyer_name,
     payment_url: pending ? order.payment_url : null,
     expires_at: order.expires_at.toISOString(),
-    payment_checks: paymentChecks(order),
     minutes_left: pending ? Math.max(0, Math.ceil((order.expires_at.getTime() - Date.now()) / 60_000)) : 0,
     declined_attempts: order.declined_attempts,
     paid_at: order.paid_at?.toISOString() ?? null,
@@ -502,13 +484,13 @@ function riderFollowUp(order: OrderRow) {
 function nextStep(outcome: PaymentOutcome, order: OrderRow): string {
   switch (outcome) {
     case "paid":
-      return `Paystack confirmed the payment. Send the customer the receipt text.${riderFollowUp(order)} Then cancel any payment reminders still scheduled for this order.`;
+      return `Paystack confirmed the payment. Send the customer the receipt text.${riderFollowUp(order)}`;
     case "already_paid":
-      return `This order was already confirmed. Send the receipt text again if they need it.${riderFollowUp(order)} Then cancel any payment reminders still scheduled for this order.`;
+      return `This order was already confirmed. Send the receipt text again if they need it.${riderFollowUp(order)}`;
     case "paid_late_reheld":
-      return `The payment came in after the hold ran out, but everything was still in stock, so the order is confirmed. Send the receipt text.${riderFollowUp(order)} Then cancel any payment reminders still scheduled for this order.`;
+      return `The payment came in after the hold ran out, but everything was still in stock, so the order is confirmed. Send the receipt text.${riderFollowUp(order)}`;
     case "paid_no_stock":
-      return "The customer paid after the hold ran out and something in the order has since sold out. Tell them honestly, say the owner will refund them in full, and hand over to a person. Then cancel any payment reminders still scheduled for this order.";
+      return "The customer paid after the hold ran out and something in the order has since sold out. Tell them honestly, say the owner will refund them in full, and hand over to a person.";
     case "not_paid_yet":
       return `Paystack has no payment for this order yet. If the customer says they paid, tell them politely it hasn't come through and resend the payment link. ${orderView(order).minutes_left} minute(s) left on the hold.`;
     case "payment_processing":
@@ -518,13 +500,13 @@ function nextStep(outcome: PaymentOutcome, order: OrderRow): string {
         ? "The card was declined again and nothing was charged. Send the new payment link, and hand over to a person since payment has failed twice."
         : "The card was declined and nothing was charged. Send the new payment link and suggest another card or bank transfer on the Paystack page.";
     case "declined_final":
-      return "Payment was declined too many times, so the order was cancelled and the item released. Hand over to a person. Then cancel any payment reminders still scheduled for this order.";
+      return "Payment was declined too many times, so the order was cancelled and the item released. Hand over to a person.";
     case "expired":
-      return `The ${config().HOLD_MINUTES}-minute hold ran out without payment and the item went back on sale. Ask if they still want it; if so, create a new order. Then cancel any payment reminders still scheduled for this order.`;
+      return `The ${config().HOLD_MINUTES}-minute hold ran out without payment and the item went back on sale. Ask if they still want it; if so, create a new order.`;
     case "failed":
-      return "This order was cancelled and nothing was charged. If the customer still wants the item, create a new order. Then cancel any payment reminders still scheduled for this order.";
+      return "This order was cancelled and nothing was charged. If the customer still wants the item, create a new order.";
     case "handed_over":
-      return "A person is handling this order. Tell the customer the team will follow up. Then cancel any payment reminders still scheduled for this order.";
+      return "A person is handling this order. Tell the customer the team will follow up.";
   }
 }
 

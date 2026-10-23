@@ -50,8 +50,7 @@ These are the core features. Each one answers something the sellers raised.
 - **Closing a store:** the owner can close a store by chat. It's kept, not deleted: customers stop seeing it, and its stock can move to another store in the same step. It can be reopened later. The last open store can't be closed, since that would stop all sales; the owner can close it on certain days or take products off sale instead.
 - **Several items, one payment:** everything a customer wants is held together (all or nothing) and paid with one link, even when the items sit in different stores. The receipt lists each item and, for pickup, where to collect it. The agent never splits a purchase into several orders.
 - **Receipt:** sent in chat as soon as payment is confirmed.
-- **Receipt without asking:** the API returns payment check times (20 seconds after the order, then doubling, plus one just before the hold ends). The agent schedules a reminder for each, sends the receipt as soon as one finds the order paid, and cancels the rest.
-- **One reminder:** if the customer goes quiet, one nudge at the first check past the halfway point of the hold (about 21 minutes into a 30-minute hold).
+- **Receipt on PAID:** every hold message ends "Reply PAID so we can confirm your payment." When the customer replies, the agent checks with Paystack and sends the receipt at once. Paystack's webhook confirms the order on our side within seconds either way, so stock and the owner's sales are right even before the customer writes. (Scheduled payment checks were built and then removed: Chord reminder messages never reach the simulator. See field-notes write-up 4.)
 - **A real person when needed:** anything unusual is handed to the owner instead of guessed.
 
 ## Rules it never breaks
@@ -81,7 +80,7 @@ Orderly is ready when every check below passes in the WhatsApp simulator.
 - [ ] Two customers try to buy the last unit at once; only one gets it
 - [ ] A declined card is not confirmed, and a new link is offered
 - [ ] "I've paid" before paying is checked and corrected
-- [ ] A quiet customer gets one reminder; their hold expires and stock returns
+- [ ] A quiet customer's hold expires and stock returns
 - [ ] An unusual question is handed to a person
 - [ ] Orderly Shop refuses when asked to change a price
 

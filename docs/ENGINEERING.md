@@ -33,7 +33,7 @@ The customer pays on Paystack's own page, so card details never touch the agent,
 | Geocoding | Google Geocoding API | Turns a store address into an optional map pin, and says how precise the match is |
 | Payments | Paystack test mode | Real API, test cards, no real money |
 | Hosting | Render, from a Blueprint (`render.yaml`) | Web service and Postgres defined in the repo. A paid instance stays on; the free one sleeps when idle |
-| AI teammates | Chord, two teammates | Conversations, tools, reminders and handover |
+| AI teammates | Chord, two teammates | Conversations, tools and handover |
 
 ## Application structure
 
@@ -93,7 +93,7 @@ Tool endpoints below are relative to `/v1` (for example `POST /v1/orders`); the 
 | delivery_settings | `PATCH /delivery/settings` | No | Yes | Reads (empty body) or changes the delivery pricing: base fee, rate per km, rounding, distance limit, packing time |
 | list_orders | `GET /orders` | No | Yes | Orders by status and store, including handed-over ones |
 
-Chord's built-in tools cover the rest: `schedule_reminder` for the payment nudge and `handover_to_human` for escalation.
+Chord's built-in `handover_to_human` covers escalation. Payment is confirmed when the customer replies PAID (the agent calls `verify_payment`) and by Paystack's webhook; there are no scheduled reminders (field-notes write-up 4).
 
 `POST /webhooks/paystack` is infrastructure, not a Chord tool, so it is deliberately absent from OpenAPI. Paystack calls it with a signed `charge.success` event.
 
@@ -134,7 +134,7 @@ Both teammates exist with placeholder skills; the real skills go in once the API
 | Autonomy | Act independently | Act independently |
 | Chat link business name | Kola Gadgets | Kola Gadgets (Owner) |
 | API tools | 5 customer tools | 8 owner tools |
-| Built-in tools | schedule_reminder, handover_to_human | none yet |
+| Built-in tools | handover_to_human | none yet |
 | Escalation triggers | Payment failed twice; paid twice; complaint; question it cannot answer; discount request | none |
 | Other | Credit budget | Credit budget; accepts requests from teammates |
 
