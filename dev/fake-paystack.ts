@@ -4,7 +4,7 @@
 //   PAYSTACK_BASE_URL=http://localhost:4010
 //
 // Drive it with:
-//   POST /_fake/pay/:reference  { "outcome": "success" | "failed" | "ongoing", "amount"?: minor units, "currency"?: code }
+//   POST /_fake/pay/:reference  { "outcome": "success" | "failed" | "ongoing", "amount"?: subunits, "currency"?: code }
 //   POST /_fake/mode            { "initialize"?: "ok" | "fail", "verify"?: "ok" | "down" }
 //   GET  /_fake/state
 import express from "express";

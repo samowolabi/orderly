@@ -42,7 +42,7 @@ Kola Gadgets, a made-up Lagos phone and gadget store. Stores are rows in a `stor
 4. Customers can't change anything: buyer key vs seller key, checked on every request.
 5. Late payment after the hold expired: re-hold if stock is there, otherwise mark `paid_no_stock` for an owner refund.
 
-Every response has the shape `{ ok, data, error: { code, message_for_agent } }`. Money is stored as integer minor units next to an ISO 4217 currency code. `src/utils/money.ts` owns conversion and formatting, and no other module hardcodes a currency. New products take `BUSINESS_CURRENCY` (default NGN); orders copy the product's currency. The API returns every amount as `{ amount, currency, display }` in the main unit, and agents send prices as plain main-unit numbers.
+Every response has the shape `{ ok, data, error: { code, message_for_agent } }`. Money is stored as integer subunits next to an ISO 4217 currency code. `src/utils/money.ts` owns conversion and formatting, and no other module hardcodes a currency. New products take `BUSINESS_CURRENCY` (default NGN); orders copy the product's currency. The API returns every amount as `{ amount, currency, display }` in the main unit, and agents send prices as plain main-unit numbers.
 
 ## Local dev
 - Postgres: database `orderly`, owned by role `orderly`, in the local Postgres 18 on port 5433. The connection string is `DATABASE_URL` in `.env`.

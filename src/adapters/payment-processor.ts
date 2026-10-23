@@ -29,7 +29,7 @@ export type PaymentWebhookEvent =
 
 export type CreateCheckoutInput = {
   reference: string;
-  amountMinor: number;
+  amountSubunits: number;
   currency: string;
   email: string;
   metadata: Record<string, unknown>;

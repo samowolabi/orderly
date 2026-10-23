@@ -55,8 +55,8 @@ pay() {
 mode() { curl -s -X POST -H 'content-type: application/json' -d "$1" "$FAKE/_fake/mode" >/dev/null; }
 # Reads an order's newest payment reference from Postgres.
 ref() { $PSQL -c "SELECT payment_references[cardinality(payment_references)] FROM orders WHERE id='$1'"; }
-# Reads an order's total in minor units, and its currency, from Postgres.
-amount() { $PSQL -c "SELECT amount_minor FROM orders WHERE id='$1'"; }
+# Reads an order's total in subunits, and its currency, from Postgres.
+amount() { $PSQL -c "SELECT amount_subunit FROM orders WHERE id='$1'"; }
 currency() { $PSQL -c "SELECT currency FROM orders WHERE id='$1'"; }
 # Counts matching event-log rows for an order.
 event_count() { $PSQL -c "SELECT count(*) FROM events WHERE order_id='$1' AND type='$2'"; }

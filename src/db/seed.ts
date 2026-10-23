@@ -1,4 +1,4 @@
-import { toMinor } from "../utils/money";
+import { toSubunits } from "../utils/money";
 import { toRows } from "../utils/store-hours";
 import type { AddressInputValue, CoordinatesInputValue } from "../utils/store-location";
 import { pool, withTransaction } from "./pool";
@@ -98,9 +98,9 @@ async function seed() {
 
     for (const p of products) {
       await db.query(
-        `INSERT INTO products (id, name, variant, price_minor, min_price_minor, currency)
+        `INSERT INTO products (id, name, variant, price_subunit, min_price_subunit, currency)
          VALUES ($1, $2, $3, $4, $5, $6)`,
-        [p.id, p.name, p.variant, toMinor(p.price, SEED_CURRENCY), toMinor(p.floor, SEED_CURRENCY), SEED_CURRENCY],
+        [p.id, p.name, p.variant, toSubunits(p.price, SEED_CURRENCY), toSubunits(p.floor, SEED_CURRENCY), SEED_CURRENCY],
       );
       for (const s of stores) {
         const units = (p.stock as Record<string, number>)[s.id] ?? 0;

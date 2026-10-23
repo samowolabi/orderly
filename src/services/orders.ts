@@ -59,8 +59,8 @@ type OrderRow = {
   store_name: string;
 
   quantity: number;
-  unit_price_minor: number;
-  amount_minor: number;
+  unit_price_subunit: number;
+  amount_subunit: number;
   currency: string;
 
   buyer_name: string;
@@ -83,7 +83,7 @@ type OrderRow = {
 type VerifyResult =
   | { outcome: PaymentOutcome }
   | { outcome: "declined"; newLink: true }
-  | { outcome: "amount_mismatch"; paidMinor: number; currency: string };
+  | { outcome: "amount_mismatch"; paidSubunits: number; currency: string };
 
 const ORDER_SELECT = `
   SELECT o.*, p.name AS product_name, p.variant AS product_variant,
@@ -113,8 +113,8 @@ function orderView(order: OrderRow) {
     product: { id: order.product_id, name: order.product_name, variant: order.product_variant },
     store: { id: order.store_id, name: order.store_name },
     quantity: order.quantity,
-    unit_price: moneyView(order.unit_price_minor, order.currency),
-    amount: moneyView(order.amount_minor, order.currency),
+    unit_price: moneyView(order.unit_price_subunit, order.currency),
+    amount: moneyView(order.amount_subunit, order.currency),
     buyer_name: order.buyer_name,
     payment_url: pending ? order.payment_url : null,
     expires_at: order.expires_at.toISOString(),
@@ -131,7 +131,7 @@ function receiptView(order: OrderRow) {
   const business = config().BUSINESS_NAME;
   const reference = order.paid_reference ?? order.payment_references.at(-1) ?? order.id;
   const storeAddress = formatAddress(order);
-  const total = formatMoney(order.amount_minor, order.currency);
+  const total = formatMoney(order.amount_subunit, order.currency);
   const lines = [
     `${business} receipt ${order.id}`,
     `${order.store_name}, ${storeAddress}`,
@@ -150,8 +150,8 @@ function receiptView(order: OrderRow) {
     store: { name: order.store_name, address: storeAddress },
     item: itemName(order),
     quantity: order.quantity,
-    unit_price: moneyView(order.unit_price_minor, order.currency),
-    total: moneyView(order.amount_minor, order.currency),
+    unit_price: moneyView(order.unit_price_subunit, order.currency),
+    total: moneyView(order.amount_subunit, order.currency),
     buyer_name: order.buyer_name,
     paid_at: paidAt.toISOString(),
     paid_at_display: lagosTime(paidAt),
@@ -168,12 +168,12 @@ const newReference = (orderId: string) => `${orderId}-${randomBytes(3).toString(
 
 // Initializes the payment processor and attaches its checkout link to an order.
 async function attachPaymentLink(
-  order: Pick<OrderRow, "id" | "product_id" | "store_id" | "amount_minor" | "currency" | "buyer_email">,
+  order: Pick<OrderRow, "id" | "product_id" | "store_id" | "amount_subunit" | "currency" | "buyer_email">,
 ) {
   const reference = newReference(order.id);
   const { checkoutUrl } = await paymentProcessor.createCheckout({
     reference,
-    amountMinor: order.amount_minor,
+    amountSubunits: order.amount_subunit,
     currency: order.currency,
     email: order.buyer_email ?? placeholderEmail(order.id),
     metadata: { order_id: order.id, product_id: order.product_id, store_id: order.store_id },
@@ -220,20 +220,20 @@ export async function createOrder(input: CreateOrderInput) {
     }
 
     // Price and currency both come from the product row, never from the request.
-    const { rows } = await db.query<{ id: string; amount_minor: number; currency: string }>(
+    const { rows } = await db.query<{ id: string; amount_subunit: number; currency: string }>(
       `INSERT INTO orders (
-         product_id, store_id, quantity, unit_price_minor, amount_minor, currency, buyer_name, buyer_email, expires_at
+         product_id, store_id, quantity, unit_price_subunit, amount_subunit, currency, buyer_name, buyer_email, expires_at
        )
-       SELECT p.id, $2, $3::int, p.price_minor, p.price_minor * $3::int, p.currency, $4, $5,
+       SELECT p.id, $2, $3::int, p.price_subunit, p.price_subunit * $3::int, p.currency, $4, $5,
               now() + make_interval(mins => $6::int)
        FROM products p WHERE p.id = $1
-       RETURNING id, amount_minor, currency`,
+       RETURNING id, amount_subunit, currency`,
       [input.product_id, input.store_id, input.quantity, input.buyer_name, input.buyer_email ?? null, config().HOLD_MINUTES],
     );
     const created = rows[0]!;
     await logEvent(db, created.id, "order_created", {
       held: input.quantity,
-      amount_minor: created.amount_minor,
+      amount_subunit: created.amount_subunit,
       currency: created.currency,
     });
     return created;
@@ -242,7 +242,7 @@ export async function createOrder(input: CreateOrderInput) {
   try {
     await attachPaymentLink({
       id: order.id,
-      amount_minor: order.amount_minor,
+      amount_subunit: order.amount_subunit,
       currency: order.currency,
       buyer_email: input.buyer_email ?? null,
       product_id: input.product_id,
@@ -356,14 +356,14 @@ async function confirmSuccessfulPayment(db: Db, order: OrderRow, transaction: Pa
   if (order.status === "paid") return { outcome: "already_paid" };
   if (order.status === "paid_no_stock" || order.status === "handed_over") return { outcome: order.status };
 
-  if (transaction.amount !== order.amount_minor || transaction.currency !== order.currency) {
+  if (transaction.amount !== order.amount_subunit || transaction.currency !== order.currency) {
     if (order.failure_reason === "amount_mismatch") {
-      return { outcome: "amount_mismatch", paidMinor: transaction.amount, currency: transaction.currency };
+      return { outcome: "amount_mismatch", paidSubunits: transaction.amount, currency: transaction.currency };
     }
 
     if (order.status === "pending_payment") {
       await failOrder(db, order.id, "amount_mismatch", {
-        paid_minor: transaction.amount,
+        paid_subunit: transaction.amount,
         currency: transaction.currency,
         reference: transaction.reference,
       });
@@ -374,13 +374,13 @@ async function confirmSuccessfulPayment(db: Db, order: OrderRow, transaction: Pa
       );
       await logEvent(db, order.id, "order_failed", {
         reason: "amount_mismatch",
-        paid_minor: transaction.amount,
+        paid_subunit: transaction.amount,
         currency: transaction.currency,
         reference: transaction.reference,
       });
     }
 
-    return { outcome: "amount_mismatch", paidMinor: transaction.amount, currency: transaction.currency };
+    return { outcome: "amount_mismatch", paidSubunits: transaction.amount, currency: transaction.currency };
   }
 
   let status: "paid" | "paid_no_stock" = "paid";
@@ -401,7 +401,7 @@ async function confirmSuccessfulPayment(db: Db, order: OrderRow, transaction: Pa
   );
   await logEvent(db, order.id, outcome === "paid" ? "payment_confirmed" : outcome, {
     reference: transaction.reference,
-    amount_minor: transaction.amount,
+    amount_subunit: transaction.amount,
     currency: transaction.currency,
   });
 
@@ -444,7 +444,7 @@ export async function verifyPayment(id: string) {
     throw new ApiError(
       409,
       "amount_mismatch",
-      `Paystack shows a payment of ${formatMoney(result.paidMinor, result.currency)}, which does not match this order. The order is NOT confirmed. Do not send a receipt. Tell the customer a person will sort it out, and hand over.`,
+      `Paystack shows a payment of ${formatMoney(result.paidSubunits, result.currency)}, which does not match this order. The order is NOT confirmed. Do not send a receipt. Tell the customer a person will sort it out, and hand over.`,
     );
   }
 
@@ -502,9 +502,9 @@ export async function listOrders(input: ListOrdersInput) {
        ORDER BY o.created_at DESC LIMIT $4`,
       [input.period, input.store_id ?? null, input.status ?? null, input.limit],
     ),
-    pool.query<{ status: string; currency: string; n: number; paid_minor: number }>(
+    pool.query<{ status: string; currency: string; n: number; paid_subunit: number }>(
       `SELECT o.status, o.currency, count(*)::int AS n,
-              coalesce(sum(o.amount_minor) FILTER (WHERE o.status = 'paid'), 0)::bigint AS paid_minor
+              coalesce(sum(o.amount_subunit) FILTER (WHERE o.status = 'paid'), 0)::bigint AS paid_subunit
        FROM orders o WHERE ${inPeriod} GROUP BY o.status, o.currency`,
       [input.period, input.store_id ?? null],
     ),
@@ -515,7 +515,7 @@ export async function listOrders(input: ListOrdersInput) {
   for (const row of summary.rows) {
     counts[row.status] = (counts[row.status] ?? 0) + row.n;
     // Totals are kept per currency; amounts in different currencies are never added together.
-    if (row.status === "paid") paidByCurrency.set(row.currency, (paidByCurrency.get(row.currency) ?? 0) + row.paid_minor);
+    if (row.status === "paid") paidByCurrency.set(row.currency, (paidByCurrency.get(row.currency) ?? 0) + row.paid_subunit);
   }
   const attention = await pool.query<{ id: string; status: OrderStatus; failure_reason: string | null }>(
     `SELECT o.id, o.status, o.failure_reason FROM orders o
@@ -530,7 +530,7 @@ export async function listOrders(input: ListOrdersInput) {
     summary: {
       counts,
       // Converts one currency total into the API money shape.
-      paid_totals: [...paidByCurrency].map(([currency, minor]) => moneyView(minor, currency)),
+      paid_totals: [...paidByCurrency].map(([currency, subunits]) => moneyView(subunits, currency)),
     },
     // Converts one exceptional order into an owner action item.
     needs_attention: attention.rows.map((row) => ({

@@ -3,7 +3,7 @@ import { GeocodingProviderUnavailable } from "../adapters/geocoding-provider";
 import { config } from "../config";
 import { pool, withTransaction } from "../db/pool";
 import { ApiError } from "../utils/http";
-import { InvalidMoneyAmount, moneyView, toMinor } from "../utils/money";
+import { InvalidMoneyAmount, moneyView, toSubunits } from "../utils/money";
 import { DAYS, hoursView, toRows, type HourRow, type HoursInputValue } from "../utils/store-hours";
 import {
   addressSearchText,
@@ -20,8 +20,8 @@ type ProductRow = {
   name: string;
   variant: string | null;
 
-  price_minor: number;
-  min_price_minor: number;
+  price_subunit: number;
+  min_price_subunit: number;
   currency: string;
 
   stores: {
@@ -89,7 +89,7 @@ type UpdatePriceInput = {
 // Loads active products and their store-level stock using optional filters.
 async function findProducts(db: Db, filters: { productId?: string; storeId?: string; words?: string[] }) {
   const { rows } = await db.query<ProductRow>(
-    `SELECT p.id, p.name, p.variant, p.price_minor, p.min_price_minor, p.currency,
+    `SELECT p.id, p.name, p.variant, p.price_subunit, p.min_price_subunit, p.currency,
             json_agg(json_build_object('store_id', s.id, 'store_name', s.name, 'available', st.available)
                      ORDER BY s.id) AS stores
      FROM products p
@@ -114,8 +114,8 @@ function productView(row: ProductRow, role: Role) {
     id: row.id,
     name: row.name,
     variant: row.variant,
-    price: moneyView(row.price_minor, row.currency),
-    ...(role === "seller" ? { min_price: moneyView(row.min_price_minor, row.currency) } : {}),
+    price: moneyView(row.price_subunit, row.currency),
+    ...(role === "seller" ? { min_price: moneyView(row.min_price_subunit, row.currency) } : {}),
     stores: row.stores,
     total_available: row.stores.reduce(
       // Adds one store's available units to the product total.
@@ -125,10 +125,10 @@ function productView(row: ProductRow, role: Role) {
   };
 }
 
-// Converts an owner-entered amount into minor units, reporting extra decimals as bad input.
-function priceToMinor(field: string, amount: number, currency: string) {
+// Converts an owner-entered amount into subunits, reporting extra decimals as bad input.
+function priceToSubunits(field: string, amount: number, currency: string) {
   try {
-    return toMinor(amount, currency);
+    return toSubunits(amount, currency);
   } catch (error) {
     if (error instanceof InvalidMoneyAmount) throw new ApiError(400, "invalid_input", `${field}: ${error.message}.`);
     throw error;
@@ -361,10 +361,10 @@ export async function addProduct(input: AddProductInput) {
 
     // New products are priced in the business currency; the owner never picks one.
     const currency = config().BUSINESS_CURRENCY;
-    const price = priceToMinor("price", input.price, currency);
-    const floor = input.min_price === undefined ? price : priceToMinor("min_price", input.min_price, currency);
+    const price = priceToSubunits("price", input.price, currency);
+    const floor = input.min_price === undefined ? price : priceToSubunits("min_price", input.min_price, currency);
     await db.query(
-      `INSERT INTO products (id, name, variant, price_minor, min_price_minor, currency)
+      `INSERT INTO products (id, name, variant, price_subunit, min_price_subunit, currency)
        VALUES ($1, $2, $3, $4, $5, $6)`,
       [id, input.name, input.variant ?? null, price, floor, currency],
     );
@@ -377,7 +377,7 @@ export async function addProduct(input: AddProductInput) {
         units.get(storeId) ?? 0,
       ]);
     }
-    await logEvent(db, null, "product_added", { product_id: id, price_minor: price, currency, stock: Object.fromEntries(units) });
+    await logEvent(db, null, "product_added", { product_id: id, price_subunit: price, currency, stock: Object.fromEntries(units) });
     return loadProduct(db, id, "seller");
   });
 }
@@ -432,18 +432,18 @@ export async function updateStock(id: string, input: UpdateStockInput) {
 export async function updatePrice(id: string, input: UpdatePriceInput) {
   // Locks the product while updating its price and discount floor.
   const result = await withTransaction(async (db) => {
-    const { rows } = await db.query<{ price_minor: number; min_price_minor: number; currency: string }>(
-      "SELECT price_minor, min_price_minor, currency FROM products WHERE id = $1 AND active FOR UPDATE",
+    const { rows } = await db.query<{ price_subunit: number; min_price_subunit: number; currency: string }>(
+      "SELECT price_subunit, min_price_subunit, currency FROM products WHERE id = $1 AND active FOR UPDATE",
       [id],
     );
     const old = rows[0];
     if (!old) throw new ApiError(404, "product_not_found", `No product with id ${id}. Call list_products for the right id.`);
 
     // The new price is in the product's own currency, whatever the business default is now.
-    const price = priceToMinor("price", input.price, old.currency);
-    const requestedFloor = input.min_price === undefined ? old.min_price_minor : priceToMinor("min_price", input.min_price, old.currency);
+    const price = priceToSubunits("price", input.price, old.currency);
+    const requestedFloor = input.min_price === undefined ? old.min_price_subunit : priceToSubunits("min_price", input.min_price, old.currency);
     const floor = Math.min(requestedFloor, price);
-    await db.query("UPDATE products SET price_minor = $2, min_price_minor = $3, updated_at = now() WHERE id = $1", [
+    await db.query("UPDATE products SET price_subunit = $2, min_price_subunit = $3, updated_at = now() WHERE id = $1", [
       id,
       price,
       floor,
@@ -451,12 +451,12 @@ export async function updatePrice(id: string, input: UpdatePriceInput) {
     await logEvent(db, null, "price_updated", {
       product_id: id,
       currency: old.currency,
-      from: old.price_minor,
+      from: old.price_subunit,
       to: price,
-      min_price_minor: floor,
+      min_price_subunit: floor,
     });
     return { old, product: await loadProduct(db, id, "seller") };
   });
 
-  return { product: result.product, old_price: moneyView(result.old.price_minor, result.old.currency) };
+  return { product: result.product, old_price: moneyView(result.old.price_subunit, result.old.currency) };
 }
