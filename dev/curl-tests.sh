@@ -185,7 +185,7 @@ call "$BUYER" PATCH /products/IPHONE-16-256GB '{"active":false}';               
 echo "== Happy path: order, 'I paid' too early, pay, verify, receipt"
 before=$(stock IP13-128 ikeja)
 call "$BUYER" POST /orders '{"items":[{"product_id":"ip13-128"}],"store_id":"Ikeja","buyer_name":"Tunde Bakare"}'
-check "create_order" 201 '.data.status == "pending_payment" and (.data.payment_url | startswith("http")) and .data.minutes_left == 30 and .data.amount == {"amount":650000,"currency":"NGN","display":"₦650,000"} and .data.items == [{"product":{"id":"IP13-128","name":"iPhone 13","variant":"128GB"},"quantity":1,"unit_price":{"amount":650000,"currency":"NGN","display":"₦650,000"},"amount":{"amount":650000,"currency":"NGN","display":"₦650,000"}}]'
+check "create_order" 201 '.data.status == "pending_payment" and (.data.payment_url | startswith("http")) and .data.minutes_left == 30 and .data.amount == {"amount":650000,"currency":"NGN","display":"₦650,000"} and .data.items == [{"product":{"id":"IP13-128","name":"iPhone 13","variant":"128GB"},"quantity":1,"unit_price":{"amount":650000,"currency":"NGN","display":"₦650,000"},"amount":{"amount":650000,"currency":"NGN","display":"₦650,000"},"saving":{"amount":0,"currency":"NGN","display":"₦0"}}]'
 O1=$(jq -r .data.order_id <<<"$BODY"); echo "        order $O1"
 check "a store_id order is pickup, with no delivery" 201 '.data.fulfilment == "pickup" and .data.delivery == null'
 check "payment checks: 20s, doubling, last a minute before expiry, one nudge" 201 '(.data.created_at | sub("\\.[0-9]+Z$"; "Z") | fromdate) as $t0 | (.data.expires_at | sub("\\.[0-9]+Z$"; "Z") | fromdate) as $end | [.data.payment_checks[].at | sub("\\.[0-9]+Z$"; "Z") | fromdate - $t0] == [20, 40, 80, 160, 320, 640, 1280, ($end - $t0 - 60)] and ([.data.payment_checks[] | select(.nudge)] | length == 1) and (.data.payment_checks[6].nudge)'
@@ -317,6 +317,25 @@ call "$BUYER" POST /delivery/quote '{"items":[{"product_id":"IP15P-256"}],"addre
 check "far address quotes again" 201 '.data.store.id == "ikeja" and .data.fee.amount > 5000'
 call "$SELLER" PATCH /delivery/settings '{"fee_per_km":150,"prep_minutes":20}'; check "back to the usual pricing" 200 '.data.fee_per_km.amount == 150'
 
+echo "== Haggling: lowest_price, agreed prices, the floor"
+call "$BUYER" GET '/products?product_id=IP13-128'
+check "customers see a buffered lowest_price, never the floor" 200 '.data.products[0].lowest_price.amount == 628000 and (.data.products[0] | has("min_price") | not)'
+call "$SELLER" GET '/products?product_id=APL-20W'
+check "the owner sees both; small items round to ₦500" 200 '.data.products[0].lowest_price.amount == 26000 and .data.products[0].min_price.amount == 25000'
+call "$BUYER" POST /orders '{"items":[{"product_id":"A15-128","price":199000}],"store_id":"ikeja","buyer_name":"Bisi"}'
+check "below the real floor is refused, without saying the floor" 409 '.error.code == "below_floor" and (.error.message_for_agent | test("200") | not)'; msg
+call "$BUYER" POST /orders '{"items":[{"product_id":"A15-128","price":250000}],"store_id":"ikeja","buyer_name":"Bisi"}'
+check "above the list price is refused" 400
+call "$BUYER" POST /delivery/quote '{"items":[{"product_id":"APL-20W","price":26500}],"address":"'"$LEKKI_ADDR"'","phone":"08031234567"}'
+check "a delivery quote counts the agreed price" 201 '.data.items_subtotal.amount == 26500'
+call "$BUYER" POST /orders '{"items":[{"product_id":"A15-128","price":205000}],"store_id":"ikeja","buyer_name":"Bisi"}'
+check "the order sells at the agreed price" 201 '.data.amount.amount == 205000 and .data.items[0].unit_price.amount == 205000 and .data.items[0].saving.amount == 5000'
+OH=$(jq -r .data.order_id <<<"$BODY")
+pay "$OH"
+call "$BUYER" POST "/orders/$OH/verify"
+check "the receipt shows the saving" 200 '.data.outcome == "paid" and (.data.receipt.text | test("₦205,000 \\(you saved ₦5,000\\)")) and .data.receipt.items[0].saving.amount == 5000'
+jq -r .data.receipt.text <<<"$BODY" | sed 's/^/        | /'
+
 echo "== Bad order input"
 call "$BUYER" POST /orders '{"items":[{"product_id":"IP13-128"}],"store_id":"ikeja"}'; check "missing buyer_name" 400 '.error.message_for_agent | test("buyer_name is required")'; msg
 call "$BUYER" POST /orders '{"items":[{"product_id":"IP13-128","quantity":0}],"store_id":"ikeja","buyer_name":"A"}'; check "quantity 0" 400
@@ -407,7 +426,7 @@ mode '{"initialize":"ok"}'
 [ "$(stock ANKER-20K ikeja)" = "$anker" ] && { PASS=$((PASS+1)); echo "  ok    held unit released after link failure"; } || { FAILS=$((FAILS+1)); echo "  FAIL  stock: $(stock ANKER-20K ikeja)"; }
 
 echo "== Owner: list_orders"
-call "$SELLER" GET /orders;                   check "today's orders and summary" 200 '.data.period == "today" and .data.summary.counts.paid == 6 and .data.summary.paid_totals == [{"amount":3461600,"currency":"NGN","display":"₦3,461,600"}]'
+call "$SELLER" GET /orders;                   check "today's orders and summary" 200 '.data.period == "today" and .data.summary.counts.paid == 7 and .data.summary.paid_totals == [{"amount":3666600,"currency":"NGN","display":"₦3,666,600"}]'
 check "list_orders shows each order's lines" 200 '[.data.orders[] | select(.order_id == "'"$OM"'") | .items[].product.id] == ["IP14-128", "ANKER-20K"]'
 jq -c '.data.summary' <<<"$BODY" | sed 's/^/        /'
 check "paid_no_stock and mismatch need attention" 200 '[.data.needs_attention[].order_id] | contains(["'"$RACE"'", "'"$O5"'"])'

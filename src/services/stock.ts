@@ -17,13 +17,23 @@ export async function holdStock(db: Db, productId: string, storeId: string, quan
   return rowCount === 1;
 }
 
-export type HoldItem = { product_id: string; quantity: number };
+// An order line; price is a haggled unit price in the main unit, when one was agreed.
+export type HoldItem = { product_id: string; quantity: number; price?: number };
 
-// Adds up repeats of the same product, keeping the order the customer asked for them in.
+// Adds up repeats of the same product, keeping the order the customer asked for them in
+// and the first agreed price given for it.
 export function mergeItems(items: HoldItem[]): HoldItem[] {
-  const merged = new Map<string, number>();
-  for (const item of items) merged.set(item.product_id, (merged.get(item.product_id) ?? 0) + item.quantity);
-  return [...merged].map(([product_id, quantity]) => ({ product_id, quantity }));
+  const merged = new Map<string, HoldItem>();
+  for (const item of items) {
+    const seen = merged.get(item.product_id);
+    const price = seen?.price ?? item.price;
+    merged.set(item.product_id, {
+      product_id: item.product_id,
+      quantity: (seen?.quantity ?? 0) + item.quantity,
+      ...(price !== undefined ? { price } : {}),
+    });
+  }
+  return [...merged.values()];
 }
 
 // Holds every line of an order at one store, or none of them. Returns the first line that

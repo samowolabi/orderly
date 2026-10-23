@@ -28,6 +28,7 @@ export const Order = z
         quantity: z.number().int(),
         unit_price: Money,
         amount: Money,
+        saving: Money.openapi({ description: "What haggling took off this line; 0 at the list price" }),
       }),
     ),
     fulfilment: z.enum(["pickup", "delivery"]),
@@ -65,6 +66,7 @@ export const ReceiptFields = z.object({
       quantity: z.number().int(),
       unit_price: Money,
       amount: Money,
+      saving: Money,
     }),
   ),
   delivery: DeliveryDetails,
@@ -84,6 +86,11 @@ const Items = z
     z.object({
       product_id: z.string().trim().toUpperCase().min(1).openapi({ description: "From list_products", example: "IP14-128" }),
       quantity: z.number().int().min(1).max(10).default(1),
+      price: z
+        .number()
+        .positive()
+        .optional()
+        .openapi({ description: "Only after haggling: the unit price the customer agreed, in the main unit. Never below lowest_price. Leave out to sell at the list price.", example: 635000 }),
     }),
   )
   .min(1)

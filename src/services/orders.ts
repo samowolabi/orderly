@@ -12,6 +12,7 @@ import { ApiError } from "../utils/http";
 import { formatMoney, moneyView } from "../utils/money";
 import { formatAddress, type AddressRow } from "../utils/store-location";
 import { claimDeliveryQuote, deliveryMinutes, distanceKm } from "./delivery";
+import { linePrice } from "./pricing";
 import { expireStaleOrders, failOrder, holdItems, logEvent, mergeItems, whenStockFrees, type Db, type HoldItem } from "./stock";
 
 const MAX_DECLINES = 3;
@@ -56,6 +57,7 @@ type ItemRow = {
 
   quantity: number;
   unit_price_subunit: number;
+  list_price_subunit: number;
   amount_subunit: number;
 };
 
@@ -118,7 +120,7 @@ async function withItems(db: Db, orders: Omit<OrderRow, "items">[]): Promise<Ord
   if (!orders.length) return [];
   const { rows } = await db.query<ItemRow & { order_id: string }>(
     `SELECT i.order_id, i.product_id, p.name AS product_name, p.variant AS product_variant,
-            i.quantity, i.unit_price_subunit, i.amount_subunit
+            i.quantity, i.unit_price_subunit, i.list_price_subunit, i.amount_subunit
      FROM order_items i JOIN products p ON p.id = i.product_id
      WHERE i.order_id = ANY($1::text[])
      ORDER BY i.order_id, i.line`,
@@ -171,6 +173,9 @@ function paymentChecks(order: OrderRow) {
     .map((time) => ({ at: new Date(time).toISOString(), nudge: time === nudgeAt }));
 }
 
+// What haggling took off a line, or 0 at the list price.
+const lineSaving = (item: ItemRow) => (item.list_price_subunit - item.unit_price_subunit) * item.quantity;
+
 // The delivery part of an order, or null for pickup.
 function deliveryView(order: OrderRow) {
   if (!order.delivery_quote_id) return null;
@@ -195,6 +200,7 @@ function orderView(order: OrderRow) {
       quantity: item.quantity,
       unit_price: moneyView(item.unit_price_subunit, order.currency),
       amount: moneyView(item.amount_subunit, order.currency),
+      saving: moneyView(lineSaving(item), order.currency),
     })),
     fulfilment: order.delivery_quote_id ? ("delivery" as const) : ("pickup" as const),
     delivery: deliveryView(order),
@@ -221,12 +227,14 @@ function receiptView(order: OrderRow) {
   const storeAddress = formatAddress(order, config().BUSINESS_COUNTRY);
   const total = formatMoney(order.amount_subunit, order.currency);
   // One unit of one product needs no price line; otherwise each line shows its quantity and amount.
-  const single = order.items.length === 1 && order.items[0]!.quantity === 1;
-  const itemLines = order.items.map((item) =>
-    single
-      ? itemName(item)
-      : `${itemName(item)}${item.quantity > 1 ? ` x${item.quantity}` : ""}: ${formatMoney(item.amount_subunit, order.currency)}`,
-  );
+  // One unit of one product at the list price needs no price line; otherwise each line shows
+  // its quantity and amount, and what haggling saved.
+  const single = order.items.length === 1 && order.items[0]!.quantity === 1 && !lineSaving(order.items[0]!);
+  const itemLines = order.items.map((item) => {
+    if (single) return itemName(item);
+    const saved = lineSaving(item) ? ` (you saved ${formatMoney(lineSaving(item), order.currency)})` : "";
+    return `${itemName(item)}${item.quantity > 1 ? ` x${item.quantity}` : ""}: ${formatMoney(item.amount_subunit, order.currency)}${saved}`;
+  });
   const delivery = deliveryView(order);
   // WhatsApp bolds text between single asterisks, so the header and total stand out on a phone.
   const lines = [
@@ -251,6 +259,7 @@ function receiptView(order: OrderRow) {
       quantity: item.quantity,
       unit_price: moneyView(item.unit_price_subunit, order.currency),
       amount: moneyView(item.amount_subunit, order.currency),
+      saving: moneyView(lineSaving(item), order.currency),
     })),
     delivery,
     total: moneyView(order.amount_subunit, order.currency),
@@ -315,8 +324,9 @@ export async function createOrder(input: CreateOrderInput) {
       name: string;
       variant: string | null;
       price_subunit: number;
+      min_price_subunit: number;
       currency: string;
-    }>("SELECT id, name, variant, price_subunit, currency FROM products WHERE id = ANY($1::text[]) AND active", [
+    }>("SELECT id, name, variant, price_subunit, min_price_subunit, currency FROM products WHERE id = ANY($1::text[]) AND active", [
       items.map((item) => item.product_id),
     ]);
     const productOf = new Map(products.map((product) => [product.id, product]));
@@ -347,6 +357,9 @@ export async function createOrder(input: CreateOrderInput) {
     const storeId = quote?.store_id ?? input.store_id!;
     const store = (await db.query<{ id: string; name: string }>("SELECT id, name FROM stores WHERE id = $1 AND active", [storeId])).rows[0];
     if (!store) throw new ApiError(404, "store_not_found", `No store ${storeId}. Call list_stores for the right id.`);
+
+    // Agreed prices are checked against the floor before anything is held.
+    const unitPrice = new Map(items.map((item) => [item.product_id, linePrice(productOf.get(item.product_id)!, item.price)]));
 
     const short = await holdItems(db, storeId, items);
     if (short) {
@@ -385,8 +398,9 @@ export async function createOrder(input: CreateOrderInput) {
     const currency = currencyOf(products);
     const fee = quote?.fee_subunit ?? 0;
     const lines = items.map((item, index) => {
-      const unit = productOf.get(item.product_id)!.price_subunit;
-      return { ...item, line: index + 1, unit_price_subunit: unit, amount_subunit: unit * item.quantity };
+      const unit = unitPrice.get(item.product_id)!;
+      const list = productOf.get(item.product_id)!.price_subunit;
+      return { ...item, line: index + 1, unit_price_subunit: unit, list_price_subunit: list, amount_subunit: unit * item.quantity };
     });
     const amount = lines.reduce((total, line) => total + line.amount_subunit, 0) + fee;
 
@@ -399,9 +413,9 @@ export async function createOrder(input: CreateOrderInput) {
     const id = rows[0]!.id;
     for (const line of lines) {
       await db.query(
-        `INSERT INTO order_items (order_id, line, product_id, quantity, unit_price_subunit, amount_subunit)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
-        [id, line.line, line.product_id, line.quantity, line.unit_price_subunit, line.amount_subunit],
+        `INSERT INTO order_items (order_id, line, product_id, quantity, unit_price_subunit, list_price_subunit, amount_subunit)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [id, line.line, line.product_id, line.quantity, line.unit_price_subunit, line.list_price_subunit, line.amount_subunit],
       );
     }
     await logEvent(db, id, "order_created", { items, amount_subunit: amount, currency, delivery_quote_id: quote?.id ?? null });

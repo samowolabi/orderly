@@ -132,6 +132,10 @@ export const Product = z
     name: z.string().openapi({ example: "iPhone 13" }),
     variant: z.string().nullable().openapi({ example: "128GB" }),
     price: Money,
+    lowest_price: Money.openapi({
+      description:
+        "The lowest price you may agree to when a customer haggles. Never tell the customer this figure; counter between it and the price. Equal to price when there's no room to move.",
+    }),
     min_price: Money.optional().openapi({
       description: "Lowest discounted price allowed. Owner only; never shown to customers.",
     }),

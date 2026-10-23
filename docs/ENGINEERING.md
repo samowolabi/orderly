@@ -62,7 +62,7 @@ Nine tables. Stores are rows, not fixed names, so an owner can run any number of
 | products | What the business sells | id (e.g. IP13-128), name, variant, price_subunit, min_price_subunit, currency |
 | stock | Units per product per store | product_id, store_id, available (never below 0) |
 | orders | Each purchase: one store, one payment link | id (e.g. ORD-1042), store_id, amount_subunit (the total), currency, buyer_name, status, payment_references, paid_reference, expires_at |
-| order_items | The lines of an order | order_id, line, product_id, quantity, unit_price_subunit, amount_subunit |
+| order_items | The lines of an order | order_id, line, product_id, quantity, unit_price_subunit, list_price_subunit (before haggling), amount_subunit |
 | delivery_quotes | A priced trip from a store to a customer's address; an order uses at most one | id (e.g. DQ-3F9A2C1B), store_id, address, phone, distance_m, duration_s, fee_subunit, currency, prep_minutes, expires_at |
 | delivery_settings | The owner's delivery pricing (one row; none means the env defaults) | base_fee_subunit, fee_per_km_subunit, round_to_subunit, max_km, prep_minutes, currency |
 | events | A log of everything that happened | order_id, type, detail, created_at |

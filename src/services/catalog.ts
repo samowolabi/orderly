@@ -14,6 +14,7 @@ import {
   type CoordinatesInputValue,
   type ResolvedAddressValue,
 } from "../utils/store-location";
+import { lowestOffer } from "./pricing";
 import { expireStaleOrders, logEvent, type Db } from "./stock";
 
 type ProductRow = {
@@ -133,6 +134,7 @@ function productView(row: ProductRow, role: Role) {
     name: row.name,
     variant: row.variant,
     price: moneyView(row.price_subunit, row.currency),
+    lowest_price: moneyView(lowestOffer(row.price_subunit, row.min_price_subunit, row.currency), row.currency),
     ...(role === "seller" ? { min_price: moneyView(row.min_price_subunit, row.currency), active: row.active } : {}),
     stores: row.stores,
     total_available: row.stores.reduce(

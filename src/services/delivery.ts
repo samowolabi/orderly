@@ -7,6 +7,7 @@ import { pool } from "../db/pool";
 import { formatLocalClock } from "../utils/format";
 import { ApiError } from "../utils/http";
 import { moneyView, toSubunits } from "../utils/money";
+import { linePrice } from "./pricing";
 import { logEvent, mergeItems, type Db, type HoldItem } from "./stock";
 
 type QuoteInput = {
@@ -146,8 +147,8 @@ export async function quoteDelivery(input: QuoteInput) {
   const settings = await loadSettings(pool);
   const { currency } = settings;
 
-  const { rows: products } = await pool.query<{ id: string; price_subunit: number; currency: string }>(
-    "SELECT id, price_subunit, currency FROM products WHERE id = ANY($1::text[]) AND active",
+  const { rows: products } = await pool.query<{ id: string; name: string; price_subunit: number; min_price_subunit: number; currency: string }>(
+    "SELECT id, name, price_subunit, min_price_subunit, currency FROM products WHERE id = ANY($1::text[]) AND active",
     [items.map((item) => item.product_id)],
   );
   const unknown = items.find((item) => !products.some((product) => product.id === item.product_id));
@@ -238,8 +239,9 @@ export async function quoteDelivery(input: QuoteInput) {
     ],
   );
 
-  const priceOf = new Map(products.map((product) => [product.id, product.price_subunit]));
-  const subtotal = items.reduce((total, item) => total + priceOf.get(item.product_id)! * item.quantity, 0);
+  // A haggled line counts at its agreed price, so the quoted total matches the order.
+  const productOf = new Map(products.map((product) => [product.id, product]));
+  const subtotal = items.reduce((total, item) => total + linePrice(productOf.get(item.product_id)!, item.price) * item.quantity, 0);
   const minutes = deliveryMinutes(best.route.durationSeconds, settings.prep_minutes);
 
   return {
