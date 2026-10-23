@@ -338,7 +338,9 @@ call "$BUYER" POST /delivery/quote '{"items":[{"product_id":"ANKER-20K"}],"addre
 call "$SELLER" PATCH /products/ANKER-20K '{"price":44000}'; check "the owner lowers the price after a quote" 200
 call "$BUYER" POST /orders '{"items":[{"product_id":"ANKER-20K","quantity":2}],"delivery_quote_id":"'"$Q3"'","buyer_name":"Uche"}'
 check "items that differ from the quote are refused" 409 '.error.code == "quote_mismatch"'; msg
-call "$BUYER" POST /orders '{"items":[{"product_id":"ANKER-20K"}],"delivery_quote_id":"'"$Q3"'","buyer_name":"Uche"}'
+call "$BUYER" POST /orders '{"items":[{"product_id":"ANKER-20K","price":44000}],"delivery_quote_id":"'"$Q3"'","buyer_name":"Uche"}'
+check "a price agreed after the quote needs a new quote" 409 '.error.code == "quote_mismatch"'
+call "$BUYER" POST /orders '{"items":[{"product_id":"ANKER-20K","price":45000}],"delivery_quote_id":"'"$Q3"'","buyer_name":"Uche"}'
 check "the quoted items still charge the quoted total" 201 '.data.amount.amount == 46600 and .data.items[0].unit_price.amount == 45000 and .data.items[0].saving.amount == 0'
 call "$SELLER" PATCH /products/ANKER-20K '{"price":45000}'; check "price back to ₦45,000 again" 200
 call "$BUYER" POST /orders '{"items":[{"product_id":"ANKER-20K"}],"delivery_quote_id":"DQ-NOPE","buyer_name":"Uche"}'

@@ -9,7 +9,7 @@ import { config } from "../config";
 import { pool, withTransaction } from "../db/pool";
 import { formatLocalClock, formatLocalTime } from "../utils/format";
 import { ApiError } from "../utils/http";
-import { formatMoney, moneyView } from "../utils/money";
+import { formatMoney, moneyView, toSubunits } from "../utils/money";
 import { formatAddress, type AddressRow } from "../utils/store-location";
 import { claimDeliveryQuote, deliveryMinutes, distanceKm } from "./delivery";
 import { retry } from "../utils/retry";
@@ -393,13 +393,20 @@ export async function createOrder(input: CreateOrderInput) {
     // A delivery order charges the prices in its quote, which the customer agreed to, so the
     // items must match the quote. Otherwise agreed prices are checked against the floor now.
     if (quote) {
-      const quoted = new Map(quote.items.map((item) => [item.product_id, item.quantity]));
-      const same = quoted.size === items.length && items.every((item) => quoted.get(item.product_id) === item.quantity);
+      // A price sent with the order must be the quoted one; leaving it out uses the quote's.
+      const quoted = new Map(quote.items.map((item) => [item.product_id, item]));
+      const same =
+        quoted.size === items.length &&
+        items.every((item) => {
+          const line = quoted.get(item.product_id);
+          if (!line || line.quantity !== item.quantity) return false;
+          return item.price === undefined || toSubunits(item.price, currencyOf(products)) === line.unit_price_subunit;
+        });
       if (!same) {
         throw new ApiError(
           409,
           "quote_mismatch",
-          `These items don't match delivery quote ${quote.id}. Call quote_delivery again with exactly what the customer wants, and confirm the new total with them.`,
+          `These items or prices don't match delivery quote ${quote.id}. Call quote_delivery again with exactly what the customer wants, at any newly agreed price, and confirm the new total with them.`,
         );
       }
     }
