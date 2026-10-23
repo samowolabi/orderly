@@ -25,8 +25,7 @@ export const Order = z
   })
   .openapi("Order");
 
-// Unnamed so it can also be used as nullable: the generator drops `nullable`
-// from a named component's reference, which would hide `receipt: null`.
+// Unnamed so it can be marked nullable: the generator drops `nullable` from named references.
 export const ReceiptFields = z.object({
   receipt_number: z.string(),
   business: z.string(),

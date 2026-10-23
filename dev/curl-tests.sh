@@ -1,9 +1,6 @@
 #!/bin/bash
 # Curl tests for the Orderly API against dev/fake-paystack.ts.
-# Needs: the database in .env, npm run fake-paystack, and the API started with
-#   PAYSTACK_BASE_URL=http://localhost:4010 npm run dev
-# Reseeds nothing; run npm run db:seed first for a clean slate.
-# Usage: npm run test:api
+# Expects a freshly seeded database; the API address comes from $API.
 cd "$(dirname "$0")/.." || exit 1
 API=${API:-http://localhost:3000}
 FAKE=${FAKE:-http://localhost:4010}

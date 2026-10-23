@@ -1,9 +1,7 @@
 // Local stand-in for the two Paystack endpoints Orderly calls, so failure
 // cases can be tested with curl without spending real test transactions.
-// Run: npm run fake-paystack, then start the API with
-//   PAYSTACK_BASE_URL=http://localhost:4010
 //
-// Drive it with:
+// Control endpoints:
 //   POST /_fake/pay/:reference  { "outcome": "success" | "failed" | "ongoing", "amount"?: subunits, "currency"?: code }
 //   POST /_fake/mode            { "initialize"?: "ok" | "fail", "verify"?: "ok" | "down" }
 //   GET  /_fake/state

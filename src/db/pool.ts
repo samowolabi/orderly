@@ -1,9 +1,8 @@
 import "dotenv/config";
 import pg from "pg";
 
-// Money columns are bigint subunits (see utils/money.ts). pg returns int8 as a string by default;
-// every value we store fits comfortably in a JS number.
-// Converts Postgres bigint values into safe JavaScript numbers for money fields.
+// Parses bigint columns (money in subunits) as numbers instead of pg's default strings;
+// every stored value fits safely in a JavaScript number.
 pg.types.setTypeParser(pg.types.builtins.INT8, (v) => Number(v));
 
 const connectionString = process.env.DATABASE_URL;

@@ -10,9 +10,7 @@ createApp().listen(PORT, () => {
   console.log(`Orderly API listening on :${PORT}`);
 });
 
-// Holds are also expired on every read that depends on stock; this sweep
-// returns stock even when nobody is calling the API.
-// Sweeps expired stock holds when no incoming request triggers a sweep.
+// Expires unpaid holds every minute, so stock returns even when no request triggers a sweep.
 setInterval(() => {
   expireStaleOrders(pool)
     // Reports only sweeps that actually expired orders.

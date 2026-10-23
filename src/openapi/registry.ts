@@ -3,8 +3,7 @@ import { z } from "zod";
 
 extendZodWithOpenApi(z);
 
-// Path modules add definitions to this registry. Express routes are kept
-// separate, so the OpenAPI document can be generated on its own.
+// Collects every schema and operation the path modules register.
 export const registry = new OpenAPIRegistry();
 
 // Both keys travel in the same header; the scheme says which one a tool accepts.
@@ -13,7 +12,7 @@ const keyScheme = (description: string) => ({ type: "apiKey" as const, in: "head
 const buyerKey = registry.registerComponent("securitySchemes", "BuyerKey", keyScheme("Orderly Shop's buyer key. Customer tools."));
 const sellerKey = registry.registerComponent("securitySchemes", "SellerKey", keyScheme("Orderly Owner's seller key. Owner tools."));
 
-// Which key each tool accepts. Mirrors requireRole in src/routes; keep the two in step.
+// Which key each tool accepts.
 export const security = {
   buyer: [{ [buyerKey.name]: [] }],
   seller: [{ [sellerKey.name]: [] }],

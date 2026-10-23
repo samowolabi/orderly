@@ -1,8 +1,7 @@
 import { OpenApiGeneratorV3 } from "@asteasolutions/zod-to-openapi";
 import { registry } from "./registry";
 
-// The OpenAPI module owns its schemas and path registration. It does not
-// import Express routes or application controllers.
+// Importing the path modules registers every operation.
 import "./paths/catalog";
 import "./paths/orders";
 

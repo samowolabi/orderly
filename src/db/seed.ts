@@ -5,8 +5,7 @@ import { pool, withTransaction } from "./pool";
 
 // Kola Gadgets: a made-up Lagos phone and gadget store. All data is fictional.
 
-// The demo prices are Lagos prices, so the seed states its currency as data
-// rather than taking BUSINESS_CURRENCY (a USD config would otherwise get $650,000 iPhones).
+// The demo prices are naira, so the seed states its currency instead of using BUSINESS_CURRENCY.
 const SEED_CURRENCY = "NGN";
 
 type SeedStore = {

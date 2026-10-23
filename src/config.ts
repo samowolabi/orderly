@@ -1,7 +1,7 @@
 import "dotenv/config";
 import { z } from "zod";
 
-// Validates BUSINESS_CURRENCY at startup; kept here so config has no app imports.
+// Validates BUSINESS_CURRENCY as an ISO 4217 code Intl recognises.
 const isCurrencyCode = (code: string) => Intl.supportedValuesOf("currency").includes(code);
 
 // Validates BUSINESS_COUNTRY as an ISO 3166 region Intl recognises.
@@ -29,13 +29,13 @@ const Env = z.object({
   PAYSTACK_SECRET_KEY: z
     .string()
     .startsWith("sk_test_", "Orderly only runs with a Paystack test key"),
-  // Overridable so local tests can point at dev/fake-paystack.ts.
+  // Paystack API origin.
   PAYSTACK_BASE_URL: z.string().url().default("https://api.paystack.co"),
 
   BUYER_API_KEY: z.string().min(16),
   SELLER_API_KEY: z.string().min(16),
 
-  // No default: a business name can't be guessed, and a wrong one would reach customers.
+  // Name customers see on receipts and in agent replies; required, never guessed.
   BUSINESS_NAME: z.string().trim().min(1, "set the business name customers will see"),
   // Two-letter country for new store addresses; addresses here leave it off when formatted.
   BUSINESS_COUNTRY: z

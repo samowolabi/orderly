@@ -56,7 +56,7 @@ Every response has the shape `{ ok, data, error: { code, message_for_agent } }`.
 - Production: `PUBLIC_URL` is required when `NODE_ENV=production`, so the spec's server URL is the public https address. The app trusts one proxy hop for `X-Forwarded-Proto`.
 - `npm run openapi -- <public url>` writes `openapi.json` for Chord (gitignored); the running API also serves it at `/openapi.json`. The independent `src/openapi/` module owns the spec, and each `operationId` is the Chord tool name.
 - `POST /webhooks/paystack` is Paystack infrastructure, not a Chord tool, so it must stay out of OpenAPI. It needs the raw request body to validate `x-paystack-signature` before processing JSON.
-- Curl tests: `npm run fake-paystack` (a local stand-in on :4010 that can decline, fail or go down on demand), start the API with `PAYSTACK_BASE_URL=http://localhost:4010 npm run dev`, run `npm run db:seed`, then `npm run test:api`. Then repeat the happy path against real Paystack test mode.
+- Curl tests: `npm run fake-paystack` (a local stand-in on :4010 that can decline, fail or go down on demand), start the API with `PAYSTACK_BASE_URL=http://localhost:4010 npm run dev`, run `npm run db:seed`, then `npm run test:api` (set `API=http://localhost:<port>` to test a server on another port). Then repeat the happy path against real Paystack test mode.
 
 ## Build order
 1. Database and seed data

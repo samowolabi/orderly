@@ -2,7 +2,6 @@
 # Creates the dev role and database in your main local Postgres, using the
 # user, password and database name in .env's DATABASE_URL.
 # Asks once for the postgres superuser password.
-# Usage: npm run db:create
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

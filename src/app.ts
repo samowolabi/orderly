@@ -25,8 +25,7 @@ export function createApp() {
     ok(res, { status: "up" });
   });
 
-  // Public, so Chord can import it by URL. Holds no secrets.
-  // Serves a public OpenAPI document using the current request host as fallback.
+  // Serves the OpenAPI document without a key so Chord can import it by URL; it holds no secrets.
   app.get("/openapi.json", (req, res) => {
     res.json(openApiDocument(config().PUBLIC_URL ?? `${req.protocol}://${req.get("host")}`));
   });
