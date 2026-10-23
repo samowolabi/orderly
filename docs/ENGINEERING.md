@@ -144,6 +144,7 @@ The API enforces the rules, so a confused or tricked agent still can't break the
 - **No overselling.** Stock is held with one atomic update: `UPDATE stock SET available = available - qty WHERE available >= qty`.
 - **Paystack is the truth.** Signed webhooks and explicit verification both check status, amount and currency before marking an order paid.
 - **Secrets stay on the server.** The Paystack test key lives only in the API's environment, never in Chord.
+- **Known limitation in Chord.** Imported API tools reach every teammate, and each connection holds one key. So Orderly Shop can see the owner tools, which carry the seller key. The API still enforces the key on every call, but on the shop side only the skill keeps the agent from changing prices or stock. Going live needs per-teammate tool access in Chord, or a teammate identity the API can check.
 
 **When things fail**
 

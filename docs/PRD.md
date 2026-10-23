@@ -90,3 +90,5 @@ Orderly is ready when every check below passes in the WhatsApp simulator.
 | Paystack needs a customer email that WhatsApp buyers rarely give | Use a placeholder in test mode; ask for an email before going live |
 
 **Still open:** anyone with the owner chat link acts as the owner. That is fine for the demo, but going live needs owner access locked to the owner's number.
+
+**Also open:** in Chord, every teammate can call every imported tool, so the customer assistant can see the owner tools. Its instructions forbid using them, and the simulator tests try to talk it into a price change, but going live needs Chord to limit tools per teammate.
