@@ -19,7 +19,7 @@ registry.registerPath({
   operationId: "add_store",
   summary: "Add a store or branch (owner only)",
   description:
-    "Creates a new store. Every product gets a stock line of 0 there; use update_stock to add units. Turn hours like 'Mon to Sat, 9 to 7' into days and 24-hour times, and read them back to the owner before calling.",
+    "Creates a new store. Every product gets a stock line of 0 there; use update_product to add units. Turn hours like 'Mon to Sat, 9 to 7' into days and 24-hour times, and read them back to the owner before calling.",
   security: security.seller,
   request: { body: body(schema.AddStoreBody) },
   responses: { 201: json(schema.Store, "The new store"), ...errorResponses },
@@ -72,24 +72,6 @@ const StockResult = z.object({
   available: z.number().int(),
   held_for_unpaid_orders: z.number().int(),
   on_hand: z.number().int(),
-});
-
-registry.registerPath({
-  method: "post",
-  path: "/products/{id}/stock",
-  operationId: "update_stock",
-  summary: "Change stock at one store (owner only)",
-  description:
-    "Changes stock at a single store. For several stores, or stock plus other changes, use update_product instead. Send exactly one of change or set_to. Use change to add or remove units ('add 3 more to Lekki' is change: 3), or set_to after a physical count. Units held for unpaid orders are counted as on hand.",
-  security: security.seller,
-  request: { params: schema.ProductParams, body: body(schema.UpdateStockBody) },
-  responses: {
-    200: json(
-      StockResult.extend({ product: schema.Product }),
-      "Stock after the change",
-    ),
-    ...errorResponses,
-  },
 });
 
 registry.registerPath({

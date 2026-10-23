@@ -9,7 +9,7 @@ flowchart TB
   OC[Owner chat] --> OO
   CW[Customer on WhatsApp] --> OS
   subgraph Chord
-    OO[Orderly Owner<br/>9 owner tools]
+    OO[Orderly Owner<br/>8 owner tools]
     OS[Orderly Shop<br/>5 customer tools]
   end
   OO -- seller key --> API
@@ -84,7 +84,6 @@ Each endpoint becomes one tool in Chord when the OpenAPI spec is imported. Every
 | add_store | `POST /stores` | No | Yes | A new store or branch, with automatic address geocoding when no location is supplied |
 | update_store | `PATCH /stores/{id}` | No | Yes | Change a store's name, structured address, map pin or opening hours |
 | add_product | `POST /products` | No | Yes | One or more new products with stock at any stores, added together or not at all |
-| update_stock | `POST /products/{id}/stock` | No | Yes | Change stock at one store |
 | update_product | `PATCH /products/{id}` | No | Yes | Change any mix of price, discount floor, name, variant, on-sale status and stock at several stores, in one call |
 | list_orders | `GET /orders` | No | Yes | Orders by status and store, including handed-over ones |
 
@@ -128,7 +127,7 @@ Both teammates exist with placeholder skills; the real skills go in once the API
 | Role | Sales assistant | Store operations assistant |
 | Autonomy | Act independently | Act independently |
 | Chat link business name | Kola Gadgets | Kola Gadgets (Owner) |
-| API tools | 5 customer tools | 9 owner tools |
+| API tools | 5 customer tools | 8 owner tools |
 | Built-in tools | schedule_reminder, handover_to_human | none yet |
 | Escalation triggers | Payment failed twice; paid twice; complaint; question it cannot answer; discount request | none |
 | Other | Credit budget | Credit budget; accepts requests from teammates |

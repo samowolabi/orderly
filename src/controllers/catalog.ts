@@ -6,7 +6,6 @@ import {
   ProductParams,
   StoreParams,
   UpdateProductBody,
-  UpdateStockBody,
   UpdateStoreBody,
 } from "../openapi/schemas/catalog";
 import * as catalogService from "../services/catalog";
@@ -40,13 +39,6 @@ export async function listProducts(request: Request, response: Response) {
 export async function addProduct(request: Request, response: Response) {
   const input = parse(AddProductBody, request.body);
   ok(response, await catalogService.addProducts(input.products), 201);
-}
-
-// Validates and applies a stock adjustment for one store.
-export async function updateStock(request: Request, response: Response) {
-  const { id } = parse(ProductParams, request.params);
-  const input = parse(UpdateStockBody, request.body);
-  ok(response, await catalogService.updateStock(id, input));
 }
 
 // Validates and applies any mix of product, price, sale status and stock changes.

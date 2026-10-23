@@ -64,7 +64,7 @@ expire() { $PSQL -c "UPDATE orders SET expires_at = now() - interval '1 second' 
 
 echo "== Infrastructure"
 call none GET /health;                       check "health checks the database" 200 '.ok == true and .data.status == "up"'
-call none GET /openapi.json;                 check "OpenAPI exposes 11 Chord tools" 200 '([.paths[] | to_entries[]] | length) == 11 and .paths["/stores"].get.operationId == "list_stores" and (.paths | has("/webhooks/paystack") | not)'
+call none GET /openapi.json;                 check "OpenAPI exposes 10 Chord tools" 200 '([.paths[] | to_entries[]] | length) == 10 and (.paths | has("/products/{id}/stock") | not) and .paths["/stores"].get.operationId == "list_stores" and (.paths | has("/webhooks/paystack") | not)'
 
 echo "== Auth and roles"
 call none GET /stores;                         check "no key is refused" 401 '.ok == false and .error.code == "unauthorized"'
@@ -144,12 +144,14 @@ call "$SELLER" POST /products '{"products":[{"name":"Nokia 3310","price":30000},
 check "same product twice in one request" 400 '.error.message_for_agent | test("more than once")'
 call "$SELLER" POST /products '{"products":[]}'; check "empty batch" 400
 
-echo "== Owner: update_stock and update_product"
-call "$SELLER" POST /products/IPHONE-16-256GB/stock '{"store_id":"lekki","change":3}'; check "add 3 more to Lekki" 200 '.data.available == 4'
-call "$SELLER" POST /products/IPHONE-16-256GB/stock '{"store_id":"lekki","change":-10}'; check "can't go below zero" 409 '.error.code == "stock_below_zero"'; msg
-call "$SELLER" POST /products/IPHONE-16-256GB/stock '{"store_id":"lekki","change":1,"set_to":3}'; check "change and set_to together" 400
-call "$SELLER" POST /products/IPHONE-16-256GB/stock '{"store_id":"lekki","set_to":2}'; check "set_to after a count" 200 '.data.available == 2 and .data.on_hand == 2'
-call "$SELLER" POST /products/NOPE/stock '{"store_id":"lekki","change":1}'; check "unknown product" 404
+echo "== Owner: update_product"
+call "$SELLER" PATCH /products/IPHONE-16-256GB '{"stock":[{"store_id":"lekki","change":3}]}'; check "add 3 more to Lekki" 200 '.data.stock == [{"store_id":"lekki","available":4,"held_for_unpaid_orders":0,"on_hand":4}]'
+call "$SELLER" PATCH /products/IPHONE-16-256GB '{"stock":[{"store_id":"lekki","change":-10}]}'; check "can't go below zero" 409 '.error.code == "stock_below_zero"'; msg
+call "$SELLER" PATCH /products/IPHONE-16-256GB '{"stock":[{"store_id":"lekki","change":1,"set_to":3}]}'; check "change and set_to together" 400
+call "$SELLER" PATCH /products/IPHONE-16-256GB '{"stock":[{"store_id":"lekki","set_to":2}]}'; check "set_to after a count" 200 '.data.stock[0].available == 2 and .data.stock[0].on_hand == 2'
+call "$SELLER" PATCH /products/IPHONE-16-256GB '{"stock":[{"store_id":"abuja","change":1}]}'; check "unknown store in a stock change" 404 '.error.code == "store_not_found"'
+call "$SELLER" PATCH /products/NOPE '{"stock":[{"store_id":"lekki","change":1}]}'; check "unknown product" 404
+call "$SELLER" POST /products/IPHONE-16-256GB/stock '{"store_id":"lekki","change":1}'; check "old update_stock endpoint is gone" 404 '.error.code == "not_found"'
 call "$SELLER" PATCH /products/IP13-128 '{"price":630000}'; check "update price" 200 '.data.previous.price.amount == 650000 and .data.product.price.amount == 630000 and .data.product.price.display == "₦630,000"'
 call "$SELLER" PATCH /products/IP13-128 '{"price":600000}'; check "price below floor lowers the floor" 200 '.data.product.min_price.amount == 600000'
 call "$SELLER" PATCH /products/IP13-128 '{"price":650000,"min_price":620000}'; check "restore price and floor" 200 '.data.product.price.amount == 650000'

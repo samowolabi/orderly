@@ -77,7 +77,7 @@ type NewProductInput = {
   }[];
 };
 
-type UpdateStockInput = {
+type StockChangeInput = {
   store_id: string;
 
   change?: number;
@@ -93,7 +93,7 @@ type UpdateProductInput = {
 
   active?: boolean;
 
-  stock?: UpdateStockInput[];
+  stock?: StockChangeInput[];
 };
 
 // Loads products and their store-level stock; off-sale products only when asked for.
@@ -451,7 +451,7 @@ export async function addProducts(products: NewProductInput[]) {
 }
 
 // Applies one store's stock change inside a caller's transaction; held units count as on hand.
-async function applyStockChange(db: Db, productId: string, input: UpdateStockInput) {
+async function applyStockChange(db: Db, productId: string, input: StockChangeInput) {
   await assertStore(db, input.store_id);
   const { rows } = await db.query<{ available: number; held: number }>(
     `SELECT st.available,
@@ -481,17 +481,6 @@ async function applyStockChange(db: Db, productId: string, input: UpdateStockInp
   ]);
   await logEvent(db, null, "stock_updated", { product_id: productId, store_id: input.store_id, from: current.available, to: next });
   return { store_id: input.store_id, available: next, held_for_unpaid_orders: current.held, on_hand: next + current.held };
-}
-
-// Adjusts available stock at one store.
-export async function updateStock(id: string, input: UpdateStockInput) {
-  await expireStaleOrders(pool);
-
-  // Applies the change and reloads the product in one transaction.
-  return withTransaction(async (db) => {
-    const change = await applyStockChange(db, id, input);
-    return { product: await loadProduct(db, id, "seller"), ...change };
-  });
 }
 
 // Changes any mix of a product's name, variant, price, floor, sale status and stock in one transaction.

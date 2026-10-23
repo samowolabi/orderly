@@ -226,7 +226,7 @@ export const AddProductBody = z.object({
   products: z.array(NewProduct).min(1).max(20).openapi({ description: "One or more products, added together or not at all" }),
 });
 
-export const UpdateStockBody = z
+const StockChange = z
   .object({
     store_id: z.string().openapi({ example: "lekki" }),
     change: z.number().int().min(-10_000).max(10_000).optional()
@@ -248,7 +248,7 @@ export const UpdateProductBody = z
       description: "New discount floor, same currency. If only price is sent and drops below the floor, the floor drops with it.",
     }),
     active: z.boolean().optional().openapi({ description: "false takes the product off sale; true puts it back" }),
-    stock: z.array(UpdateStockBody).min(1).max(50).optional().openapi({ description: "Stock changes, one entry per store" }),
+    stock: z.array(StockChange).min(1).max(50).optional().openapi({ description: "Stock changes, one entry per store" }),
   })
   // Requires an update to change something.
   .refine((input) => Object.values(input).some(
