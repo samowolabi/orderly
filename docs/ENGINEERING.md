@@ -61,9 +61,9 @@ Nine tables. Stores are rows, not fixed names, so an owner can run any number of
 | store_hours | When each store is open, in `BUSINESS_TIMEZONE` | store_id, weekday (1 = Monday), opens, closes; a day with no row is closed |
 | products | What the business sells | id (e.g. IP13-128), name, variant, price_subunit, min_price_subunit, currency |
 | stock | Units per product per store | product_id, store_id, available (never below 0) |
-| orders | Each purchase: one store, one payment link | id (e.g. ORD-1042), store_id, amount_subunit (the total), currency, buyer_name, status, payment_references, paid_reference, expires_at |
-| order_items | The lines of an order | order_id, line, product_id, quantity, unit_price_subunit, list_price_subunit (before haggling), amount_subunit |
-| delivery_quotes | A priced trip from a store to a customer's address; an order uses at most one | id (e.g. DQ-3F9A2C1B), store_id, address, phone, distance_m, duration_s, fee_subunit, currency, prep_minutes, expires_at |
+| orders | Each purchase: one payment link; store_id is the main store (where a delivery leaves from, or the first pickup store) | id (e.g. ORD-1042), store_id, amount_subunit (the total), currency, buyer_name, status, payment_references, paid_reference, expires_at |
+| order_items | The lines of an order, each held at its own store | order_id, line, product_id, store_id, quantity, unit_price_subunit, list_price_subunit (before haggling), amount_subunit |
+| delivery_quotes | A priced trip from a store to a customer's address; an order uses at most one | id (e.g. DQ-3F9A2C1B), store_id, address, phone, distance_m, duration_s, fee_subunit, currency, prep_minutes, item_stores (where each product is held), transfer_minutes (bringing items over from other stores), expires_at |
 | delivery_settings | The owner's delivery pricing (one row; none means the env defaults) | base_fee_subunit, fee_per_km_subunit, round_to_subunit, max_km, prep_minutes, currency |
 | events | A log of everything that happened | order_id, type, detail, created_at |
 
@@ -81,7 +81,7 @@ Each endpoint becomes one tool in Chord when the OpenAPI spec is imported. Every
 | --- | --- | --- | --- | --- |
 | list_stores | `GET /stores` | Yes | Yes | Store names, structured addresses, map links, opening hours and whether each is open now |
 | list_products | `GET /products` | Yes | Yes | Prices and stock at each store; filter by store |
-| quote_delivery | `POST /delivery/quote` | Yes | No | Prices delivery from the nearest store that has everything: driving distance, traffic-aware time, fee and total |
+| quote_delivery | `POST /delivery/quote` | Yes | No | Prices delivery from one store (the nearest with everything, or the nearest with some of it, the rest brought over first): driving distance, traffic-aware time, fee and total |
 | create_order | `POST /orders` | Yes | No | Holds one or more items at the chosen store for 30 minutes (all or nothing) and returns one Paystack link for the total |
 | verify_payment | `POST /orders/{id}/verify` | Yes | No | Checks Paystack, confirms the order, returns the receipt |
 | get_receipt | `GET /orders/{id}/receipt` | Yes | Yes | The receipt for a paid order |

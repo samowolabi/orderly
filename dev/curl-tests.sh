@@ -185,7 +185,7 @@ call "$BUYER" PATCH /products/IPHONE-16-256GB '{"active":false}';               
 echo "== Happy path: order, 'I paid' too early, pay, verify, receipt"
 before=$(stock IP13-128 ikeja)
 call "$BUYER" POST /orders '{"items":[{"product_id":"ip13-128"}],"store_id":"Ikeja","buyer_name":"Tunde Bakare"}'
-check "create_order" 201 '.data.status == "pending_payment" and (.data.payment_url | startswith("http")) and .data.minutes_left == 30 and .data.amount == {"amount":650000,"currency":"NGN","display":"₦650,000"} and .data.items == [{"product":{"id":"IP13-128","name":"iPhone 13","variant":"128GB"},"quantity":1,"unit_price":{"amount":650000,"currency":"NGN","display":"₦650,000"},"amount":{"amount":650000,"currency":"NGN","display":"₦650,000"},"saving":{"amount":0,"currency":"NGN","display":"₦0"}}]'
+check "create_order" 201 '.data.status == "pending_payment" and (.data.payment_url | startswith("http")) and .data.minutes_left == 30 and .data.amount == {"amount":650000,"currency":"NGN","display":"₦650,000"} and .data.items == [{"product":{"id":"IP13-128","name":"iPhone 13","variant":"128GB"},"store":{"id":"ikeja","name":"Kola Gadgets Ikeja"},"quantity":1,"unit_price":{"amount":650000,"currency":"NGN","display":"₦650,000"},"amount":{"amount":650000,"currency":"NGN","display":"₦650,000"},"saving":{"amount":0,"currency":"NGN","display":"₦0"}}]'
 O1=$(jq -r .data.order_id <<<"$BODY"); echo "        order $O1"
 check "a store_id order is pickup, with no delivery" 201 '.data.fulfilment == "pickup" and .data.delivery == null'
 check "payment checks: 20s, doubling, last a minute before expiry, one nudge" 201 '(.data.created_at | sub("\\.[0-9]+Z$"; "Z") | fromdate) as $t0 | (.data.expires_at | sub("\\.[0-9]+Z$"; "Z") | fromdate) as $end | [.data.payment_checks[].at | sub("\\.[0-9]+Z$"; "Z") | fromdate - $t0] == [20, 40, 80, 160, 320, 640, 1280, ($end - $t0 - 60)] and ([.data.payment_checks[] | select(.nudge)] | length == 1) and (.data.payment_checks[6].nudge)'
@@ -262,8 +262,13 @@ call "$BUYER" POST /delivery/quote '{"items":[{"product_id":"IP15P-256"}],"addre
 check "only Ikeja has it, so it comes from Ikeja and costs more" 201 '.data.store.id == "ikeja" and .data.fee.amount > 1600 and .data.distance_km > 20'
 call "$BUYER" POST /delivery/quote '{"items":[{"product_id":"ANKER-20K"}],"address":"'"$LEKKI_ADDR"'","phone":"08031234567","store_id":"ikeja"}'
 check "customer insists on Ikeja" 201 '.data.store.id == "ikeja"'
-call "$BUYER" POST /delivery/quote '{"items":[{"product_id":"AIRPODS-PRO2"},{"product_id":"IP15P-256"}],"address":"'"$LEKKI_ADDR"'","phone":"08031234567"}'
-check "no single store has everything" 409 '.error.code == "out_of_stock" and (.error.message_for_agent | test("No single store"))'
+call "$BUYER" POST /delivery/quote '{"items":[{"product_id":"AIRPODS-PRO2"},{"product_id":"APL-20W"}],"address":"'"$LEKKI_ADDR"'","phone":"08031234567"}'
+check "no store has both: delivered from Lekki, the charger comes over from Ikeja first" 201 '.data.store.id == "lekki" and .data.brought_from == [{"id":"ikeja","name":"Kola Gadgets Ikeja"}] and .data.fee.amount == 1600 and .data.minutes > 22 and .data.total.amount == 339600'; msg
+QM=$(jq -r .data.quote_id <<<"$BODY")
+call "$BUYER" POST /orders '{"items":[{"product_id":"AIRPODS-PRO2"},{"product_id":"APL-20W"}],"delivery_quote_id":"'"$QM"'","buyer_name":"Kemi"}'
+check "one order, each item held at its own store, one link" 201 '.data.store.id == "lekki" and ([.data.items[].store.id] == ["lekki","ikeja"]) and .data.amount.amount == 339600 and (.data.payment_url | startswith("http"))'
+call "$BUYER" POST /delivery/quote '{"items":[{"product_id":"IP15P-256","quantity":2}],"address":"'"$LEKKI_ADDR"'","phone":"08031234567"}'
+check "not enough anywhere" 409 '.error.code == "out_of_stock" and (.error.message_for_agent | test("any store"))'; msg
 call "$BUYER" POST /delivery/quote '{"items":[{"product_id":"ANKER-20K"}],"address":"5 Nowhere Close","phone":"08031234567"}'
 check "address not on the map" 422 '.error.code == "address_not_found"'; msg
 call "$BUYER" POST /delivery/quote '{"items":[{"product_id":"ANKER-20K"}],"address":"1 Lost Road, Atlantis","phone":"08031234567"}'
@@ -335,6 +340,21 @@ pay "$OH"
 call "$BUYER" POST "/orders/$OH/verify"
 check "the receipt shows the saving" 200 '.data.outcome == "paid" and (.data.receipt.text | test("₦205,000 \\(you saved ₦5,000\\)")) and .data.receipt.items[0].saving.amount == 5000'
 jq -r .data.receipt.text <<<"$BODY" | sed 's/^/        | /'
+
+echo "== Pickup from two stores: one order, one link, one receipt"
+call "$BUYER" POST /orders '{"items":[{"product_id":"APL-20W"},{"product_id":"AIRPODS-PRO2","store_id":"lekki"}],"store_id":"ikeja","buyer_name":"Kemi"}'
+check "each item held where it is" 201 '([.data.items[].store.id] == ["ikeja","lekki"]) and .data.amount.amount == 338000 and .data.fulfilment == "pickup"'
+OS=$(jq -r .data.order_id <<<"$BODY")
+call "$SELLER" GET '/products?product_id=AIRPODS-PRO2'
+check "Lekki's AirPods are held (4 less 1 for the delivery, 1 here)" 200 '(.data.products[0].stores[] | select(.store_id == "lekki") | .available) == 2'
+pay "$OS"
+call "$BUYER" POST "/orders/$OS/verify"
+check "the receipt says where to collect each item" 200 '.data.outcome == "paid" and (.data.receipt.text | test("Collect at Kola Gadgets Ikeja")) and (.data.receipt.text | test("Collect at Kola Gadgets Lekki")) and .data.receipt.items[1].collect_at.name == "Kola Gadgets Lekki"'
+jq -r .data.receipt.text <<<"$BODY" | sed 's/^/        | /'
+call "$BUYER" POST /orders '{"items":[{"product_id":"APL-20W"},{"product_id":"AIRPODS-PRO2"}],"buyer_name":"Kemi"}'
+check "no store at all is refused" 400
+call "$BUYER" POST /orders '{"items":[{"product_id":"APL-20W","store_id":"ikeja"},{"product_id":"AIRPODS-PRO2","store_id":"lekki"}],"buyer_name":"Kemi"}'
+check "a store on every item is enough" 201 '([.data.items[].store.id] == ["ikeja","lekki"])'
 
 echo "== Bad order input"
 call "$BUYER" POST /orders '{"items":[{"product_id":"IP13-128"}],"store_id":"ikeja"}'; check "missing buyer_name" 400 '.error.message_for_agent | test("buyer_name is required")'; msg
@@ -426,11 +446,11 @@ mode '{"initialize":"ok"}'
 [ "$(stock ANKER-20K ikeja)" = "$anker" ] && { PASS=$((PASS+1)); echo "  ok    held unit released after link failure"; } || { FAILS=$((FAILS+1)); echo "  FAIL  stock: $(stock ANKER-20K ikeja)"; }
 
 echo "== Owner: list_orders"
-call "$SELLER" GET /orders;                   check "today's orders and summary" 200 '.data.period == "today" and .data.summary.counts.paid == 7 and .data.summary.paid_totals == [{"amount":3666600,"currency":"NGN","display":"₦3,666,600"}]'
+call "$SELLER" GET /orders;                   check "today's orders and summary" 200 '.data.period == "today" and .data.summary.counts.paid == 8 and .data.summary.paid_totals == [{"amount":4004600,"currency":"NGN","display":"₦4,004,600"}]'
 check "list_orders shows each order's lines" 200 '[.data.orders[] | select(.order_id == "'"$OM"'") | .items[].product.id] == ["IP14-128", "ANKER-20K"]'
 jq -c '.data.summary' <<<"$BODY" | sed 's/^/        /'
 check "paid_no_stock and mismatch need attention" 200 '[.data.needs_attention[].order_id] | contains(["'"$RACE"'", "'"$O5"'"])'
-call "$SELLER" GET '/orders?status=paid&store_id=lekki'; check "filter by status and store" 200 '[.data.orders[] | .status, .store.id] | unique == ["lekki","paid"]'
+call "$SELLER" GET '/orders?status=paid&store_id=lekki'; check "filter by status and store, including orders with an item at that store" 200 '([.data.orders[].status] | unique == ["paid"]) and all(.data.orders[]; .store.id == "lekki" or any(.items[]; .store.id == "lekki")) and any(.data.orders[]; .store.id == "ikeja")'
 call "$SELLER" GET '/orders?period=yesterday'; check "bad period" 400
 
 echo

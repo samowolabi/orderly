@@ -17,41 +17,47 @@ export async function holdStock(db: Db, productId: string, storeId: string, quan
   return rowCount === 1;
 }
 
-// An order line; price is a haggled unit price in the main unit, when one was agreed.
-export type HoldItem = { product_id: string; quantity: number; price?: number };
+// An order line; price is a haggled unit price in the main unit, when one was agreed, and
+// store_id the store to hold it at, when it differs from the order's store.
+export type HoldItem = { product_id: string; quantity: number; price?: number; store_id?: string };
+
+// A line with the store it's held at.
+export type StoreLine = HoldItem & { store_id: string };
 
 // Adds up repeats of the same product, keeping the order the customer asked for them in
-// and the first agreed price given for it.
+// and the first agreed price and store given for it.
 export function mergeItems(items: HoldItem[]): HoldItem[] {
   const merged = new Map<string, HoldItem>();
   for (const item of items) {
     const seen = merged.get(item.product_id);
     const price = seen?.price ?? item.price;
+    const storeId = seen?.store_id ?? item.store_id;
     merged.set(item.product_id, {
       product_id: item.product_id,
       quantity: (seen?.quantity ?? 0) + item.quantity,
       ...(price !== undefined ? { price } : {}),
+      ...(storeId !== undefined ? { store_id: storeId } : {}),
     });
   }
   return [...merged.values()];
 }
 
-// Holds every line of an order at one store, or none of them. Returns the first line that
+// Holds every line of an order at its store, or none of them. Returns the first line that
 // couldn't be held; the caller must roll back its transaction (or savepoint) when it does.
-export async function holdItems(db: Db, storeId: string, items: HoldItem[]): Promise<HoldItem | null> {
-  for (const item of items) {
-    if (!(await holdStock(db, item.product_id, storeId, item.quantity))) return item;
+export async function holdItems(db: Db, lines: StoreLine[]): Promise<StoreLine | null> {
+  for (const line of lines) {
+    if (!(await holdStock(db, line.product_id, line.store_id, line.quantity))) return line;
   }
   return null;
 }
 
-// Returns an order's held units to its store's available stock.
-async function releaseOrderStock(db: Db, orderId: string, storeId: string) {
+// Returns an order's held units to the stock of the stores they were held at.
+async function releaseOrderStock(db: Db, orderId: string) {
   await db.query(
     `UPDATE stock st SET available = st.available + i.quantity, updated_at = now()
      FROM order_items i
-     WHERE i.order_id = $1 AND st.product_id = i.product_id AND st.store_id = $2`,
-    [orderId, storeId],
+     WHERE i.order_id = $1 AND st.product_id = i.product_id AND st.store_id = i.store_id`,
+    [orderId],
   );
 }
 
@@ -61,9 +67,9 @@ export async function expireStaleOrders(db: Db): Promise<number> {
     WITH expired AS (
       UPDATE orders SET status = 'expired', updated_at = now()
       WHERE status = 'pending_payment' AND expires_at <= now()
-      RETURNING id, store_id
+      RETURNING id
     ), lines AS (
-      SELECT e.id, e.store_id, i.product_id, i.quantity
+      SELECT e.id, i.store_id, i.product_id, i.quantity
       FROM expired e JOIN order_items i ON i.order_id = e.id
     ), restocked AS (
       UPDATE stock st SET available = st.available + l.qty, updated_at = now()
@@ -85,7 +91,7 @@ export async function whenStockFrees(db: Db, productId: string, storeId: string,
      LEFT JOIN LATERAL (
        SELECT i.quantity, o.expires_at
        FROM order_items i JOIN orders o ON o.id = i.order_id
-       WHERE i.product_id = st.product_id AND o.store_id = st.store_id AND o.status = 'pending_payment'
+       WHERE i.product_id = st.product_id AND i.store_id = st.store_id AND o.status = 'pending_payment'
      ) held ON true
      WHERE st.product_id = $1 AND st.store_id = $2
      ORDER BY held.expires_at`,
@@ -106,10 +112,10 @@ export async function failOrder(db: Db, orderId: string, reason: string, detail:
   const { rows } = await db.query(
     `UPDATE orders SET status = 'failed', failure_reason = $2, updated_at = now()
      WHERE id = $1 AND status = 'pending_payment'
-     RETURNING store_id`,
+     RETURNING id`,
     [orderId, reason],
   );
   const held = rows[0];
-  if (held) await releaseOrderStock(db, orderId, held.store_id);
+  if (held) await releaseOrderStock(db, orderId);
   await logEvent(db, orderId, "order_failed", { reason, released: Boolean(held), ...detail });
 }

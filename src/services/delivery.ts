@@ -47,6 +47,8 @@ export type DeliveryQuoteRow = {
   fee_subunit: number;
   currency: string;
   prep_minutes: number;
+  item_stores: Record<string, string>;
+  transfer_minutes: number;
   expires_at: Date;
 };
 
@@ -121,20 +123,40 @@ export async function deliverySettings(input: SettingsInput) {
   return settingsView({ ...next, set_by_owner: true });
 }
 
-// Finds the stores that have every item in stock and a map pin to drive from.
-async function storesWithEverything(db: Db, items: HoldItem[], storeId?: string) {
-  const { rows } = await db.query<CandidateStore>(
-    `SELECT s.id, s.name, s.latitude, s.longitude
-     FROM stores s
-     WHERE s.active AND s.latitude IS NOT NULL AND ($3::text IS NULL OR s.id = $3)
-       AND NOT EXISTS (
-         SELECT 1 FROM unnest($1::text[], $2::int[]) AS want(product_id, quantity)
-         LEFT JOIN stock st ON st.store_id = s.id AND st.product_id = want.product_id
-         WHERE coalesce(st.available, 0) < want.quantity
-       )`,
-    [items.map((item) => item.product_id), items.map((item) => item.quantity), storeId ?? null],
+// What each store with a map pin has of the wanted products.
+async function stockByStore(db: Db, items: HoldItem[]) {
+  const { rows } = await db.query<CandidateStore & { product_id: string; available: number }>(
+    `SELECT s.id, s.name, s.latitude, s.longitude, st.product_id, st.available
+     FROM stores s JOIN stock st ON st.store_id = s.id
+     WHERE s.active AND s.latitude IS NOT NULL AND st.product_id = ANY($1::text[]) AND st.available > 0
+     ORDER BY s.id`,
+    [items.map((item) => item.product_id)],
   );
-  return rows;
+  const stores = new Map<string, CandidateStore & { has: Map<string, number> }>();
+  for (const row of rows) {
+    const store = stores.get(row.id) ?? { id: row.id, name: row.name, latitude: row.latitude, longitude: row.longitude, has: new Map() };
+    store.has.set(row.product_id, row.available);
+    stores.set(row.id, store);
+  }
+  return [...stores.values()];
+}
+
+// Which store each product is held at when a delivery leaves from `from`: there if it has
+// enough, otherwise the store with the most of it, to be brought over before the rider leaves.
+function assignStores(from: { id: string; has: Map<string, number> }, items: HoldItem[], stores: { id: string; has: Map<string, number> }[]) {
+  const assigned: Record<string, string> = {};
+  for (const item of items) {
+    if ((from.has.get(item.product_id) ?? 0) >= item.quantity) {
+      assigned[item.product_id] = from.id;
+      continue;
+    }
+    const source = stores
+      .filter((store) => (store.has.get(item.product_id) ?? 0) >= item.quantity)
+      .sort((a, b) => b.has.get(item.product_id)! - a.has.get(item.product_id)!)[0];
+    if (!source) return null;
+    assigned[item.product_id] = source.id;
+  }
+  return assigned;
 }
 
 // Quotes delivery from the nearest store that has everything, and stores the quote for create_order.
@@ -162,13 +184,27 @@ export async function quoteDelivery(input: QuoteInput) {
     const store = (await pool.query("SELECT 1 FROM stores WHERE id = $1 AND active", [input.store_id])).rows[0];
     if (!store) throw new ApiError(404, "store_not_found", `No store ${input.store_id}. Call list_stores for the right id.`);
   }
-  const candidates = await storesWithEverything(pool, items, input.store_id);
-  if (!candidates.length) {
-    const where = input.store_id ? "That store doesn't" : "No single store";
+  // Every item must be in stock somewhere; the delivery then leaves from one store, and
+  // anything that store lacks is brought over from another store first.
+  const stores = await stockByStore(pool, items);
+  const missing = items.find((item) => !stores.some((store) => (store.has.get(item.product_id) ?? 0) >= item.quantity));
+  if (missing) {
+    const name = products.find((product) => product.id === missing.product_id)!.name;
     throw new ApiError(
       409,
       "out_of_stock",
-      `${where} has all of these in stock right now, so there's nothing to deliver from. Call list_products to see which store has what, and offer to deliver what one store has, or pickup.`,
+      `${name} isn't in stock at any store right now, so it can't be delivered. Say so, and offer to deliver the rest or something similar from list_products.`,
+    );
+  }
+  const plans = stores
+    .filter((store) => (input.store_id ? store.id === input.store_id : true))
+    .map((store) => ({ store, item_stores: assignStores(store, items, stores)! }))
+    .filter((plan) => plan.item_stores);
+  if (!plans.length) {
+    throw new ApiError(
+      422,
+      "no_route",
+      `${input.store_id} has none of these items, or no map pin to deliver from. Leave out store_id to deliver from the nearest store, or offer pickup.`,
     );
   }
 
@@ -190,18 +226,24 @@ export async function quoteDelivery(input: QuoteInput) {
 
   let routes: (DrivingRoute | null)[];
   try {
-    routes = await Promise.all(candidates.map((store) => routing.drivingRoute(store, destination)));
+    routes = await Promise.all(plans.map((plan) => routing.drivingRoute(plan.store, destination)));
   } catch (error) {
     if (!(error instanceof RoutingProviderUnavailable)) throw error;
     console.error(`[routing] delivery quote: ${error.message}`);
     throw new ApiError(503, "maps_unavailable", "The map service isn't answering, so delivery can't be priced right now. Offer pickup, or try again in a minute.");
   }
 
-  // The nearest store is the one with the shortest drive right now.
-  const options = candidates
-    .map((store, index) => ({ store, route: routes[index] }))
-    .filter((option): option is { store: CandidateStore; route: DrivingRoute } => option.route !== null)
-    .sort((a, b) => a.route.durationSeconds - b.route.durationSeconds);
+  // Prefer a store that has everything, so nothing has to be brought over; then the
+  // shortest drive right now.
+  const transfers = (itemStores: Record<string, string>, from: string) => new Set(Object.values(itemStores).filter((id) => id !== from));
+  const options = plans
+    .map((plan, index) => ({ ...plan, route: routes[index] }))
+    .filter((option): option is typeof option & { route: DrivingRoute } => option.route != null)
+    .sort(
+      (a, b) =>
+        transfers(a.item_stores, a.store.id).size - transfers(b.item_stores, b.store.id).size ||
+        a.route.durationSeconds - b.route.durationSeconds,
+    );
   const best = options[0];
   if (!best) {
     throw new ApiError(422, "no_route", "There's no road route from any store to that address. Check the address with the customer, or offer pickup.");
@@ -217,11 +259,25 @@ export async function quoteDelivery(input: QuoteInput) {
     );
   }
 
+  // Items from other stores travel to the delivering store at the same time; the slowest
+  // of those drives adds to the wait.
+  const sources = [...transfers(best.item_stores, best.store.id)].map((id) => stores.find((store) => store.id === id)!);
+  let transferMinutes = 0;
+  try {
+    const legs = await Promise.all(sources.map((source) => routing.drivingRoute(source, best.store)));
+    transferMinutes = Math.max(0, ...legs.map((leg) => (leg ? Math.ceil(leg.durationSeconds / 60) : 0)));
+  } catch (error) {
+    if (!(error instanceof RoutingProviderUnavailable)) throw error;
+    console.error(`[routing] delivery transfer: ${error.message}`);
+    throw new ApiError(503, "maps_unavailable", "The map service isn't answering, so delivery can't be priced right now. Offer pickup, or try again in a minute.");
+  }
+
   const fee = deliveryFee(best.route.distanceMeters, settings);
   const id = `DQ-${randomBytes(4).toString("hex").toUpperCase()}`;
   const { rows } = await pool.query<{ expires_at: Date }>(
-    `INSERT INTO delivery_quotes (id, store_id, address, phone, latitude, longitude, distance_m, duration_s, fee_subunit, currency, prep_minutes, expires_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, now() + make_interval(mins => $12::int))
+    `INSERT INTO delivery_quotes (id, store_id, address, phone, latitude, longitude, distance_m, duration_s, fee_subunit, currency, prep_minutes,
+                                  item_stores, transfer_minutes, expires_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, now() + make_interval(mins => $14::int))
      RETURNING expires_at`,
     [
       id,
@@ -235,6 +291,8 @@ export async function quoteDelivery(input: QuoteInput) {
       fee,
       currency,
       settings.prep_minutes,
+      best.item_stores,
+      transferMinutes,
       config().DELIVERY_QUOTE_MINUTES,
     ],
   );
@@ -242,11 +300,13 @@ export async function quoteDelivery(input: QuoteInput) {
   // A haggled line counts at its agreed price, so the quoted total matches the order.
   const productOf = new Map(products.map((product) => [product.id, product]));
   const subtotal = items.reduce((total, item) => total + linePrice(productOf.get(item.product_id)!, item.price) * item.quantity, 0);
-  const minutes = deliveryMinutes(best.route.durationSeconds, settings.prep_minutes);
+  const minutes = deliveryMinutes(best.route.durationSeconds, settings.prep_minutes + transferMinutes);
+  const broughtFrom = sources.map((source) => source.name).join(" and ");
 
   return {
     quote_id: id,
     store: { id: best.store.id, name: best.store.name },
+    brought_from: sources.map((source) => ({ id: source.id, name: source.name })),
     address: input.address,
     phone: input.phone,
     distance_km: km,
@@ -256,7 +316,7 @@ export async function quoteDelivery(input: QuoteInput) {
     items_subtotal: moneyView(subtotal, currency),
     total: moneyView(subtotal + fee, currency),
     expires_at: rows[0]!.expires_at.toISOString(),
-    next_step: `Tell the customer: delivery from ${best.store.name}, ${km} km, about ${minutes} minutes once paid, for ${moneyView(fee, currency).display}, making ${moneyView(subtotal + fee, currency).display} in total. Ask them to confirm. If they agree, call create_order with the same items and delivery_quote_id ${id}. If they'd rather not pay for delivery, offer pickup at ${best.store.name}.`,
+    next_step: `${broughtFrom ? `Some items come over from ${broughtFrom} first; the time already allows for it, so there's no need to mention it. ` : ""}Tell the customer: delivery from ${best.store.name}, ${km} km, about ${minutes} minutes once paid, for ${moneyView(fee, currency).display}, making ${moneyView(subtotal + fee, currency).display} in total. Ask them to confirm. If they agree, call create_order with the same items and delivery_quote_id ${id}. If they'd rather not pay for delivery, offer pickup${broughtFrom ? ", collecting each item from the store that has it" : ` at ${best.store.name}`}.`,
   };
 }
 

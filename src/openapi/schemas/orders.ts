@@ -21,10 +21,11 @@ export const Order = z
   .object({
     order_id: z.string().openapi({ example: "ORD-1001" }),
     status: OrderStatus,
-    store: z.object({ id: z.string(), name: z.string() }),
+    store: z.object({ id: z.string(), name: z.string() }).openapi({ description: "Where a delivery leaves from, or the first pickup store" }),
     items: z.array(
       z.object({
         product: z.object({ id: z.string(), name: z.string(), variant: z.string().nullable() }),
+        store: z.object({ id: z.string(), name: z.string() }).openapi({ description: "The store this item is held at" }),
         quantity: z.number().int(),
         unit_price: Money,
         amount: Money,
@@ -63,6 +64,10 @@ export const ReceiptFields = z.object({
   items: z.array(
     z.object({
       item: z.string().openapi({ example: "iPhone 13 (128GB)" }),
+      collect_at: z
+        .object({ name: z.string(), address: z.string() })
+        .nullable()
+        .openapi({ description: "For pickup: the store to collect this item from. Null for delivery." }),
       quantity: z.number().int(),
       unit_price: Money,
       amount: Money,
@@ -91,6 +96,13 @@ const Items = z
         .positive()
         .optional()
         .openapi({ description: "Only after haggling: the unit price the customer agreed, in the main unit. Never below counter_offers.final. Leave out to sell at the list price.", example: 635000 }),
+      store_id: z
+        .string()
+        .trim()
+        .toLowerCase()
+        .min(1)
+        .optional()
+        .openapi({ description: "For pickup from more than one store: the store to collect this item from. Leave out to use the order's store_id. Ignored for delivery.", example: "lekki" }),
     }),
   )
   .min(1)
@@ -99,7 +111,8 @@ const Items = z
 export const CreateOrderBody = z
   .object({
     items: Items.openapi({
-      description: "Everything the customer wants, held together and paid with one link. One entry for a single product.",
+      description:
+        "Everything the customer wants, held together and paid with one link, even when the items are at different stores. One entry for a single product.",
       example: [
         { product_id: "IP14-128", quantity: 1 },
         { product_id: "ANKER-20K", quantity: 1 },
@@ -111,7 +124,7 @@ export const CreateOrderBody = z
       .toLowerCase()
       .min(1)
       .optional()
-      .openapi({ description: "For pickup: the store the customer will collect from. Leave out for delivery.", example: "ikeja" }),
+      .openapi({ description: "For pickup: the store the customer will collect from, for every item without its own store_id. Leave out for delivery.", example: "ikeja" }),
     delivery_quote_id: z
       .string()
       .trim()
@@ -122,9 +135,10 @@ export const CreateOrderBody = z
     buyer_name: z.string().trim().min(1).max(100).openapi({ example: "Tunde Bakare" }),
     buyer_email: z.email().optional().openapi({ description: "For the Paystack receipt. Leave out if the customer didn't give one." }),
   })
-  .refine((input) => input.store_id !== undefined || input.delivery_quote_id !== undefined, {
-    message: "send store_id for pickup, or delivery_quote_id for delivery",
-  });
+  .refine(
+    (input) => input.store_id !== undefined || input.delivery_quote_id !== undefined || input.items.every((item) => item.store_id !== undefined),
+    { message: "send store_id (for the order or on each item) for pickup, or delivery_quote_id for delivery" },
+  );
 
 export const QuoteDeliveryBody = z.object({
   items: Items.openapi({ description: "Everything the customer wants delivered, as for create_order" }),
@@ -151,7 +165,12 @@ export const QuoteDeliveryBody = z.object({
 export const DeliveryQuote = z
   .object({
     quote_id: z.string().openapi({ example: "DQ-3F9A2C1B" }),
-    store: z.object({ id: z.string(), name: z.string() }).openapi({ description: "The nearest store with everything in stock" }),
+    store: z.object({ id: z.string(), name: z.string() }).openapi({
+      description: "The store the delivery leaves from: the nearest with everything in stock, or the nearest with some of it when no store has it all",
+    }),
+    brought_from: z
+      .array(z.object({ id: z.string(), name: z.string() }))
+      .openapi({ description: "Stores that send items over to the delivering store first; the time already allows for it. Empty when one store has everything." }),
     address: z.string(),
     phone: z.string(),
     distance_km: z.number(),

@@ -13,7 +13,7 @@ import { formatMoney, moneyView } from "../utils/money";
 import { formatAddress, type AddressRow } from "../utils/store-location";
 import { claimDeliveryQuote, deliveryMinutes, distanceKm } from "./delivery";
 import { linePrice } from "./pricing";
-import { expireStaleOrders, failOrder, holdItems, logEvent, mergeItems, whenStockFrees, type Db, type HoldItem } from "./stock";
+import { expireStaleOrders, failOrder, holdItems, logEvent, mergeItems, whenStockFrees, type Db, type HoldItem, type StoreLine } from "./stock";
 
 const MAX_DECLINES = 3;
 const IN_PROGRESS = new Set(["ongoing", "pending", "processing", "queued"]);
@@ -32,7 +32,8 @@ type PaymentOutcome =
   | "failed"
   | "handed_over";
 
-// Pickup orders name a store; delivery orders name a quote, which fixes the store and fee.
+// Pickup orders name a store, for the order or for each item; delivery orders name a quote,
+// which fixes the store each item is held at, the store it leaves from and the fee.
 type CreateOrderInput = {
   items: HoldItem[];
   store_id?: string;
@@ -52,6 +53,8 @@ type ListOrdersInput = {
 
 type ItemRow = {
   product_id: string;
+  store_id: string;
+  store_name: string;
   product_name: string;
   product_variant: string | null;
 
@@ -99,7 +102,7 @@ type DeliveryRow = {
   delivery_prep_minutes: number | null;
 };
 
-type OrderRow = OrderBase & { store_name: string; items: ItemRow[] } & DeliveryRow & AddressRow;
+type OrderRow = OrderBase & { store_name: string; items: (ItemRow & AddressRow)[] } & DeliveryRow & AddressRow;
 
 type VerifyResult =
   | { outcome: PaymentOutcome }
@@ -110,18 +113,21 @@ const ORDER_SELECT = `
   SELECT o.*, s.name AS store_name, s.address_line1, s.address_line2, s.area, s.city, s.state,
          s.country_code, s.postal_code, s.latitude, s.longitude, s.directions_note,
          dq.address AS delivery_address, dq.phone AS delivery_phone,
-         dq.distance_m AS delivery_distance_m, dq.duration_s AS delivery_duration_s, dq.prep_minutes AS delivery_prep_minutes
+         dq.distance_m AS delivery_distance_m, dq.duration_s AS delivery_duration_s,
+         dq.prep_minutes + dq.transfer_minutes AS delivery_prep_minutes
   FROM orders o
   JOIN stores s ON s.id = o.store_id
   LEFT JOIN delivery_quotes dq ON dq.id = o.delivery_quote_id`;
 
-// Attaches each order's lines, in the order the customer asked for them.
+// Attaches each order's lines, with the store each is held at, in the order the customer asked for them.
 async function withItems(db: Db, orders: Omit<OrderRow, "items">[]): Promise<OrderRow[]> {
   if (!orders.length) return [];
-  const { rows } = await db.query<ItemRow & { order_id: string }>(
+  const { rows } = await db.query<ItemRow & AddressRow & { order_id: string }>(
     `SELECT i.order_id, i.product_id, p.name AS product_name, p.variant AS product_variant,
-            i.quantity, i.unit_price_subunit, i.list_price_subunit, i.amount_subunit
-     FROM order_items i JOIN products p ON p.id = i.product_id
+            i.quantity, i.unit_price_subunit, i.list_price_subunit, i.amount_subunit,
+            i.store_id, s.name AS store_name, s.address_line1, s.address_line2, s.area, s.city, s.state,
+            s.country_code, s.postal_code, s.latitude, s.longitude, s.directions_note
+     FROM order_items i JOIN products p ON p.id = i.product_id JOIN stores s ON s.id = i.store_id
      WHERE i.order_id = ANY($1::text[])
      ORDER BY i.order_id, i.line`,
     [orders.map((order) => order.id)],
@@ -197,6 +203,7 @@ function orderView(order: OrderRow) {
     store: { id: order.store_id, name: order.store_name },
     items: order.items.map((item) => ({
       product: { id: item.product_id, name: item.product_name, variant: item.product_variant },
+      store: { id: item.store_id, name: item.store_name },
       quantity: item.quantity,
       unit_price: moneyView(item.unit_price_subunit, order.currency),
       amount: moneyView(item.amount_subunit, order.currency),
@@ -224,22 +231,32 @@ function receiptView(order: OrderRow) {
   const paidAt = order.paid_at ?? new Date();
   const business = config().BUSINESS_NAME;
   const reference = order.paid_reference ?? order.payment_references.at(-1) ?? order.id;
-  const storeAddress = formatAddress(order, config().BUSINESS_COUNTRY);
+  const country = config().BUSINESS_COUNTRY;
+  const storeAddress = formatAddress(order, country);
   const total = formatMoney(order.amount_subunit, order.currency);
-  // One unit of one product needs no price line; otherwise each line shows its quantity and amount.
   // One unit of one product at the list price needs no price line; otherwise each line shows
   // its quantity and amount, and what haggling saved.
   const single = order.items.length === 1 && order.items[0]!.quantity === 1 && !lineSaving(order.items[0]!);
-  const itemLines = order.items.map((item) => {
+  const itemLine = (item: ItemRow) => {
     if (single) return itemName(item);
     const saved = lineSaving(item) ? ` (you saved ${formatMoney(lineSaving(item), order.currency)})` : "";
     return `${itemName(item)}${item.quantity > 1 ? ` x${item.quantity}` : ""}: ${formatMoney(item.amount_subunit, order.currency)}${saved}`;
-  });
+  };
   const delivery = deliveryView(order);
+  // A pickup from several stores says where to collect each item; otherwise one store heads the receipt.
+  const pickupStores = [...new Map(order.items.map((item) => [item.store_id, item])).values()];
+  const multiStore = !delivery && pickupStores.length > 1;
+  const itemLines = multiStore
+    ? pickupStores.flatMap((store, index) => [
+        ...(index ? [""] : []),
+        `Collect at ${store.store_name}, ${formatAddress(store, country)}:`,
+        ...order.items.filter((item) => item.store_id === store.store_id).map(itemLine),
+      ])
+    : order.items.map(itemLine);
   // WhatsApp bolds text between single asterisks, so the header and total stand out on a phone.
   const lines = [
     `*${business} receipt* ${order.id}`,
-    `${order.store_name}, ${storeAddress}`,
+    ...(multiStore ? [] : [`${order.store_name}, ${storeAddress}`]),
     "",
     ...itemLines,
     ...(delivery ? [`Delivery to ${delivery.address}: ${delivery.fee.display}`] : []),
@@ -256,6 +273,7 @@ function receiptView(order: OrderRow) {
     store: { name: order.store_name, address: storeAddress },
     items: order.items.map((item) => ({
       item: itemName(item),
+      collect_at: delivery ? null : { name: item.store_name, address: formatAddress(item, country) },
       quantity: item.quantity,
       unit_price: moneyView(item.unit_price_subunit, order.currency),
       amount: moneyView(item.amount_subunit, order.currency),
@@ -342,7 +360,7 @@ export async function createOrder(input: CreateOrderInput) {
         "These products are priced in different currencies, so they can't be paid with one link. Make a separate order for each currency.",
       );
     }
-    // A delivery quote fixes the store the rider leaves from and the fee.
+    // A delivery quote fixes the store the rider leaves from, where each item is held, and the fee.
     const quote = input.delivery_quote_id ? await claimDeliveryQuote(db, input.delivery_quote_id) : null;
     if (quote && input.store_id && input.store_id !== quote.store_id) {
       throw new ApiError(
@@ -354,32 +372,52 @@ export async function createOrder(input: CreateOrderInput) {
     if (quote && quote.currency !== currencyOf(products)) {
       throw new ApiError(400, "invalid_input", "The delivery fee and the items are in different currencies. Offer pickup instead.");
     }
-    const storeId = quote?.store_id ?? input.store_id!;
-    const store = (await db.query<{ id: string; name: string }>("SELECT id, name FROM stores WHERE id = $1 AND active", [storeId])).rows[0];
-    if (!store) throw new ApiError(404, "store_not_found", `No store ${storeId}. Call list_stores for the right id.`);
+    // Each line is held at its own store: the quote's choice for a delivery, otherwise the
+    // item's store_id or the order's.
+    const lines: StoreLine[] = items.map((item) => ({
+      ...item,
+      store_id: quote ? (quote.item_stores[item.product_id] ?? quote.store_id) : (item.store_id ?? input.store_id)!,
+    }));
+    const noStore = lines.find((line) => !line.store_id);
+    if (noStore) {
+      throw new ApiError(400, "invalid_input", `Say which store to hold ${noStore.product_id} at: send store_id for the order or on that item.`);
+    }
+    const storeIds = [...new Set([...(quote ? [quote.store_id] : []), ...lines.map((line) => line.store_id)])];
+    const { rows: storeRows } = await db.query<{ id: string; name: string }>("SELECT id, name FROM stores WHERE id = ANY($1::text[]) AND active", [storeIds]);
+    const storeOf = new Map(storeRows.map((row) => [row.id, row]));
+    const unknownStore = storeIds.find((id) => !storeOf.has(id));
+    if (unknownStore) throw new ApiError(404, "store_not_found", `No store ${unknownStore}. Call list_stores for the right id.`);
+    // The order's main store: where a delivery leaves from, or the first pickup store.
+    const storeId = quote?.store_id ?? lines[0]!.store_id;
 
     // Agreed prices are checked against the floor before anything is held.
     const unitPrice = new Map(items.map((item) => [item.product_id, linePrice(productOf.get(item.product_id)!, item.price)]));
 
-    const short = await holdItems(db, storeId, items);
+    const short = await holdItems(db, lines);
     if (short) {
+      const store = storeOf.get(short.store_id)!;
       const product = productOf.get(short.product_id)!;
       const name = itemName({ product_name: product.name, product_variant: product.variant });
       const { rows: elsewhere } = await db.query<{ name: string; available: number }>(
         `SELECT s.name, st.available FROM stock st JOIN stores s ON s.id = st.store_id
          WHERE st.product_id = $1 AND st.store_id <> $2 AND s.active AND st.available >= $3
          ORDER BY st.available DESC`,
-        [short.product_id, storeId, short.quantity],
+        [short.product_id, short.store_id, short.quantity],
       );
       const otherStores = elsewhere.map(
         // Formats one alternative store and its available quantity.
         (candidate) => `${candidate.name} (${candidate.available})`,
       ).join(", ");
       // The transaction rolls back, so the order's other lines aren't held either.
-      const nothingHeld = items.length > 1 ? ` Nothing in this order was held. Offer the rest without ${name}, or another store.` : "";
+      const nothingHeld = items.length > 1 ? ` Nothing in this order was held. Hold ${name} at another store on the same order (store_id on that item), or offer the rest without it.` : "";
+      const hint = quote
+        ? "Stock changed since the delivery quote. Call quote_delivery again with the same items."
+        : otherStores
+          ? `It is available at ${otherStores}. Offer that store instead.`
+          : "It is sold out at every store. Say so honestly and offer something similar from list_products.";
 
       // Held units may come back, so say when instead of calling the item sold out.
-      const freeAt = await whenStockFrees(db, short.product_id, storeId, short.quantity);
+      const freeAt = await whenStockFrees(db, short.product_id, short.store_id, short.quantity);
       if (freeAt) {
         throw new ApiError(
           409,
@@ -388,21 +426,18 @@ export async function createOrder(input: CreateOrderInput) {
         );
       }
 
-      const hint = otherStores
-        ? `It is available at ${otherStores}. Offer that store instead.`
-        : "It is sold out at every store. Say so honestly and offer something similar from list_products.";
       throw new ApiError(409, "out_of_stock", `Not enough ${name} at ${store.name} for ${short.quantity}. ${hint}${nothingHeld}`);
     }
 
     // Prices and currency come from the product rows, and the fee from the quote, never from the request.
     const currency = currencyOf(products);
     const fee = quote?.fee_subunit ?? 0;
-    const lines = items.map((item, index) => {
+    const priced = lines.map((item, index) => {
       const unit = unitPrice.get(item.product_id)!;
       const list = productOf.get(item.product_id)!.price_subunit;
       return { ...item, line: index + 1, unit_price_subunit: unit, list_price_subunit: list, amount_subunit: unit * item.quantity };
     });
-    const amount = lines.reduce((total, line) => total + line.amount_subunit, 0) + fee;
+    const amount = priced.reduce((total, line) => total + line.amount_subunit, 0) + fee;
 
     const { rows } = await db.query<{ id: string }>(
       `INSERT INTO orders (store_id, amount_subunit, currency, buyer_name, buyer_email, expires_at, delivery_quote_id, delivery_fee_subunit)
@@ -411,14 +446,14 @@ export async function createOrder(input: CreateOrderInput) {
       [storeId, amount, currency, input.buyer_name, input.buyer_email ?? null, config().HOLD_MINUTES, quote?.id ?? null, fee],
     );
     const id = rows[0]!.id;
-    for (const line of lines) {
+    for (const line of priced) {
       await db.query(
-        `INSERT INTO order_items (order_id, line, product_id, quantity, unit_price_subunit, list_price_subunit, amount_subunit)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-        [id, line.line, line.product_id, line.quantity, line.unit_price_subunit, line.list_price_subunit, line.amount_subunit],
+        `INSERT INTO order_items (order_id, line, product_id, store_id, quantity, unit_price_subunit, list_price_subunit, amount_subunit)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        [id, line.line, line.product_id, line.store_id, line.quantity, line.unit_price_subunit, line.list_price_subunit, line.amount_subunit],
       );
     }
-    await logEvent(db, id, "order_created", { items, amount_subunit: amount, currency, delivery_quote_id: quote?.id ?? null });
+    await logEvent(db, id, "order_created", { items: lines, amount_subunit: amount, currency, delivery_quote_id: quote?.id ?? null });
     return { id, amount_subunit: amount, currency, store_id: storeId };
   });
 
@@ -579,12 +614,12 @@ async function confirmSuccessfulPayment(db: Db, order: OrderBase, transaction: P
 
   if (order.status !== "pending_payment") {
     // Re-holds every line or none: a savepoint undoes the lines held before one ran short.
-    const { rows: lines } = await db.query<HoldItem>(
-      "SELECT product_id, quantity FROM order_items WHERE order_id = $1 ORDER BY line",
+    const { rows: lines } = await db.query<StoreLine>(
+      "SELECT product_id, store_id, quantity FROM order_items WHERE order_id = $1 ORDER BY line",
       [order.id],
     );
     await db.query("SAVEPOINT rehold");
-    const short = await holdItems(db, order.store_id, lines);
+    const short = await holdItems(db, lines);
     await db.query(short ? "ROLLBACK TO SAVEPOINT rehold" : "RELEASE SAVEPOINT rehold");
     const reheld = !short;
     status = reheld ? "paid" : "paid_no_stock";
@@ -694,7 +729,7 @@ export async function listOrders(input: ListOrdersInput) {
       WHEN '30d' THEN now() - interval '30 days'
     END)`;
   const inPeriod = `(${since} IS NULL OR o.created_at >= ${since} OR o.paid_at >= ${since})
-    AND ($3::text IS NULL OR o.store_id = $3)`;
+    AND ($3::text IS NULL OR o.store_id = $3 OR EXISTS (SELECT 1 FROM order_items i WHERE i.order_id = o.id AND i.store_id = $3))`;
   const timeZone = config().BUSINESS_TIMEZONE;
 
   const [list, summary] = await Promise.all([
@@ -721,7 +756,7 @@ export async function listOrders(input: ListOrdersInput) {
   const attention = await pool.query<{ id: string; status: OrderStatus; failure_reason: string | null }>(
     `SELECT o.id, o.status, o.failure_reason FROM orders o
      WHERE (o.status IN ('paid_no_stock', 'handed_over') OR o.failure_reason = 'amount_mismatch')
-       AND ($1::text IS NULL OR o.store_id = $1)
+       AND ($1::text IS NULL OR o.store_id = $1 OR EXISTS (SELECT 1 FROM order_items i WHERE i.order_id = o.id AND i.store_id = $1))
      ORDER BY o.updated_at DESC LIMIT 20`,
     [input.store_id ?? null],
   );
