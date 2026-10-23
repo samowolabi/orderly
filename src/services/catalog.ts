@@ -544,12 +544,13 @@ export async function addProducts(products: NewProductInput[]) {
 }
 
 // Applies one store's stock change inside a caller's transaction; held units count as on hand.
+// Held units are counted by the store each order line is held at, not the order's main store.
 async function applyStockChange(db: Db, productId: string, input: StockChangeInput) {
   await assertStore(db, input.store_id);
   const { rows } = await db.query<{ available: number; held: number }>(
     `SELECT st.available,
             coalesce((SELECT sum(i.quantity) FROM order_items i JOIN orders o ON o.id = i.order_id
-                      WHERE i.product_id = st.product_id AND o.store_id = st.store_id
+                      WHERE i.product_id = st.product_id AND i.store_id = st.store_id
                         AND o.status = 'pending_payment'), 0)::int AS held
      FROM stock st WHERE st.product_id = $1 AND st.store_id = $2
      FOR UPDATE`,

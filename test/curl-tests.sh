@@ -366,6 +366,8 @@ check "each item held where it is" 201 '([.data.items[].store.id] == ["ikeja","l
 OS=$(jq -r .data.order_id <<<"$BODY")
 call "$SELLER" GET '/products?product_id=AIRPODS-PRO2'
 check "Lekki's AirPods are held (4 less 1 for the delivery, 1 here)" 200 '(.data.products[0].stores[] | select(.store_id == "lekki") | .available) == 2'
+call "$SELLER" PATCH /products/AIRPODS-PRO2 '{"stock":[{"store_id":"lekki","set_to":3}]}'
+check "a stock count at Lekki counts the unit held there for an Ikeja-led order" 200 '.data.stock == [{"store_id":"lekki","available":2,"held_for_unpaid_orders":1,"on_hand":3}]'
 pay "$OS"
 call "$BUYER" POST "/orders/$OS/verify"
 check "the receipt says where to collect each item" 200 '.data.outcome == "paid" and (.data.receipt.text | test("Collect at Kola Gadgets Ikeja")) and (.data.receipt.text | test("Collect at Kola Gadgets Lekki")) and .data.receipt.items[1].collect_at.name == "Kola Gadgets Lekki"'
