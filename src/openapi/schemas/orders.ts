@@ -18,6 +18,17 @@ export const Order = z
     buyer_name: z.string(),
     payment_url: z.string().nullable().openapi({ description: "Paystack page to pay on. Only set while waiting for payment." }),
     expires_at: Timestamp.openapi({ description: "When the hold ends" }),
+    payment_checks: z
+      .array(
+        z.object({
+          at: Timestamp,
+          nudge: z.boolean().openapi({ description: "True for the one check that reminds the customer if they still haven't paid" }),
+        }),
+      )
+      .openapi({
+        description:
+          "When to check for payment while it waits. Schedule one reminder at each time with scheduled_at. Empty unless waiting for payment.",
+      }),
     minutes_left: z.number().int().openapi({ description: "Minutes left to pay. 0 unless waiting for payment." }),
     declined_attempts: z.number().int(),
     paid_at: Timestamp.nullable(),

@@ -58,6 +58,8 @@ const Env = z.object({
   // IANA zone for opening hours, "today" and receipt times.
   BUSINESS_TIMEZONE: z.string().default("Africa/Lagos").refine(isTimeZone, "use an IANA time zone, e.g. Africa/Lagos"),
   HOLD_MINUTES: z.coerce.number().int().positive().default(30),
+  // First payment check after an order is placed; later checks double the gap (20s, 40s, 80s…).
+  PAYMENT_CHECK_FIRST_SECONDS: z.coerce.number().int().positive().default(20),
 
   // Base URL written into the OpenAPI spec's servers list; see hostUrl() for the fallback.
   PUBLIC_URL: z.string().url().optional(),
