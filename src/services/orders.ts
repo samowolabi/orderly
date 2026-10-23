@@ -125,6 +125,9 @@ function orderView(order: OrderRow) {
   };
 }
 
+// Turns a provider channel code into words for people, e.g. "bank_transfer" to "bank transfer".
+const channelLabel = (channel: string) => channel.replace(/_/g, " ");
+
 // Builds structured and ready-to-send receipt data for a paid order.
 function receiptView(order: OrderRow) {
   const paidAt = order.paid_at ?? new Date();
@@ -139,7 +142,7 @@ function receiptView(order: OrderRow) {
     `${itemName(order)} x${order.quantity}: ${total}`,
     `Total paid: ${total}`,
     "",
-    `Paid ${formatLocalTime(paidAt)}${order.payment_channel ? ` by ${order.payment_channel}` : ""}`,
+    `Paid ${formatLocalTime(paidAt)}${order.payment_channel ? ` by ${channelLabel(order.payment_channel)}` : ""}`,
     `${paymentProcessor.name} reference: ${reference}`,
     `Thank you for shopping with ${business}.`,
   ];
