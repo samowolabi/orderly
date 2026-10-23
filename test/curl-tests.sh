@@ -92,6 +92,7 @@ call wrong-key-0000000000 GET /stores;         check "wrong key is refused" 401
 call "$BUYER" PATCH /products/IP13-128 '{"price":1}'; check "buyer can't change a price" 403 '.error.code == "owner_only"'; msg
 call "$BUYER" POST /stores '{"name":"Hack","address":{"line1":"1 Fake Road","area":"Ikeja","city":"Lagos","state":"Lagos"},"hours":[{"days":["mon","tue","wed","thu","fri"],"opens":"08:30","closes":"18:00"},{"days":["sat"],"opens":"10:00","closes":"16:00"}]}'; check "buyer can't add a store" 403
 call "$BUYER" GET /orders;                     check "buyer can't list orders" 403
+call "$BUYER" POST /products '{"products":[{"name":"Hack Phone","price":1,"stock":[{"store_id":"ikeja","quantity":1}]}]}'; check "buyer can't add a product" 403 '.error.code == "owner_only"'
 call "$SELLER" POST /orders '{"items":[{"product_id":"IP13-128"}],"store_id":"ikeja","buyer_name":"x"}'; check "seller can't create orders (buyer tool)" 403
 
 echo "== Catalog reads"
