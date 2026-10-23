@@ -64,6 +64,10 @@ stock() { $PSQL -c "SELECT available FROM stock WHERE product_id='$1' AND store_
 # Moves an order's expiry timestamp into the past for late-payment tests.
 expire() { $PSQL -c "UPDATE orders SET expires_at = now() - interval '1 second' WHERE id='$1'"; }
 
+echo "== Infrastructure"
+call none GET /health;                       check "health checks the database" 200 '.ok == true and .data.status == "up"'
+call none GET /openapi.json;                 check "OpenAPI exposes 11 Chord tools" 200 '([.paths[] | to_entries[]] | length) == 11 and .paths["/stores"].get.operationId == "list_stores" and (.paths | has("/webhooks/paystack") | not)'
+
 echo "== Auth and roles"
 call none GET /stores;                         check "no key is refused" 401 '.ok == false and .error.code == "unauthorized"'
 call wrong-key-0000000000 GET /stores;         check "wrong key is refused" 401
