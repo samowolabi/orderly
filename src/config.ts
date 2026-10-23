@@ -26,7 +26,7 @@ const Env = z.object({
 
   // Google Maps: geocoding for store map pins and routes for delivery quotes.
   GOOGLE_MAPS_API_KEY: z.string().min(1, "set GOOGLE_MAPS_API_KEY for store map pins and delivery quotes"),
-  // Google endpoints; tests point them at the local stand-in in dev/fake-google.ts.
+  // Google endpoints; tests point them at the local stand-in in test/fakes/fake-google.ts.
   GOOGLE_GEOCODING_URL: z.string().url().default("https://maps.googleapis.com/maps/api/geocode/json"),
   GOOGLE_ROUTES_URL: z.string().url().default("https://routes.googleapis.com/directions/v2:computeRoutes"),
 

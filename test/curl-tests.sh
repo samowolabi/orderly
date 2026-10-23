@@ -1,5 +1,5 @@
 #!/bin/bash
-# Curl tests for the Orderly API against dev/fake-paystack.ts.
+# Curl tests for the Orderly API against the stand-ins in test/fakes/.
 # Expects a freshly seeded database; the API address comes from $API.
 cd "$(dirname "$0")/.." || exit 1
 API=${API:-http://localhost:3000}

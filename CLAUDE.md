@@ -25,6 +25,10 @@ Read these first:
 - `src/openapi/`: independent schemas, path descriptions, registry and document generation
 - `src/middleware/`: API-key authorization, Paystack signature checks and Express error handling
 - `src/db/`: database connection, migrations and seed data
+- `test/`: the curl suite (`curl-tests.sh`) and small unit tests; `test/fakes/` holds local stand-ins for Paystack, Google Maps and Resend
+- `scripts/`: one-off developer scripts, such as creating the local database
+
+Nothing outside `src/` ships: the build compiles `src/` only.
 
 Keep route modules thin. Controllers translate HTTP requests into service calls. Services enforce the business rules and must not depend on Express request or response objects. Payment services depend on the generic `PaymentProcessor` contract, not Paystack payloads. OpenAPI must not import routes or controllers.
 

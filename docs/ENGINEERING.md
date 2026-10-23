@@ -49,6 +49,8 @@ The API is split into focused modules:
 | `src/utils/` | Shared HTTP, currency, time, opening-hours and address helpers |
 | `src/openapi/` | Owns API schemas, path descriptions, the registry and document generation |
 | `src/middleware/` | Handles API-key roles, unknown routes and application errors |
+| `test/` | Curl suite and unit tests; `test/fakes/` stands in for Paystack, Google Maps and Resend (not shipped) |
+| `scripts/` | Developer scripts such as creating the local database (not shipped) |
 
 `src/db/` contains connection, migration and seed code. Services do not depend on Express request or response objects, which keeps the business workflows reusable and easier to test. Services call the `PaymentProcessor`, `GeocodingProvider` and `RoutingProvider` interfaces. `src/adapters/index.ts` is the single composition point that creates the Paystack and Google adapters, so provider payloads stay out of business logic. OpenAPI does not import Express routes or controllers, so the specification can be generated independently.
 
