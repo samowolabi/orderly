@@ -4,8 +4,8 @@ import { InvalidPaymentPayload } from "../adapters/payment/payment-processor";
 import { processPaymentWebhook } from "../services/orders";
 import { ApiError, ok } from "../utils/http";
 
-// Parses and processes an authenticated Paystack webhook.
-export async function paystackWebhook(request: Request, response: Response) {
+// Parses and processes an authenticated payment-provider webhook.
+export async function receivePaymentWebhook(request: Request, response: Response) {
   let webhook;
   try {
     webhook = paymentProcessor.parseWebhook(request.body as Buffer);

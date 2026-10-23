@@ -1,7 +1,7 @@
 import { Router } from "express";
 import * as controller from "../controllers/webhooks";
-import { paystackBody, requirePaystackSignature } from "../middleware/paystack";
+import { rawWebhookBody, requireWebhookSignature } from "../middleware/webhooks";
 
 export const webhooks = Router();
 
-webhooks.post("/webhooks/paystack", paystackBody, requirePaystackSignature, controller.paystackWebhook);
+webhooks.post("/webhooks/paystack", rawWebhookBody, requireWebhookSignature, controller.receivePaymentWebhook);

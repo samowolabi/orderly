@@ -38,6 +38,9 @@ export type CreateCheckoutInput = {
 export interface PaymentProcessor {
   readonly name: string;
 
+  // Request header that carries the provider's webhook signature.
+  readonly webhookSignatureHeader: string;
+
   // Creates a hosted checkout URL for one payment attempt.
   createCheckout(input: CreateCheckoutInput): Promise<{ checkoutUrl: string }>;
 

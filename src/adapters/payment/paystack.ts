@@ -13,6 +13,7 @@ const TIMEOUT_MS = 10_000;
 
 export class PaystackAdapter implements PaymentProcessor {
   readonly name = "Paystack";
+  readonly webhookSignatureHeader = "x-paystack-signature";
 
   // Verifies a Paystack HMAC signature against the exact raw request body.
   isWebhookAuthentic(body: Buffer, signature: string | undefined) {
