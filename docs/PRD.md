@@ -18,7 +18,7 @@ Three sellers were asked how they handle it:
 | Run more than one store or branch | 2 |
 | Worried about fake payment alerts | 1 |
 
-One seller put it simply: they rush to make the sale, then find the item has already been sold. Two named a price: ₦10,000 a month, or a percentage per sale.
+One seller put it simply: "most times I just want to make the sale quickly, but then on further verification, the item has been sold out." Two named a price: ₦10,000 a month, or a percentage per sale. The full notes, quotes and how each finding shaped the build are in [customer discovery](customer-discovery.md).
 
 ## Who it is for
 

@@ -2,7 +2,7 @@
 
 **WhatsApp is the store. Never sell twice. Never chase an alert.**
 
-Small shops in Lagos sell on WhatsApp, but stock lives in someone's head, payment is "send me the transfer screenshot", and the same last phone gets sold to two people. Orderly turns the chat into the store:
+Small shops in Lagos sell on WhatsApp, but stock lives in someone's head, payment is "send me the transfer screenshot", and the same last phone gets sold to two people. Before building, I interviewed three Lagos sellers who sell on WhatsApp: all three had sold something already gone, and all three check their bank by hand before releasing an order ([customer discovery](docs/customer-discovery.md)). Orderly turns the chat into the store:
 
 - **Customers** ask what's in stock, haggle, order for pickup or delivery, pay through a Paystack link and get a receipt, without leaving WhatsApp.
 - **The owner** adds products, changes prices and stock, opens and closes stores and checks sales by chat, and gets an email the moment something needs them.
@@ -101,6 +101,7 @@ The curl suite runs about 250 end-to-end checks: every tool, the failure cases, 
 | `migrations/` | Plain SQL migrations, applied in order |
 | `skills/` | The two Chord skills, the source of truth for what's published |
 | `test/` | The curl suite, unit tests and the local stand-ins in `test/fakes/` |
+| `docs/customer-discovery.md` | Interviews with three WhatsApp sellers, and how they shaped the build |
 | `docs/PRD.md` | The problem, the users and the features |
 | `docs/ENGINEERING.md` | Stack, data model, endpoints and Chord setup |
 | `docs/field-notes.md` | What went wrong with Chord, with evidence, and what Chord should change |
