@@ -62,10 +62,20 @@ tool=verify_payment role=buyer status=200 ms=9 outcome=paid POST /orders/ORD-100
 
 It shows the tool, the key's role, status, duration, and any payment outcome or error code. It never logs keys, request bodies, names or contact details; I checked a full test run's log for all four keys and every test customer name. I also keep the API warm before tests so cold starts don't eat into the timeout.
 
+**The agent can't see its own earlier calls either.** In an owner test chat on 23 October, the owner asked to add 1 iPhone 13 and 2 iPhone 14 at Yaba and said "yes" to the read-back. Orderly Owner replied "Both changes went through. Yaba now has: iPhone 13 (128GB): 1 (was 0)…". The owner said "Nope" to adding anything else, and the next reply was: "I need to correct my last message. I said both stock changes went through and that I had checked the pin, but I never ran either of those actions in this chat." The API log shows that the first message was true and the correction was false:
+
+```
+12:48:14Z tool=update_product role=seller status=200 ms=43  PATCH /products/IP13-128
+12:48:14Z tool=update_product role=seller status=200 ms=117 PATCH /products/IP14-128
+```
+
+No call was made in the turn that took it back, and live stock showed Yaba at 1 and 2. An earlier owner chat showed the same pattern ("I can't see a record of my earlier lookups in this chat"). It looks as if tool calls and results from earlier turns aren't kept in the history the agent sees later, so it stops trusting what it said. To an owner, a false "I never did that" is worse than a slow reply: they may add the stock twice. Both skills now tell the agent never to take back a reported change, and to look it up and report the live figures if it's unsure. Only the API log could settle which message was true.
+
 **What Chord should change.**
 - Show each reply's tool calls in the conversation view: tool name, status, latency and error. Hide or redact arguments for anything that may be personal data.
 - Include failed calls and timeouts, and allow exporting the trace for debugging.
 - Show "Why this reply" in customer conversations too, at least to operators.
+- Keep each turn's tool calls and results in the history the agent sees on later turns, or at least a short record of them, so it doesn't deny actions it took.
 
 ## Log
 
@@ -87,6 +97,7 @@ It shows the tool, the key's role, status, duration, and any payment outcome or 
 | 2026-10-23 | No log of the tool calls a teammate makes | Teammate Activity shows credits, request count, escalations and skill updates; workspace Activity shows escalations and setting changes; customer conversations offer only "Copy message" ("Why this reply" appears only in the operator direct line) | Trying to see which Orderly tools Orderly Shop called during a test order | The Orderly API now writes one line per request (tool, key role, status, duration, outcome or error code, never keys or personal data), visible in Render's logs | Show each reply's tool calls, with status and latency, in the conversation view |
 | 2026-10-23 | Imported tools reach the agent under generated names | Orderly Shop listed its tools as watchtower__create_order-POST, watchtower__update_product-PATCH and so on, while the OpenAPI operationIds are create_order and update_product | Asking Orderly Shop which tools it can call | None needed: the agent matched the skill's names to the generated ones | Use the operationId as the tool name the agent sees, so skills and tool lists match |
 | 2026-10-23 | Starting a new simulator conversation blocks on a browser confirm dialog | Clicking "Start a new conversation" in the simulator froze the page until a native confirm dialog was answered | Running a second test conversation from an automated browser | Clicked OK by hand | Use an in-page confirmation, so the simulator works with browser automation and testing tools |
+| 2026-10-23 | Orderly Owner takes back a stock change that really happened | "I need to correct my last message. I said both stock changes went through… but I never ran either of those actions in this chat." | The API log showed both update_product calls at 12:48:14Z with status 200, and live stock matched the first message | Both skills: never take back a reported change; if unsure, look it up and report the live figures | Keep earlier turns' tool calls and results in the agent's history |
 | 2026-10-23 | The home page says nothing needs attention while conversations are handed over | Home: "Nothing needs you" and "7 conversations handled by your teammates, no human needed", while Activity lists five "Operator Escalated to a human" rows today and "Orderly Shop handled 5 conversations 4 need attention 80% escalation rate" | Looking for the handed-over discount conversation after the v4 re-test | Check Activity or the teammate's Escalated filter, not the home page | Count handed-over conversations under "Needs you" on the home page |
 
 ## What works well (worth a line too)
