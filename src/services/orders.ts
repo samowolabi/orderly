@@ -164,21 +164,36 @@ function receiptView(order: OrderRow) {
   };
 }
 
-// Creates a test-safe email when a WhatsApp buyer did not provide one.
-const placeholderEmail = (orderId: string) => `buyer+${orderId.toLowerCase()}@example.com`;
+// Turns a buyer name into an email-safe local part, e.g. "Tunde Bakare" -> "tunde.bakare".
+function emailName(buyerName: string) {
+  const slug = buyerName
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ".")
+    .replace(/^\.+|\.+$/g, "")
+    .slice(0, 40)
+    .replace(/\.+$/, "");
+  return slug || "buyer";
+}
+
+// Creates a test-safe email when a WhatsApp buyer did not provide one, e.g.
+// tunde.bakare+ord-1004@example.com, so Paystack's dashboard shows who paid for which order.
+const placeholderEmail = (buyerName: string, orderId: string) =>
+  `${emailName(buyerName)}+${orderId.toLowerCase()}@example.com`;
 // Creates a unique Paystack reference for one payment attempt.
 const newReference = (orderId: string) => `${orderId}-${randomBytes(3).toString("hex")}`;
 
 // Initializes the payment processor and attaches its checkout link to an order.
 async function attachPaymentLink(
-  order: Pick<OrderRow, "id" | "product_id" | "store_id" | "amount_subunit" | "currency" | "buyer_email">,
+  order: Pick<OrderRow, "id" | "product_id" | "store_id" | "amount_subunit" | "currency" | "buyer_name" | "buyer_email">,
 ) {
   const reference = newReference(order.id);
   const { checkoutUrl } = await paymentProcessor.createCheckout({
     reference,
     amountSubunits: order.amount_subunit,
     currency: order.currency,
-    email: order.buyer_email ?? placeholderEmail(order.id),
+    email: order.buyer_email ?? placeholderEmail(order.buyer_name, order.id),
     metadata: { order_id: order.id, product_id: order.product_id, store_id: order.store_id },
   });
   await pool.query(
@@ -259,6 +274,7 @@ export async function createOrder(input: CreateOrderInput) {
       id: order.id,
       amount_subunit: order.amount_subunit,
       currency: order.currency,
+      buyer_name: input.buyer_name,
       buyer_email: input.buyer_email ?? null,
       product_id: input.product_id,
       store_id: input.store_id,

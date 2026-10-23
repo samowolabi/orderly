@@ -87,7 +87,7 @@ Orderly is ready when every check below passes in the WhatsApp simulator.
 | Handover to a person may not work in the simulator | Tell the customer a person will follow up, flag the order for the owner, and note it in the field notes |
 | Owners may not trust an AI with customers | Hand over anything unusual; the owner sees every handed-off chat |
 | "Bumpa already does this" | Orderly lives inside WhatsApp, with no extra app, and hands over to a person |
-| Paystack needs a customer email that WhatsApp buyers rarely give | Use a placeholder in test mode; ask for an email before going live |
+| Paystack needs a customer email that WhatsApp buyers rarely give | Use a placeholder in test mode, made from the buyer's name and order number (e.g. `tunde+ord-1004@example.com`) so the Paystack dashboard shows who paid for what; ask for an email before going live |
 
 **Still open:** anyone with the owner chat link acts as the owner. That is fine for the demo, but going live needs owner access locked to the owner's number.
 
