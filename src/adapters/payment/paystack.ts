@@ -12,8 +12,6 @@ import { retry } from "../../utils/retry";
 
 // Short enough that a retry still fits inside a Chord tool call.
 const TIMEOUT_MS = 5_000;
-// Checking a payment is a read, so it's safe to repeat: up to 3 tries within about 8 seconds.
-const VERIFY_RETRY = { attempts: 3, baseDelayMs: 300, maxDelayMs: 1_500, budgetMs: 8_000 };
 
 export class PaystackAdapter implements PaymentProcessor {
   readonly name = "Paystack";
@@ -91,7 +89,7 @@ export class PaystackAdapter implements PaymentProcessor {
     return { checkoutUrl: url };
   }
 
-  // Verifies a Paystack reference, retrying timeouts and 5xx replies with backoff.
+  // Verifies a Paystack reference, retrying timeouts and 5xx replies. It's a read, so safe to repeat.
   async verifyTransaction(reference: string): Promise<PaymentTransaction | null> {
     return retry(
       async () => {
@@ -112,11 +110,7 @@ export class PaystackAdapter implements PaymentProcessor {
         }
         return this.transactionFromData(transaction);
       },
-      {
-        ...VERIFY_RETRY,
-        retryOn: (error) => error instanceof PaymentProcessorUnavailable && error.retryable,
-        onRetry: (error, attempt, delay) => console.warn(`[paystack] verify try ${attempt} failed (${(error as Error).message}); retrying in ${delay}ms`),
-      },
+      { retryOn: (error) => error instanceof PaymentProcessorUnavailable && error.retryable },
     );
   }
 
