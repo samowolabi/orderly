@@ -136,9 +136,9 @@ Both teammates exist with placeholder skills; the real skills go in once the API
 | Role | Sales assistant | Store operations assistant |
 | Autonomy | Act independently | Act independently |
 | Chat link business name | Kola Gadgets | Kola Gadgets (Owner) |
-| API tools | 5 customer tools | 8 owner tools |
+| API tools | 6 customer tools (buyer key) | 9 owner tools (seller key); 12 in all, 3 shared |
 | Built-in tools | handover_to_human | none yet |
-| Escalation triggers | Payment failed twice; paid twice; complaint; question it cannot answer; discount request | none |
+| Escalation triggers | Payment failed twice; amount mismatch or Paystack unreachable; paid after stock sold; complaint or refund; final haggled price refused; question it cannot answer | none |
 | Other | Credit budget | Credit budget; accepts requests from teammates |
 
 Skill edits only take effect after the draft is **published**. Skill files live in the repo and are uploaded from there.
@@ -171,7 +171,7 @@ The API enforces the rules, so a confused or tricked agent still can't break the
 About 5 hours of build, each step done before the next starts. Chord credits are only spent from step 4.
 
 1. **Database and seed data** (30 min): the six tables, Kola Gadgets' two stores and their products.
-2. **Endpoints** (1 hr): all eleven, with Paystack test calls, tested with curl including the failure cases.
+2. **Endpoints** (1 hr): all twelve, with Paystack test calls, tested with curl including the failure cases.
 3. **Deploy and import** (30 min): Render, generate the OpenAPI spec, import into Chord, assign tools and keys per teammate.
 4. **Orderly Shop skill** (1 hr): real skill, escalation triggers, full order test in the simulator.
 5. **Orderly Owner skill** (45 min): add stock by chat, then a customer buys it.

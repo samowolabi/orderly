@@ -80,6 +80,7 @@ expire() { $PSQL -c "UPDATE orders SET expires_at = now() - interval '1 second' 
 echo "== Infrastructure"
 call none GET /health;                       check "health checks the database" 200 '.success == true and .data.status == "up"'
 call none GET /openapi.json;                 check "OpenAPI exposes 12 Chord tools" 200 '([.paths[] | to_entries[]] | length) == 12 and (.paths | has("/products/{id}/stock") | not) and .paths["/stores"].get.operationId == "list_stores" and (.paths | has("/webhooks/paystack") | not)'
+check "6 tools take the buyer key and 9 the seller key, 3 of them shared" 200 '[.paths[][] | [.security[]? | keys[]]] as $s | ($s | map(select(index("BuyerKey"))) | length) == 6 and ($s | map(select(index("SellerKey"))) | length) == 9 and ($s | map(select(index("BuyerKey") and index("SellerKey"))) | length) == 3'
 
 check "the spec's server is the /v1 base" 200 '(.servers[0].url | endswith("/v1")) and (.paths | keys | all(startswith("/v1") | not))'
 call "$BUYER" GET /stores;                   check "tools answer under /v1" 200 '.success == true'
