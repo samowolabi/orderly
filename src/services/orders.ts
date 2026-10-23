@@ -135,12 +135,14 @@ function receiptView(order: OrderRow) {
   const reference = order.paid_reference ?? order.payment_references.at(-1) ?? order.id;
   const storeAddress = formatAddress(order, config().BUSINESS_COUNTRY);
   const total = formatMoney(order.amount_subunit, order.currency);
+  const unitPrice = formatMoney(order.unit_price_subunit, order.currency);
+  // WhatsApp bolds text between single asterisks, so the header and total stand out on a phone.
   const lines = [
-    `${business} receipt ${order.id}`,
+    `*${business} receipt* ${order.id}`,
     `${order.store_name}, ${storeAddress}`,
     "",
-    `${itemName(order)} x${order.quantity}: ${total}`,
-    `Total paid: ${total}`,
+    order.quantity === 1 ? itemName(order) : `${itemName(order)} x${order.quantity} at ${unitPrice} each`,
+    `*Total paid: ${total}*`,
     "",
     `Paid ${formatLocalTime(paidAt)}${order.payment_channel ? ` by ${channelLabel(order.payment_channel)}` : ""}`,
     `${paymentProcessor.name} reference: ${reference}`,
