@@ -152,6 +152,7 @@ That answered two questions. First, a teammate can call several tools in one tur
 - Two owner-only tools, `owner_list_stores` and `owner_list_products`, at `GET /v1/owner/stores` and `/v1/owner/products`, carrying the seller key. They show closed stores, discount floors, off-sale products, a closed store's stock and units held for unpaid orders. The customer view never shows held units or closed stores. Curl tests cover both sides.
 - The owner skill now uses only those for lookups, and its first rule says "Your first message ends your turn": make every lookup first, as many tool calls as it takes, then send one message. A request with several parts gets one read-back covering all of them, with a worked example of this exact request.
 - The shop skill lists the two new tools among the owner tools it must never call.
+- The shop teammate stalls the same way: mid-chat it sent a progress note and then waited, so the customer was left with nothing. Its first rule now says the same thing, "Your first message ends your turn", with a wrong and right example (shop skill v36).
 
 **Result.** Re-tested on owner skill v15 (24 October, 12:31 PM) with the same message in a fresh owner chat. Render's log shows six lookups in one turn, all with the seller key:
 
