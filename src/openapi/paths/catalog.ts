@@ -113,3 +113,26 @@ registry.registerPath({
     ...errorResponses,
   },
 });
+
+registry.registerPath({
+  method: "get",
+  path: "/owner/stores",
+  operationId: "owner_list_stores",
+  summary: "The owner's list of stores, closed ones included (owner only)",
+  description:
+    "Every store, open and closed (active false), with address, hours and map pin. Use this, not list_stores, for anything the owner asks: list_stores shows only what customers see.",
+  security: security.seller,
+  responses: { 200: json(z.object({ stores: z.array(schema.Store) }), "Every store"), ...errorResponses },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/owner/products",
+  operationId: "owner_list_products",
+  summary: "The owner's view of products and stock (owner only)",
+  description:
+    "Products with prices, discount floors (min_price), off-sale products, and stock at every store, including closed stores and units held for unpaid orders. Use this, not list_products, for anything the owner asks. Search with q, or narrow to one store with store_id (a closed store works too).",
+  security: security.seller,
+  request: { query: schema.ListProductsQuery },
+  responses: { 200: json(z.object({ products: z.array(schema.Product) }), "Matching products"), ...errorResponses },
+});

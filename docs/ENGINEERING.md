@@ -85,6 +85,8 @@ Tool endpoints below are relative to `/v1` (for example `POST /v1/orders`); the 
 | --- | --- | --- | --- | --- |
 | list_stores | `GET /stores` | Yes | Yes | Store names, structured addresses, map links, opening hours and whether each is open now |
 | list_products | `GET /products` | Yes | Yes | Prices and stock at each store; filter by store |
+| owner_list_stores | `GET /owner/stores` | No | Yes | Every store, closed ones included (the owner's view; in Chord the shared list_stores carries the buyer key) |
+| owner_list_products | `GET /owner/products` | No | Yes | Products with floors, off-sale items, closed stores' stock and units held for unpaid orders |
 | quote_delivery | `POST /delivery/quote` | Yes | No | Prices delivery from one store (the nearest with everything, or the nearest with some of it, the rest brought over first): driving distance, traffic-aware time, fee and total |
 | contact_owner | `POST /owner/contact` | Yes | No | Emails the owner a customer's name, number and reason so the owner calls back (one per number every 30 minutes) |
 | create_order | `POST /orders` | Yes | No | Holds one or more items at the chosen store for 30 minutes (all or nothing) and returns one Paystack link for the total |
@@ -137,7 +139,7 @@ Both teammates exist with placeholder skills; the real skills go in once the API
 | Role | Sales assistant | Store operations assistant |
 | Autonomy | Act independently | Act independently |
 | Chat link business name | Kola Gadgets | Kola Gadgets (Owner) |
-| API tools | 7 customer tools (buyer key) | 9 owner tools (seller key); 13 in all, 3 shared |
+| API tools | 7 customer tools (buyer key) | 9 owner tools, all seller key except get_receipt; 15 in the spec |
 | Built-in tools | handover_to_human | none yet |
 | Escalation triggers | Payment failed twice; amount mismatch or Paystack unreachable; paid after stock sold; complaint or refund; final bargained price refused; question it cannot answer | none |
 | Other | Credit budget | Credit budget; accepts requests from teammates |

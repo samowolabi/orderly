@@ -47,7 +47,7 @@ flowchart LR
 ```
 
 - The teammates never touch the database. Every price, stock figure and payment result comes from the API, and every rule is enforced there, not just in the prompts.
-- The shop teammate uses the **buyer key** and can't change anything. The owner teammate uses the **seller key**.
+- The shop teammate's tools use the **buyer key**, which can't change anything; the owner's use the **seller key**. Chord shows every tool to both teammates, so the shop agent could still call an owner tool. The skill forbids it, and the API refuses anything the buyer key isn't allowed to do ([field notes](docs/field-notes.md), write-up 1).
 - Paystack confirms payments two ways: a signed webhook the moment a payment lands, and a check when the customer replies PAID.
 - Resend emails the owner, because a Chord teammate can't start a conversation by itself.
 
@@ -58,7 +58,7 @@ flowchart LR
 | **Never sell twice** | Stock is held in one atomic update when the order is created, and released after 30 minutes unpaid. Every line is held at the store it's in, all or nothing. | Ten buyers racing for two units: exactly two get them |
 | **Never confirm without Paystack** | Webhooks are signature-checked, and both paths check status, amount and currency against the order. A mismatch is never confirmed. | Wrong amount, wrong currency, declined card, Paystack down |
 | **Never invent prices or stock** | Every figure comes from the database. Bargained prices must sit between the owner's floor and the list price, and a delivery order charges exactly what was quoted. | Below-floor offers refused, price changed mid-quote |
-| **Customers can't change anything** | Buyer and seller keys, checked on every request. Chord gives every tool to both teammates, so the key is the real boundary. | Buyer key refused on every owner tool |
+| **Customers can't change anything** | Buyer and seller keys, checked on every request: the buyer key can never change prices, stock or stores. Chord shows every tool to both teammates, so the shop skill also forbids owner tools. | Buyer key refused on every owner tool |
 | **Late payments are handled** | Paid after the hold ran out: re-held if the stock is still there, otherwise marked for a refund and the owner is emailed. | Late payment with and without stock |
 
 ## What's inside

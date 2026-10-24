@@ -7,6 +7,8 @@ const TOOLS: Record<string, string> = {
   "POST /stores": "add_store",
   "PATCH /stores/:id": "update_store",
   "GET /products": "list_products",
+  "GET /owner/stores": "owner_list_stores",
+  "GET /owner/products": "owner_list_products",
   "POST /products": "add_product",
   "PATCH /products/:id": "update_product",
   "POST /delivery/quote": "quote_delivery",

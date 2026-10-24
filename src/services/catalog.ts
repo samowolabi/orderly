@@ -32,6 +32,8 @@ type ProductRow = {
     store_id: string;
     store_name: string;
     available: number;
+    open: boolean;
+    held: number;
   }[];
 };
 
@@ -104,15 +106,18 @@ type UpdateProductInput = {
 // Loads products and their store-level stock; off-sale products only when asked for.
 async function findProducts(
   db: Db,
-  filters: { productId?: string; storeId?: string; words?: string[]; includeInactive?: boolean },
+  filters: { productId?: string; storeId?: string; words?: string[]; includeInactive?: boolean; includeClosedStores?: boolean },
 ) {
   const { rows } = await db.query<ProductRow>(
     `SELECT p.id, p.name, p.variant, p.price_subunit, p.min_price_subunit, p.currency, p.active,
-            json_agg(json_build_object('store_id', s.id, 'store_name', s.name, 'available', st.available)
-                     ORDER BY s.id) AS stores
+            json_agg(json_build_object(
+                       'store_id', s.id, 'store_name', s.name, 'available', st.available, 'open', s.active,
+                       'held', (SELECT coalesce(sum(i.quantity), 0)::int FROM order_items i JOIN orders o ON o.id = i.order_id
+                                WHERE i.product_id = p.id AND i.store_id = s.id AND o.status = 'pending_payment'))
+                     ORDER BY s.active DESC, s.id) AS stores
      FROM products p
      JOIN stock st ON st.product_id = p.id
-     JOIN stores s ON s.id = st.store_id AND s.active
+     JOIN stores s ON s.id = st.store_id AND (s.active OR $5)
      WHERE ($4::boolean OR p.active)
        AND ($1::text IS NULL OR st.store_id = $1)
        AND ($2::text[] IS NULL OR (
@@ -126,6 +131,7 @@ async function findProducts(
       filters.words?.length ? filters.words : null,
       filters.productId ?? null,
       filters.includeInactive ?? false,
+      filters.includeClosedStores ?? false,
     ],
   );
   return rows;
@@ -140,10 +146,15 @@ function productView(row: ProductRow, role: Role) {
     price: moneyView(row.price_subunit, row.currency),
     counter_offers: haggleView(row),
     ...(role === "seller" ? { min_price: moneyView(row.min_price_subunit, row.currency), active: row.active } : {}),
-    stores: row.stores,
+    // The owner also sees closed stores and units held for unpaid orders; customers see open stores only.
+    stores: row.stores.map((store) =>
+      role === "seller"
+        ? store
+        : { store_id: store.store_id, store_name: store.store_name, available: store.available },
+    ),
     total_available: row.stores.reduce(
-      // Adds one store's available units to the product total.
-      (total, store) => total + store.available,
+      // Adds one open store's available units to the product total.
+      (total, store) => (store.open ? total + store.available : total),
       0,
     ),
   };
@@ -445,13 +456,19 @@ async function moveAllStock(db: Db, fromId: string, toId: string) {
 // Searches active products after expiring stale stock holds.
 export async function listProducts(filters: { product_id?: string; store_id?: string; q?: string }, role: Role) {
   await expireStaleOrders(pool);
-  if (filters.store_id) await assertStore(pool, filters.store_id);
+  const owner = role === "seller";
+  // The owner can look at a closed store's stock too; customers only at open stores.
+  if (filters.store_id) {
+    const { rows } = await pool.query("SELECT 1 FROM stores WHERE id = $1 AND (active OR $2)", [filters.store_id, owner]);
+    if (!rows[0]) throw new ApiError(404, "store_not_found", `No store with id ${filters.store_id}. Call list_stores for the right id.`);
+  }
   const words = filters.q?.trim().split(/\s+/).filter(Boolean).map(escapeLike);
   const rows = await findProducts(pool, {
     storeId: filters.store_id,
     words,
     productId: filters.product_id,
-    includeInactive: role === "seller",
+    includeInactive: owner,
+    includeClosedStores: owner,
   });
   // Converts one product row into the caller's permitted view.
   return { products: rows.map((row) => productView(row, role)) };

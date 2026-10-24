@@ -135,6 +135,32 @@ A possible next step for customers: after paying, Paystack sends the customer to
 - Run reminders within a few seconds of `scheduled_at`, or document the scheduler's resolution.
 - Support WhatsApp reply buttons, so the hold message can carry an "I've paid" button. Neither Chord nor the simulator can today (see the log).
 
+### 5. A teammate's turn ends at its first message, so a progress note strands a multi-step task
+
+**What happened.** On 24 October at 12:11 PM, in the owner chat, the owner asked: "reopen yaba store, move some stocks to lekki, increase yaba closing time to 10 pm". Orderly Owner replied "The store list only shows open stores, so Yaba isn't in it and I can't see its old hours. I'll try pulling it by name." and then did nothing until the owner wrote again. On 23 October, "we want to close down yaba store" got "I'll check the stores and what Yaba holds first." and stopped the same way. In the same chat it also said "my earlier lists weren't a fresh lookup", which the skill tells it never to say.
+
+**How the cause was found.** The API logs every call with the tool and the key's role. For that turn, Render's log shows:
+
+```
+2026-10-24T11:11:09.169Z tool=list_products role=buyer status=200 ms=42 GET /v1/products
+2026-10-24T11:11:09.217Z tool=list_stores role=buyer status=200 ms=85 GET /v1/stores
+```
+
+That answered two questions. First, a teammate can call several tools in one turn (here two, 50 ms apart), so Chord isn't limited to one action per message. What ends the turn is the teammate writing text: Chord sends it as the reply and waits, so a sentence like "I'll try pulling it by name" becomes the end of the task. Second, both calls went out with the **buyer** key. In Chord each connection carries one key and both teammates share every connection (write-up 1), and the shared read tools carry the buyer key so the shop agent never sees discount floors. So the owner was looking at the customer view, where a closed store doesn't exist. Not finding Yaba is what prompted the progress note.
+
+**Fix or workaround.**
+- Two owner-only tools, `owner_list_stores` and `owner_list_products`, at `GET /v1/owner/stores` and `/v1/owner/products`, carrying the seller key. They show closed stores, discount floors, off-sale products, a closed store's stock and units held for unpaid orders. The customer view never shows held units or closed stores. Curl tests cover both sides.
+- The owner skill now uses only those for lookups, and its first rule says "Your first message ends your turn": make every lookup first, as many tool calls as it takes, then send one message. A request with several parts gets one read-back covering all of them, with a worked example of this exact request.
+- The shop skill lists the two new tools among the owner tools it must never call.
+
+**Screenshots.**
+
+![The owner's three-part request, and the reply that ended the turn](screenshots/owner-turn-ends.png)
+
+**What Chord should change.**
+- Say in the docs that a teammate's turn ends at its first text, or let a teammate send an interim message ("one moment") and keep working. Agents narrate naturally, and today every narration stops the task.
+- Let a shared connection send a different credential per teammate (write-up 1). That would have made the duplicate owner tools unnecessary.
+
 ## Log
 
 | Date | What happened | Exact error or screen | How I found it | Fix or workaround | What Chord should change |

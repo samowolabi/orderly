@@ -125,6 +125,8 @@ const StoreStock = z.object({
   store_id: z.string(),
   store_name: z.string(),
   available: z.number().int().openapi({ description: "Units free to sell now (held units already taken off)" }),
+  open: z.boolean().optional().openapi({ description: "Owner only: false for a closed store" }),
+  held: z.number().int().optional().openapi({ description: "Owner only: units held for unpaid orders" }),
 });
 
 export const Product = z

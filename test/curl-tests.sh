@@ -79,8 +79,8 @@ expire() { $PSQL -c "UPDATE orders SET expires_at = now() - interval '1 second' 
 
 echo "== Infrastructure"
 call none GET /health;                       check "health checks the database" 200 '.success == true and .data.status == "up"'
-call none GET /openapi.json;                 check "OpenAPI exposes 13 Chord tools" 200 '([.paths[] | to_entries[]] | length) == 13 and (.paths | has("/products/{id}/stock") | not) and .paths["/stores"].get.operationId == "list_stores" and (.paths | has("/webhooks/paystack") | not)'
-check "7 tools take the buyer key and 9 the seller key, 3 of them shared" 200 '[.paths[][] | [.security[]? | keys[]]] as $s | ($s | map(select(index("BuyerKey"))) | length) == 7 and ($s | map(select(index("SellerKey"))) | length) == 9 and ($s | map(select(index("BuyerKey") and index("SellerKey"))) | length) == 3'
+call none GET /openapi.json;                 check "OpenAPI exposes 15 Chord tools" 200 '([.paths[] | to_entries[]] | length) == 15 and (.paths | has("/products/{id}/stock") | not) and .paths["/stores"].get.operationId == "list_stores" and (.paths | has("/webhooks/paystack") | not)'
+check "7 tools take the buyer key and 11 the seller key, 3 of them shared" 200 '[.paths[][] | [.security[]? | keys[]]] as $s | ($s | map(select(index("BuyerKey"))) | length) == 7 and ($s | map(select(index("SellerKey"))) | length) == 11 and ($s | map(select(index("BuyerKey") and index("SellerKey"))) | length) == 3'
 
 check "the spec's server is the /v1 base" 200 '(.servers[0].url | endswith("/v1")) and (.paths | keys | all(startswith("/v1") | not))'
 call "$BUYER" GET /stores;                   check "tools answer under /v1" 200 '.success == true'
@@ -92,6 +92,8 @@ call wrong-key-0000000000 GET /stores;         check "wrong key is refused" 401
 call "$BUYER" PATCH /products/IP13-128 '{"price":1}'; check "buyer can't change a price" 403 '.error.code == "owner_only"'; msg
 call "$BUYER" POST /stores '{"name":"Hack","address":{"line1":"1 Fake Road","area":"Ikeja","city":"Lagos","state":"Lagos"},"hours":[{"days":["mon","tue","wed","thu","fri"],"opens":"08:30","closes":"18:00"},{"days":["sat"],"opens":"10:00","closes":"16:00"}]}'; check "buyer can't add a store" 403
 call "$BUYER" GET /orders;                     check "buyer can't list orders" 403
+call "$BUYER" GET /owner/stores;               check "buyer can't use the owner's store list" 403
+call "$BUYER" GET /owner/products;             check "buyer can't use the owner's product view" 403
 call "$BUYER" POST /products '{"products":[{"name":"Hack Phone","price":1,"stock":[{"store_id":"ikeja","quantity":1}]}]}'; check "buyer can't add a product" 403 '.error.code == "owner_only"'
 call "$SELLER" POST /orders '{"items":[{"product_id":"IP13-128"}],"store_id":"ikeja","buyer_name":"x"}'; check "seller can't create orders (buyer tool)" 403
 
@@ -388,6 +390,8 @@ call "$SELLER" GET '/products?product_id=AIRPODS-PRO2'
 check "Lekki's AirPods are held (4 less 1 for the delivery, 1 here)" 200 '(.data.products[0].stores[] | select(.store_id == "lekki") | .available) == 2'
 call "$SELLER" PATCH /products/AIRPODS-PRO2 '{"stock":[{"store_id":"lekki","set_to":3}]}'
 check "a stock count at Lekki counts the unit held there for an Ikeja-led order" 200 '.data.stock == [{"store_id":"lekki","available":2,"held_for_unpaid_orders":1,"on_hand":3}]'
+call "$SELLER" GET '/owner/products?product_id=AIRPODS-PRO2'; check "the owner's view shows the held unit" 200 '(.data.products[0].stores[] | select(.store_id=="lekki") | .held) == 1'
+call "$BUYER" GET '/products?product_id=AIRPODS-PRO2'; check "customers never see held units" 200 '.data.products[0].stores | all(has("held") | not)'
 pay "$OS"
 call "$BUYER" POST "/orders/$OS/verify"
 check "the receipt says where to collect each item" 200 '.data.outcome == "paid" and (.data.receipt.text | test("Collect at Kola Gadgets Ikeja")) and (.data.receipt.text | test("Collect at Kola Gadgets Lekki")) and .data.receipt.items[1].collect_at.name == "Kola Gadgets Lekki"'
@@ -565,6 +569,9 @@ call "$SELLER" GET '/products?product_id=ANKER-20K'
 check "Ikeja has the moved units" 200 "(.data.products[0].stores[] | select(.store_id==\"ikeja\") | .available) == $((IKEJA_BEFORE + 2))"
 call "$BUYER" GET /stores;  check "customers no longer see Yaba" 200 '[.data.stores[].id] | index("yaba") == null'
 call "$SELLER" GET /stores; check "the owner still sees it, closed" 200 '[.data.stores[] | select(.id=="yaba") | .active] == [false]'
+call "$SELLER" GET /owner/stores; check "the owner's own store list shows it closed" 200 '[.data.stores[] | select(.id=="yaba") | .active] == [false]'
+call "$SELLER" GET '/owner/products?store_id=yaba'; check "the owner can look at a closed store's stock" 200 '.data.products | length > 0 and all(.[]; .stores[0].open == false)'
+call "$BUYER" GET '/products?store_id=yaba'; check "customers can't" 404 '.error.code == "store_not_found"'
 call "$BUYER" GET '/products?product_id=IP13-128'; check "products show no Yaba stock" 200 '[.data.products[0].stores[].store_id] | index("yaba") == null'
 call "$BUYER" POST /orders '{"items":[{"product_id":"ANKER-20K"}],"store_id":"yaba","buyer_name":"A"}'; check "can't order from a closed store" 404 '.error.code == "store_not_found"'
 call "$SELLER" POST /stores '{"id":"yaba","name":"Kola Gadgets Yaba","address":{"line1":"1 Herbert Macaulay Way","area":"Yaba","city":"Lagos","state":"Lagos"},"location":null,"hours":[{"days":["mon"],"opens":"09:00","closes":"17:00"}]}'

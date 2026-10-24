@@ -37,8 +37,8 @@ Kola Gadgets, a made-up Lagos phone and gadget store. Stores are rows in a `stor
 
 ## Two Chord teammates
 - **Orderly Shop**: customer side, on the WhatsApp simulator. Tools (7, buyer key): list_stores, list_products, quote_delivery, create_order, verify_payment, get_receipt, contact_owner. Built-in: handover_to_human. No scheduled reminders: the customer replies PAID, and Paystack's webhook confirms on our side.
-- **Orderly Owner**: owner side, on the Chord direct line or an owner chat link. Tools (9, seller key): list_stores, list_products, get_receipt, add_store, update_store, add_product, update_product, list_orders, delivery_settings.
-- That's 13 tools in all, since list_stores, list_products and get_receipt serve both. Chord gives every imported tool to both teammates; the keys are what stop the shop agent using owner tools (field-notes write-up 1).
+- **Orderly Owner**: owner side, on the Chord direct line or an owner chat link. Tools: owner_list_stores, owner_list_products, get_receipt, add_store, update_store, add_product, update_product, list_orders, delivery_settings.
+- The spec has 15 tools: 7 take the buyer key and 11 the seller key (list_stores, list_products and get_receipt take either). In Chord each connection carries one key and every teammate sees every connection, so the shared reads use the buyer key and the owner uses owner_list_stores and owner_list_products (seller key) instead. The shop agent could still call any owner connection, seller key included: the boundary is the skill, plus the API refusing anything a buyer key isn't allowed to do (field-notes write-ups 1 and 5).
 
 ## Rules the API must enforce (not just the prompts)
 1. Never sell twice: hold stock atomically at order creation (`UPDATE stock SET available = available - qty WHERE available >= qty`), release after 30 minutes unpaid.
