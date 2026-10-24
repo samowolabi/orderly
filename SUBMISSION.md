@@ -20,6 +20,10 @@ Samuel Owolabi
 - **Email, not chat, for the owner.** A Chord teammate can't start a conversation, so the owner gets an email when an order is paid or needs attention.
 - **A call-back instead of a live handover.** A person's reply in Chord never reaches the simulator, so a customer who asks to speak with the real owner, a person rather than the agent, leaves their number, and the owner gets an email to call them back.
 
+**What I would build next on Chord:**
+- **A morning summary.** Every morning Kola gets yesterday's sales, low stock and refunds to make, without asking. *Not built:* messages Chord sends on its own don't reach the simulator (field note 4), and each run costs credits.
+- **A waiting list.** When something is sold out, customers can ask to be told when it's back, and Kola sees who's waiting when he restocks. *Not built:* telling customers it's back is a message Chord sends first, which the simulator doesn't show.
+
 ## Try it
 
 There are two agents, both on Chord's WhatsApp simulator: **Orderly Shop** talks to Kola's customers, and **Orderly Owner** helps Kola run the shop. Chat with either the way you would on WhatsApp.
