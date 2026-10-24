@@ -24,32 +24,39 @@ Orderly was built so everyday people can buy and sell in their own words, right 
 
 ## Try it
 
+There are two agents, both on Chord's WhatsApp simulator: **Orderly Shop** talks to Kola's customers, and **Orderly Owner** helps Kola run the shop. Chat with either the way you would on WhatsApp; the ideas below are only a starting point.
+
 ### As a customer
 
-Open the shop chat: [chat.tsglabs.dev/c/f7lZY2nKUZl1Sm_qcTnKRs9P](https://chat.tsglabs.dev/c/f7lZY2nKUZl1Sm_qcTnKRs9P), and send these in order:
+Open the shop chat: [chat.tsglabs.dev/c/f7lZY2nKUZl1Sm_qcTnKRs9P](https://chat.tsglabs.dev/c/f7lZY2nKUZl1Sm_qcTnKRs9P)
 
-| Send this | What happens |
+| You could say | What it does |
 |---|---|
 | What iPhones do you have? | Live prices and stock across Ikeja, Lekki and Yaba |
+| Where is your Yaba store? What time do you close? | The address, a map link, and today's hours |
+| How soon can I get it in Lekki? | Driving time with traffic, plus packing time, from the nearest branch that has it |
 | Can you do 600k for the iPhone 13? | It bargains, but never below the owner's floor |
 | I'll take it. Deliver to 12 Admiralty Way, Lekki Phase 1. 08031234567 | A fee from the real driving distance, then the phone is held for 30 minutes with a Paystack link |
+| Actually, I'll pick it up instead | It drops the delivery and moves the order to pickup |
+| I want the 20W charger and AirPods Pro, I'll pick up | One order and one payment link, with each item held at the branch that has it |
+| Do you have the iPhone 15 Pro? | The last unit in the business: once someone holds it, no one else can buy it |
 | PAID (after paying) | Paystack confirms the payment and the receipt arrives |
 | Can I speak to the owner? | It takes your number and emails the owner to call you back |
 
 To pay, use Paystack's test card: **4084 0840 8408 4081**, any future expiry, CVV **408**, PIN **0000**, OTP **123456**. No real money moves. Reply PAID after paying: Chord can't send a follow-up message on its own, so that's what brings the receipt.
 
-More to try: "I want the 20W charger and AirPods Pro, I'll pick up" (one order, items held at two branches), or "Do you have the iPhone 15 Pro?" (the last unit in the business: once someone holds it, no one else can).
-
 ### As the owner
 
-Open the owner chat (link shared with the submission). It changes the live demo data.
+Open the owner chat: [chat.tsglabs.dev/c/VrYKliOZokctDkpgMNwtU4ra](https://chat.tsglabs.dev/c/VrYKliOZokctDkpgMNwtU4ra). It changes the live demo data.
 
-| Send this | What happens |
+| You could say | What it does |
 |---|---|
 | How did we do today? | Paid total, what sold, and anything that needs attention |
 | What's in stock at Yaba? | Stock at one branch, including units held for unpaid orders |
 | Add 3 more iPhone 13 to Yaba and drop the price to 630k | One read-back to confirm, then both changes in one go |
+| Move 2 iPhone 14 from Ikeja to Yaba | Takes them off Ikeja and adds them to Yaba in one change |
 | Add a Pixel 9 at 900k, 2 in Ikeja | It asks the lowest price you'd take if a customer bargains, then adds it |
+| Lekki now closes at 6pm, and shuts on Sundays | Changes the weekly hours in one go; customers see the new times straight away |
 | How much is delivery? | The base fee, the rate per km and an example trip |
 | We're closing Yaba | It offers to move Yaba's stock to another branch first |
 
@@ -58,7 +65,7 @@ Open the owner chat (link shared with the submission). It changes the live demo 
 | What | Where |
 |---|---|
 | Shop agent (customer) | [chat.tsglabs.dev/c/f7lZY2nKUZl1Sm_qcTnKRs9P](https://chat.tsglabs.dev/c/f7lZY2nKUZl1Sm_qcTnKRs9P) |
-| Owner agent | Shared with the submission |
+| Owner agent | [chat.tsglabs.dev/c/VrYKliOZokctDkpgMNwtU4ra](https://chat.tsglabs.dev/c/VrYKliOZokctDkpgMNwtU4ra) |
 | Repo | [github.com/samowolabi/orderly](https://github.com/samowolabi/orderly) |
 | Recording (3 minutes) | To come |
 | Field notes | [docs/field-notes.md](docs/field-notes.md) |
