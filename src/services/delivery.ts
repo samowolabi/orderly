@@ -201,7 +201,8 @@ export async function quoteDelivery(input: QuoteInput) {
 
   let destination;
   try {
-    destination = await geocodingProvider().geocodeAddress({ address: input.address, countryCode: config().BUSINESS_COUNTRY });
+    // Customers often give only their area. That's enough to price the trip; the rider calls to find them.
+    destination = await geocodingProvider().geocodeAddress({ address: input.address, countryCode: config().BUSINESS_COUNTRY, allowArea: true });
   } catch (error) {
     if (!(error instanceof GeocodingProviderUnavailable)) throw error;
     console.error(`[geocoding] delivery quote: ${error.message}`);
@@ -268,8 +269,8 @@ export async function quoteDelivery(input: QuoteInput) {
   const id = `DQ-${randomBytes(4).toString("hex").toUpperCase()}`;
   const { rows } = await pool.query<{ expires_at: Date }>(
     `INSERT INTO delivery_quotes (id, store_id, address, phone, latitude, longitude, distance_m, duration_s, fee_subunit, currency, prep_minutes,
-                                  item_stores, items, transfer_minutes, expires_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, now() + make_interval(mins => $15::int))
+                                  item_stores, items, transfer_minutes, matched_area, expires_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, now() + make_interval(mins => $16::int))
      RETURNING expires_at`,
     [
       id,
@@ -286,12 +287,15 @@ export async function quoteDelivery(input: QuoteInput) {
       best.item_stores,
       JSON.stringify(quotedItems),
       transferMinutes,
+      destination.area ?? null,
       config().DELIVERY_QUOTE_MINUTES,
     ],
   );
 
   const minutes = deliveryMinutes(best.route.durationSeconds, config().DELIVERY_PREP_MINUTES + transferMinutes);
   const broughtFrom = sources.map((source) => source.name).join(" and ");
+  const area = destination.area;
+  const where = area ? `${area} (the map found the area, not the street)` : "";
 
   return {
     quote_id: id,
@@ -299,6 +303,7 @@ export async function quoteDelivery(input: QuoteInput) {
     brought_from: sources.map((source) => ({ id: source.id, name: source.name })),
     address: input.address,
     phone: input.phone,
+    matched_area: area ?? null,
     distance_km: km,
     minutes,
     arrives_around: formatLocalClock(new Date(Date.now() + minutes * 60_000)),
@@ -306,7 +311,7 @@ export async function quoteDelivery(input: QuoteInput) {
     items_subtotal: moneyView(subtotal, currency),
     total: moneyView(subtotal + fee, currency),
     expires_at: rows[0]!.expires_at.toISOString(),
-    next_step: `${broughtFrom ? `Some items come over from ${broughtFrom} first; the time already allows for it, so there's no need to mention it. ` : ""}Tell the customer: delivery from ${best.store.name}, ${km} km, about ${minutes} minutes once paid, for ${moneyView(fee, currency).display}, making ${moneyView(subtotal + fee, currency).display} in total. Ask them to confirm. If they agree, call create_order with the same items and delivery_quote_id ${id}. If they'd rather not pay for delivery, offer pickup${broughtFrom ? ", collecting each item from the store that has it" : ` at ${best.store.name}`}.`,
+    next_step: `${broughtFrom ? `Some items come over from ${broughtFrom} first; the time already allows for it, so there's no need to mention it. ` : ""}${where ? `The map only found ${where}, so the fee is for the area. Don't ask for more of the address: say the rider will call ${input.phone} to find them. ` : ""}Tell the customer: delivery from ${best.store.name}, ${km} km, about ${minutes} minutes once paid, for ${moneyView(fee, currency).display}, making ${moneyView(subtotal + fee, currency).display} in total. Ask them to confirm. If they agree, call create_order with the same items and delivery_quote_id ${id}. If they'd rather not pay for delivery, offer pickup${broughtFrom ? ", collecting each item from the store that has it" : ` at ${best.store.name}`}.`,
   };
 }
 

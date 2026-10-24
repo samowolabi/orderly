@@ -34,6 +34,17 @@ async function run() {
   const approximate = google({ status: "OK", results: [{ geometry: { location: { lat: 6.52, lng: 3.37 }, location_type: "APPROXIMATE" } }] });
   assert.equal(await approximate.geocodeAddress({ address: "Somewhere, Lagos", countryCode: "NG" }), null);
 
+  // A delivery quote accepts an area, named without its postcode or country.
+  const area = google({
+    status: "OK",
+    results: [{ geometry: { location: { lat: 6.47, lng: 3.64 }, location_type: "APPROXIMATE" }, formatted_address: "Sangotedo 106104, Lagos, Nigeria" }],
+  });
+  assert.deepEqual(await area.geocodeAddress({ address: "sangotedo", countryCode: "NG", allowArea: true }), {
+    latitude: 6.47,
+    longitude: 3.64,
+    area: "Sangotedo, Lagos",
+  });
+
   assert.equal(await google({ status: "ZERO_RESULTS", results: [] }).geocodeAddress({ address: "Nowhere", countryCode: "NG" }), null);
 
   await assert.rejects(

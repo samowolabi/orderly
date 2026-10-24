@@ -1,8 +1,8 @@
 // Local stand-in for the two Google Maps endpoints Orderly calls (Geocoding and
 // Routes), so delivery quotes can be tested with curl without paid map calls.
 //
-// Geocoding knows a few Lagos areas by name and returns ZERO_RESULTS for anything
-// containing "nowhere". Routes drives 1.3 times the straight-line distance at
+// Geocoding knows a few Lagos areas by name, answers Sangotedo as an area-level match, and
+// returns ZERO_RESULTS for anything containing "nowhere". Routes drives 1.3 times the straight-line distance at
 // 25 km/h, and returns no route when the destination is on "Atlantis".
 //
 // Control endpoints:
@@ -12,6 +12,9 @@
 import express from "express";
 
 const PORT = Number(process.env.FAKE_GOOGLE_PORT ?? 4020);
+
+// Sangotedo comes back as an APPROXIMATE (area-level) match, like real Google for an area name.
+const AREAS: [RegExp, number, number, string][] = [[/sangotedo/i, 6.4706, 3.6378, "Sangotedo 106104, Lagos, Nigeria"]];
 
 const PLACES: [RegExp, number, number][] = [
   [/atlantis/i, 0, 0],
@@ -52,6 +55,10 @@ app.get("/geocode/json", (req, res) => {
   if (mode.geocode === "down" || failingNow("geocode")) return res.status(503).send("down");
   const address = String(req.query.address ?? "");
   if (/nowhere/i.test(address)) return res.json({ status: "ZERO_RESULTS", results: [] });
+  const area = AREAS.find(([pattern]) => pattern.test(address));
+  if (area) {
+    return res.json({ status: "OK", results: [{ geometry: { location: { lat: area[1], lng: area[2] }, location_type: "APPROXIMATE" }, formatted_address: area[3] }] });
+  }
   const [, lat, lng] = PLACES.find(([pattern]) => pattern.test(address)) ?? [null, 6.5244, 3.3792];
   res.json({ status: "OK", results: [{ geometry: { location: { lat, lng }, location_type: "ROOFTOP" } }] });
 });

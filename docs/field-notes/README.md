@@ -4,7 +4,7 @@ Five problems that changed how Orderly was built, then a short list of the rest.
 
 | Problem | Impact | What I did | What Chord should change |
 |---|---|---|---|
-| 1. Chord doesn't show which tools a teammate called | No way to debug a wrong reply; the teammate takes back changes it really made | Added a request log to the API | Show each reply's tool calls; keep them in the teammate's history |
+| 1. Chord doesn't show which tools a teammate called | No way to debug a wrong reply; the teammate invents actions and denies real ones | Added a request log to the API; skill rules | Show each reply's tool calls; keep them in the teammate's history |
 | 2. A teammate can't send more than one message per turn | Multi-step tasks stall after "I'll check…"; the receipt and rider message merge into one | Skills: look everything up first, then send one message | Document it, or allow an interim message |
 | 3. Every teammate has access to every tool | The customer agent holds the owner's key | API refuses buyer-key changes; skill forbids owner tools; owner-only tools added | Choose tools per teammate, or set a credential per teammate |
 | 4. Events and actions don't send messages to the simulator | No live owner chat, no automatic payment confirmation | Customer replies PAID; owner gets emails and call-back requests | Deliver every message to the simulator; let an external event start a turn |
@@ -12,25 +12,39 @@ Five problems that changed how Orderly was built, then a short list of the rest.
 
 ## 1. Chord doesn't show which tools a teammate called
 
-**Impact.** When a reply is wrong or slow, there's no way to see what the teammate actually did. The teammate can't see it either, so it sometimes takes back changes it really made.
+**Impact.** When a reply is wrong or slow, there's no way to see what the teammate actually did. The teammate can't see it either, so it claims actions it never took and denies ones it did.
 
-**What happened.** On 24 October the owner asked to reopen Yaba and said "yes" to the read-back. Orderly Owner replied "Done ✅ Yaba is open again, Mon to Sat, 9am to 10pm". On the next message it said: "I need to correct my earlier messages. Yaba is still closed… that change never went through, and I'm sorry for the mix-up." Chord gave me nothing to tell which message was true. The teammate's Activity panel shows only totals ("Credits used · 30 days 1.03", "Requests 10"), and customer conversations offer only "Copy message".
+**What happened.** Three cases, all on 24 October:
+- **A made-up order.** A customer agreed to a delivery quote. Orderly Shop replied "Held for you 👍 Order ORD-1017" with a Paystack link. The link opened Paystack's "We could not start this transaction" page.
+- **A denied change.** The owner said "yes" to reopening Yaba. Orderly Owner replied "Done ✅ Yaba is open again". Next message: "Yaba is still closed… that change never went through."
+- **Denied lookups.** Orderly Owner gave a full sales and stock report, then on the next message said "I wrote it without pulling live figures… please don't rely on them."
 
-**How I found the cause.** I added my own log to the API: one line per request with the tool, the key's role, the status and the time. It settled the question at once. The reopening went through:
+Chord gave me nothing to tell which messages were true. The teammate's Activity panel shows only totals ("Requests 10"), and customer conversations offer only "Copy message".
+
+**How I found the cause.** I added my own log to the API: one line per request with the tool, the key's role, the status and the time. It settled all three at once:
 
 ```
-11:35:08.139Z tool=update_store role=seller status=200 PATCH /v1/stores/yaba
+18:52:20Z quote_delivery  201                       (no create_order after "yes")
+18:53:15Z verify_payment  404 order_not_found ORD-1017
+11:35:08Z update_store    200 PATCH /v1/stores/yaba (the reopening went through)
+18:55:42Z owner_list_stores, list_orders and 7 owner_list_products, all 200
 ```
 
-There was no store lookup before the take-back, so it wasn't based on fresh data. It looks as if earlier turns' tool calls aren't kept in the history the teammate sees, so it stops trusting what it said. The same thing happened on 23 October with a stock change ("I never ran either of those actions in this chat"), while the log showed both `update_product` calls returning 200.
+So the order was invented (the link even copied a payment-reference pattern from the skill), the reopening was real, and the report was built from nine live lookups. Earlier turns' tool calls seem to be missing from the history the teammate sees, so it can't tell what it did.
 
 **Workaround.**
 - The API's request log, on Render, our hosting platform, is now how I debug every chat. It never records keys, request bodies, names or phone numbers.
-- Both skills say never to take back a reported change, and to look it up if unsure. That didn't stop it: the 24 October take-back was on owner skill v15, which has the rule. This can't be fixed from outside Chord.
+- Skill rules: the shop never writes an order number or link that `create_order` didn't return in that turn; the owner never disowns an earlier reply. The owner already had a similar rule (skill v15) and broke it, so rules make this rarer, not impossible.
 
 **What Chord should change.**
 - Show each reply's tool calls in the conversation: tool name, status, time taken and any error.
-- Keep earlier turns' tool calls and results in the history the teammate sees, so it doesn't deny what it did. To an owner, a false "that never went through" is worse than a slow reply: they may make the change twice.
+- Keep earlier turns' tool calls and results in the history the teammate sees. To an owner, a false "that never went through" is worse than a slow reply: they may make the change twice.
+
+![Orderly Shop sends a made-up order and link, then a real one when asked](screenshots/shop-made-up-order.png)
+
+![The made-up link on Paystack](screenshots/paystack-made-up-link.png)
+
+![Orderly Owner disowns a report built from nine live lookups](screenshots/owner-disowns-lookups.png)
 
 ![Orderly Owner takes back a reopening that really happened](screenshots/owner-false-retraction-v15.png)
 
@@ -139,13 +153,14 @@ What the three have in common: none of them is a reply to a message the customer
 
 **In Chord** (details in the [full log](full-log.md)):
 - The agent wrote its working into customer messages, once leaking a bargaining figure (a buffer, not the real floor). Fixed by having the API return ready-made counter offers, so there's no floor to leak.
+- No timing per reply. Replies can feel slow, but the API answers in 5 to 560 ms per call, so the time is in Chord's model turns. Chord shows nothing to confirm where it goes.
 - Imported tools reach the agent under generated names (`watchtower__create_order-POST`) instead of their `operationId`.
 - The Paystack connector says the webhook secret is optional, but Connect fails without it: "webhook_secret is required".
 
 **Outside Chord:**
 - Render, our hosting platform, sleeps on its free plan. One cold start took 22 seconds, close to Chord's 30-second tool timeout. I kept the API warm before tests.
 - Retrying a Paystack payment link could hit Paystack's duplicate-reference check, so every retry uses a fresh reference.
-- Google gives vague matches for some addresses. Those get no map pin rather than a wrong one.
+- Customers type their area, not their house number, and Google often matches only the area ("Sangotedo, Lagos"). Delivery quotes refused area matches, so a customer was asked for more detail twice ([chat](screenshots/area-address-retries.png)). Quotes now price from the area and the rider calls to find them; store map pins still refuse vague matches.
 - Code review found two bugs in our API: held stock counted against the wrong branch, and a webhook and a PAID check racing to confirm the same order. Each was reproduced with a failing test, then fixed.
 
 ## What worked well

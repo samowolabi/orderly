@@ -22,7 +22,10 @@ Every problem hit while building Orderly on Chord, grouped by area. The five tha
 | Oct 23 | Text written before a tool call reaches the customer | "The customer asked for a lower price without naming an offer, so I give the first counter…" above the counter | Skill rule: write nothing before or between tool calls | Send only the turn's final text |
 | Oct 23 | The agent wrote its working into a customer message | "Price 650,000, floor 628,000, offer 600,000…" before the counter ([clean re-test](screenshots/haggle-v22-clean.png)) | The API returns ready-made counter offers, so there's no floor to leak | Keep reasoning out of replies |
 | Oct 24 | The agent takes back changes it really made | "that change never went through", while the log shows `update_store` returning 200, on skill v15, which forbids this ([chat](screenshots/owner-false-retraction-v15.png), [log](screenshots/owner-update-store-log.png)); same on Oct 23 ([chat](screenshots/owner-false-retraction.png)) | Skill rule to look it up instead; it didn't hold | Keep earlier tool calls in the agent's history |
+| Oct 24 | The agent invented an order and a payment link | "Held for you 👍 Order ORD-1017" with a link to Paystack's error page; the log shows no `create_order` call, and `verify_payment` for ORD-1017 returned 404 ([chat](screenshots/shop-made-up-order.png), [Paystack](screenshots/paystack-made-up-link.png)) | Skill rule: order numbers and links only ever come from `create_order` in that turn | Keep earlier tool calls in the agent's history, and show them in the conversation |
+| Oct 24 | The agent disowned a report built from live lookups | "I wrote it without pulling live figures", after nine lookups that all returned 200 ([chat](screenshots/owner-disowns-lookups.png)) | Stronger skill rule: never disown an earlier reply | Keep earlier tool calls in the agent's history |
 | Oct 23 | The agent lost an order it had just made, then made a second one | After ORD-1014, "I've paid" got "I can't see a hold or a payment link in this chat"; the next one created a new hold | Every hold message includes the order number; never create an order on "I've paid" | Keep earlier tool results in the agent's history |
+| Oct 24 | No timing per reply | Replies felt slow while every API call took 5 to 560 ms | None: the time is in Chord's model turns | Show how long each reply took, split into thinking and tool calls |
 | Oct 23 | No view of which tools a teammate called | Activity shows only totals ("Requests 10"); conversations offer only "Copy message" | One log line per API request, on Render, our hosting platform ([example](screenshots/api-log-ord-1010.png)) | Show each reply's tool calls |
 
 ## Simulator and messages
@@ -50,6 +53,13 @@ Every problem hit while building Orderly on Chord, grouped by area. The five tha
 | Oct 23 | Home page says nothing needs attention during handovers | "Nothing needs you" while Activity lists five escalations | Check Activity instead | Count handovers under "Needs you" |
 | Oct 23 | Each reminder shows as its own conversation | Up to eight per order in the sidebar | Removed reminders | Group them under their conversation |
 | Oct 23 | Starting a new simulator chat blocks on a browser dialog | A native confirm dialog froze automated testing | Clicked OK by hand | An in-page confirmation |
+
+## Outside Chord
+
+| Date | Problem | Evidence | Fix |
+|---|---|---|---|
+| Oct 24 | Delivery quotes refused area-only addresses | "sangotedo" and "chief jude street, thera miracle, sangotedo" both matched Sangotedo as an area, and were refused; the customer was asked twice for more ([chat](screenshots/area-address-retries.png)) | Quotes price from the area, say so, and the rider calls the customer; store pins still refuse vague matches |
+| Oct 23 | Render, our hosting platform, sleeps on its free plan | A cold start took 22 s, close to Chord's 30 s tool timeout | Keep the API warm before tests, or use a paid instance |
 
 ## What worked well
 

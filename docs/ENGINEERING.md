@@ -66,7 +66,7 @@ Ten tables. Stores are rows, not fixed names, so an owner can run any number of 
 | stock | Units per product per store | product_id, store_id, available (never below 0) |
 | orders | Each purchase: one payment link; store_id is the main store (where a delivery leaves from, or the first pickup store) | id (e.g. ORD-1042), store_id, amount_subunit (the total), currency, buyer_name, status, payment_references, paid_reference, expires_at |
 | order_items | The lines of an order, each held at its own store | order_id, line, product_id, store_id, quantity, unit_price_subunit, list_price_subunit (before bargaining), amount_subunit |
-| delivery_quotes | A priced trip from a store to a customer's address; an order uses at most one | id (e.g. DQ-3F9A2C1B), store_id, address, phone, distance_m, duration_s, fee_subunit, currency, prep_minutes, item_stores (where each product is held), transfer_minutes (bringing items over from other stores), expires_at |
+| delivery_quotes | A priced trip from a store to a customer's address; an order uses at most one | id (e.g. DQ-3F9A2C1B), store_id, address, phone, distance_m, duration_s, fee_subunit, currency, prep_minutes, item_stores (where each product is held), transfer_minutes (bringing items over from other stores), matched_area (set when only the area was found; the rider calls), expires_at |
 | delivery_settings | The owner's delivery pricing (one row; none means the env defaults) | currency, base_fee_subunit, fee_per_km_subunit |
 | owner_contacts | Customers who asked for the owner; limits each number to one call-back email every 30 minutes | name, phone, phone_key, reason, order_id, emailed, created_at |
 | events | A log of everything that happened | order_id, type, detail, created_at |

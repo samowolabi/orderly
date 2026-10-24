@@ -103,6 +103,7 @@ type DeliveryRow = {
   delivery_distance_m: number | null;
   delivery_duration_s: number | null;
   delivery_prep_minutes: number | null;
+  delivery_area: string | null;
 };
 
 type OrderRow = OrderBase & { store_name: string; items: (ItemRow & AddressRow)[] } & DeliveryRow & AddressRow;
@@ -120,7 +121,7 @@ const ORDER_SELECT = `
          s.country_code, s.postal_code, s.latitude, s.longitude, s.directions_note,
          dq.address AS delivery_address, dq.phone AS delivery_phone,
          dq.distance_m AS delivery_distance_m, dq.duration_s AS delivery_duration_s,
-         dq.prep_minutes + dq.transfer_minutes AS delivery_prep_minutes
+         dq.prep_minutes + dq.transfer_minutes AS delivery_prep_minutes, dq.matched_area AS delivery_area
   FROM orders o
   JOIN stores s ON s.id = o.store_id
   LEFT JOIN delivery_quotes dq ON dq.id = o.delivery_quote_id`;
@@ -180,6 +181,8 @@ function deliveryView(order: OrderRow) {
     fee: moneyView(order.delivery_fee_subunit, order.currency),
     distance_km: distanceKm(order.delivery_distance_m!),
     minutes: deliveryMinutes(order.delivery_duration_s!, order.delivery_prep_minutes!),
+    // Set when only the area was found on the map: the rider calls to find the customer.
+    area: order.delivery_area,
   };
 }
 
@@ -254,7 +257,7 @@ function receiptView(order: OrderRow) {
     // A delivery receipt says when the rider comes, so the customer needs no second message.
     ...(delivery
       ? [
-          `Our rider will bring it to ${delivery.address} in about ${delivery.minutes} minutes from payment (around ${formatLocalClock(new Date(paidAt.getTime() + delivery.minutes * 60_000))}), and will call ${delivery.phone} on arrival.`,
+          `Our rider will bring it to ${delivery.address} in about ${delivery.minutes} minutes from payment (around ${formatLocalClock(new Date(paidAt.getTime() + delivery.minutes * 60_000))}), and will call ${delivery.phone} ${delivery.area ? "when close, to find you" : "on arrival"}.`,
         ]
       : []),
     `${paymentProcessor.name} reference: ${reference}`,
@@ -678,6 +681,7 @@ function ownerMessage(order: OrderRow, alert: OwnerAlert): OwnerMessage {
       ? ([
           ["Delivery to", delivery.address],
           ["Customer phone", delivery.phone],
+          ...(delivery.area ? ([["Find the customer", `The map only found the area (${delivery.area}), so call them for the exact spot`]] as [string, string][]) : []),
           ["Leaves from", order.store_name],
         ] as [string, string][])
       : ([["Pickup", "The customer collects each item at the store shown"]] as [string, string][])),

@@ -11,6 +11,7 @@ const DeliveryDetails = z
     fee: Money,
     distance_km: z.number(),
     minutes: z.number().int().openapi({ description: "Packing plus driving time, from when it's paid" }),
+    area: z.string().nullable().openapi({ description: "Set when only the customer's area was found on the map: the rider calls to find them" }),
   })
   .nullable()
   .openapi({ description: "Set for delivery orders, null for pickup" });
@@ -162,6 +163,10 @@ export const DeliveryQuote = z
       .openapi({ description: "Stores that send items over to the delivering store first; the time already allows for it. Empty when one store has everything." }),
     address: z.string(),
     phone: z.string(),
+    matched_area: z
+      .string()
+      .nullable()
+      .openapi({ description: "Set when the map found only the customer's area, not their street: the fee is for the area, and the rider calls to find them. Null when the address matched exactly." }),
     distance_km: z.number(),
     minutes: z.number().int().openapi({ description: "Packing plus driving time with current traffic, from when it's paid" }),
     arrives_around: z.string().openapi({ description: "Clock time it would arrive if paid now, in the business's time zone" }),

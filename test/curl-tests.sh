@@ -296,6 +296,14 @@ call "$BUYER" POST /delivery/quote '{"items":[{"product_id":"IP15P-256","quantit
 check "not enough anywhere" 409 '.error.code == "out_of_stock" and (.error.message_for_agent | test("any store"))'; msg
 call "$BUYER" POST /delivery/quote '{"items":[{"product_id":"ANKER-20K"}],"address":"5 Nowhere Close","phone":"08031234567"}'
 check "address not on the map" 422 '.error.code == "address_not_found"'; msg
+call "$BUYER" POST /delivery/quote '{"items":[{"product_id":"ANKER-20K"}],"address":"Sangotedo","phone":"08025610983"}'; QA=$(jq -r .data.quote_id <<<"$BODY")
+check "an area alone is enough to price delivery" 201 '.data.matched_area == "Sangotedo, Lagos" and (.data.next_step | test("rider will call 08025610983"))'; msg
+call "$BUYER" POST /orders '{"items":[{"product_id":"ANKER-20K"}],"delivery_quote_id":"'"$QA"'","buyer_name":"Danny"}'; OA=$(jq -r .data.order_id <<<"$BODY")
+check "an order from an area quote" 201 '.data.delivery.area == "Sangotedo, Lagos"'
+pay "$OA"; call "$BUYER" POST "/orders/$OA/verify"
+check "its receipt says the rider calls to find them" 200 '.data.outcome == "paid" and (.data.receipt.text | test("call 08025610983 when close, to find you"))'
+call "$BUYER" POST /delivery/quote '{"items":[{"product_id":"ANKER-20K"}],"address":"'"$LEKKI_ADDR"'","phone":"08031234567"}'
+check "an exact address has no matched area" 201 '.data.matched_area == null and (.data.next_step | test("rider will call") | not)'
 call "$BUYER" POST /delivery/quote '{"items":[{"product_id":"ANKER-20K"}],"address":"1 Lost Road, Atlantis","phone":"08031234567"}'
 check "no road to the address" 422 '.error.code == "no_route"'
 call "$BUYER" POST /delivery/quote '{"items":[{"product_id":"ANKER-20K"}],"address":"'"$LEKKI_ADDR"'","phone":"call me"}'
@@ -541,6 +549,7 @@ email_check "a paid order emails the owner, with where each item is held" '[.[] 
 email_check "a late payment with nothing left asks for a refund" '[.[] | select(.subject | startswith("Refund needed: '"$RACE"'"))] | length == 1'
 email_check "a re-held late payment emails once, though the webhook came twice" '[.[] | select(.subject | startswith("Paid late, still in stock: '"$O2"'"))] | length == 1'
 email_check "a wrong amount asks the owner to check" '[.[] | select(.subject | startswith("Check payment: "))] | length >= 1'
+email_check "an area-only delivery tells the owner to call for the exact spot" '[.[] | select(.subject | startswith("Paid: '"$OA"'"))] | length == 1 and (.[0].text | test("Find the customer: The map only found the area \\(Sangotedo, Lagos\\)"))'
 email_check "a delivery email lists what to bring to the delivering store" '[.[] | select(.subject | startswith("Paid: '"$ODM"'"))] | length == 1 and (.[0].text | test("Bring these to Kola Gadgets Lekki first")) and (.[0].text | test("Apple USB-C charger \\(20W\\) from Kola Gadgets Ikeja"))'
 email_check "the call-back email names the customer, their number and the order" '[.[] | select(.subject == "Call back: Tunde Bakare wants to talk to you")] | length == 1 and (.[0].html | test("08031234567")) and (.[0].html | test("Complaint about a late delivery")) and (.[0].text | test("'"$O1"'"))'
 email_check "owner emails are HTML with a plain-text fallback" 'all(.[]; (.html | test("<h1")) and (.text | length > 0))'
@@ -548,7 +557,7 @@ email_check "never the same email twice" 'group_by(.subject) | all(length == 1)'
 jq -r '[.[] | select(.subject | startswith("Paid: '"$O1"'"))][0] | "        | \(.subject)", (.text | split("\n")[] | "        | \(.)")' <<<"$EMAILS"
 
 echo "== Owner: list_orders"
-call "$SELLER" GET /orders;                   check "today's orders and summary" 200 '.data.period == "today" and .data.summary.counts.paid == 11 and .data.summary.paid_totals == [{"amount":4434200,"currency":"NGN","display":"₦4,434,200"}]'
+call "$SELLER" GET /orders;                   check "today's orders and summary" 200 '.data.period == "today" and .data.summary.counts.paid == 12 and .data.summary.paid_totals == [{"amount":4484300,"currency":"NGN","display":"₦4,484,300"}]'
 check "list_orders shows each order's lines" 200 '[.data.orders[] | select(.order_id == "'"$OM"'") | .items[].product.id] == ["IP14-128", "ANKER-20K"]'
 jq -c '.data.summary' <<<"$BODY" | sed 's/^/        /'
 check "paid_no_stock and mismatch need attention" 200 '[.data.needs_attention[].order_id] | contains(["'"$RACE"'", "'"$O5"'"])'

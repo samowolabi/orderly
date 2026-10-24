@@ -24,6 +24,7 @@ type GoogleGeocodeResponse = {
       location?: { lat?: unknown; lng?: unknown };
       location_type?: string;
     };
+    formatted_address?: string;
   }[];
 };
 
@@ -44,7 +45,8 @@ export class GoogleGeocodingAdapter implements GeocodingProvider {
     return retry(() => this.geocodeOnce(input), { retryOn: (error) => error instanceof GeocodingProviderUnavailable });
   }
 
-  // Resolves one address through the Google Geocoding API, refusing city-level guesses.
+  // Resolves one address through the Google Geocoding API. An area-level match is refused unless
+  // the caller allows it.
   private async geocodeOnce(input: GeocodingInput): Promise<GeocodedCoordinates | null> {
     const url = new URL(config().GOOGLE_GEOCODING_URL);
     url.search = new URLSearchParams({
@@ -76,9 +78,13 @@ export class GoogleGeocodingAdapter implements GeocodingProvider {
       throw new GeocodingProviderUnavailable(`Google Maps returned ${body?.status ?? "an invalid response"}`);
     }
 
-    const geometry = body.results?.[0]?.geometry;
-    // An APPROXIMATE match is a whole area, not the shop; no pin is better than a misleading one.
-    if (!geometry || geometry.location_type === "APPROXIMATE") return null;
+    const result = body.results?.[0];
+    const geometry = result?.geometry;
+    if (!geometry) return null;
+    // An APPROXIMATE match is a whole area. No store pin is better than a misleading one, but a
+    // delivery quote can price from it.
+    const approximate = geometry.location_type === "APPROXIMATE";
+    if (approximate && !input.allowArea) return null;
 
     const { lat, lng } = geometry.location ?? {};
     if (
@@ -94,6 +100,12 @@ export class GoogleGeocodingAdapter implements GeocodingProvider {
       throw new GeocodingProviderUnavailable("Google Maps returned invalid coordinates");
     }
 
-    return { latitude: lat, longitude: lng };
+    return approximate ? { latitude: lat, longitude: lng, area: areaName(result.formatted_address) } : { latitude: lat, longitude: lng };
   }
+}
+
+// Shortens Google's "Sangotedo 106104, Lagos, Nigeria" to "Sangotedo, Lagos": no postcode or country.
+function areaName(formatted: string | undefined) {
+  const parts = (formatted ?? "").split(",").map((part) => part.replace(/\s*\d{4,}/g, "").trim()).filter(Boolean);
+  return (parts.length > 1 ? parts.slice(0, -1) : parts).join(", ") || "that area";
 }
