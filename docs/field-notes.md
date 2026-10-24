@@ -153,6 +153,16 @@ That answered two questions. First, a teammate can call several tools in one tur
 - The owner skill now uses only those for lookups, and its first rule says "Your first message ends your turn": make every lookup first, as many tool calls as it takes, then send one message. A request with several parts gets one read-back covering all of them, with a worked example of this exact request.
 - The shop skill lists the two new tools among the owner tools it must never call.
 
+**Result.** Re-tested on owner skill v15 (24 October, 12:31 PM) with the same message in a fresh owner chat. Render's log shows six lookups in one turn, all with the seller key:
+
+```
+2026-10-24T11:31:33.951Z tool=owner_list_stores role=seller status=200 ms=4 GET /v1/owner/stores
+2026-10-24T11:31:33.974Z tool=owner_list_products role=seller status=200 ms=12 GET /v1/owner/products
+… four more owner_list_products calls by 11:31:38.733Z
+```
+
+Then one message: it found Yaba closed, said its closing time would change "from 7pm to 10pm, Monday to Saturday (opening stays 9am, Sunday stays closed)", noticed Yaba holds no stock to move, and asked one question covering all three parts. No progress notes, and no stalled turn.
+
 **Screenshots.**
 
 ![The owner's three-part request, and the reply that ended the turn](screenshots/owner-turn-ends.png)
