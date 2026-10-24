@@ -11,7 +11,7 @@ Two AI teammates run on [Chord](https://chordhq.xyz). This repo is the REST API 
 
 ## Try it
 
-**As a customer**, open the shop's test chat: [chat.tsglabs.dev/c/q6-Wc-AfTG7keR-8DKOlmZ_7](https://chat.tsglabs.dev/c/q6-Wc-AfTG7keR-8DKOlmZ_7). Some things to type:
+**As a customer**, open the shop's test chat: [chat.tsglabs.dev/c/f7lZY2nKUZl1Sm_qcTnKRs9P](https://chat.tsglabs.dev/c/f7lZY2nKUZl1Sm_qcTnKRs9P). Some things to type:
 
 | Type this | What happens |
 |---|---|

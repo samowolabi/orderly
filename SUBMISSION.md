@@ -22,11 +22,42 @@ Orderly was built so everyday people can buy and sell in their own words, right 
 - **Email, not chat, for the owner.** A Chord teammate can't start a conversation, so the owner gets an email when an order is paid or needs attention.
 - **A call-back instead of a live handover.** A person's reply in Chord never reaches the simulator, so a customer who asks to speak with the real owner, a person rather than the agent, leaves their number, and the owner gets an email to call them back.
 
+## Try it
+
+### As a customer
+
+Open the shop chat: [chat.tsglabs.dev/c/f7lZY2nKUZl1Sm_qcTnKRs9P](https://chat.tsglabs.dev/c/f7lZY2nKUZl1Sm_qcTnKRs9P), and send these in order:
+
+| Send this | What happens |
+|---|---|
+| What iPhones do you have? | Live prices and stock across Ikeja, Lekki and Yaba |
+| Can you do 600k for the iPhone 13? | It bargains, but never below the owner's floor |
+| I'll take it. Deliver to 12 Admiralty Way, Lekki Phase 1. 08031234567 | A fee from the real driving distance, then the phone is held for 30 minutes with a Paystack link |
+| PAID (after paying) | Paystack confirms the payment and the receipt arrives |
+| Can I speak to the owner? | It takes your number and emails the owner to call you back |
+
+To pay, use Paystack's test card: **4084 0840 8408 4081**, any future expiry, CVV **408**, PIN **0000**, OTP **123456**. No real money moves. Reply PAID after paying: Chord can't send a follow-up message on its own, so that's what brings the receipt.
+
+More to try: "I want the 20W charger and AirPods Pro, I'll pick up" (one order, items held at two branches), or "Do you have the iPhone 15 Pro?" (the last unit in the business: once someone holds it, no one else can).
+
+### As the owner
+
+Open the owner chat (link shared with the submission). It changes the live demo data.
+
+| Send this | What happens |
+|---|---|
+| How did we do today? | Paid total, what sold, and anything that needs attention |
+| What's in stock at Yaba? | Stock at one branch, including units held for unpaid orders |
+| Add 3 more iPhone 13 to Yaba and drop the price to 630k | One read-back to confirm, then both changes in one go |
+| Add a Pixel 9 at 900k, 2 in Ikeja | It asks the lowest price you'd take if a customer bargains, then adds it |
+| How much is delivery? | The base fee, the rate per km and an example trip |
+| We're closing Yaba | It offers to move Yaba's stock to another branch first |
+
 ## Links
 
 | What | Where |
 |---|---|
-| Shop agent (customer) | [chat.tsglabs.dev/c/q6-Wc-AfTG7keR-8DKOlmZ_7](https://chat.tsglabs.dev/c/q6-Wc-AfTG7keR-8DKOlmZ_7) |
+| Shop agent (customer) | [chat.tsglabs.dev/c/f7lZY2nKUZl1Sm_qcTnKRs9P](https://chat.tsglabs.dev/c/f7lZY2nKUZl1Sm_qcTnKRs9P) |
 | Owner agent | Shared with the submission |
 | Repo | [github.com/samowolabi/orderly](https://github.com/samowolabi/orderly) |
 | Recording (3 minutes) | To come |
