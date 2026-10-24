@@ -99,7 +99,7 @@ Tool endpoints below are relative to `/v1` (for example `POST /v1/orders`); the 
 | delivery_settings | `PATCH /delivery/settings` | No | Yes | Reads (empty body) or changes the delivery pricing: base fee, rate per km, rounding, distance limit, packing time |
 | list_orders | `GET /orders` | No | Yes | Orders by status and store, including handed-over ones |
 
-Chord's built-in `handover_to_human` covers escalation. Payment is confirmed when the customer replies PAID (the agent calls `verify_payment`) and by Paystack's webhook; there are no scheduled reminders (field-notes write-up 4).
+Chord's built-in `handover_to_human` covers escalation. Payment is confirmed when the customer replies PAID (the agent calls `verify_payment`) and by Paystack's webhook; there are no scheduled reminders (field note 4).
 
 `POST /webhooks/paystack` is infrastructure, not a Chord tool, so it is deliberately absent from OpenAPI. Paystack calls it with a signed `charge.success` event.
 

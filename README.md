@@ -1,111 +1,130 @@
 # Orderly
 
-**WhatsApp is the store. Never sell twice. Never chase an alert.**
+**Your whole shop, in the chat.**
 
-Small shops in Lagos sell on WhatsApp, but stock lives in someone's head, payment is "send me the transfer screenshot", and the same last phone gets sold to two people. Before building, I interviewed three Lagos sellers who sell on WhatsApp: all three had sold something already gone, and all three check their bank by hand before releasing an order ([customer discovery](docs/customer-discovery.md)). Orderly turns the chat into the store:
+Orderly is an AI sales assistant for shops that sell on WhatsApp and other chat apps. It answers customers, takes orders and confirms payments, and lets the owner run the shop by chat.
 
-- **Customers** ask what's in stock, bargain, order for pickup or delivery, pay through a Paystack link and get a receipt, without leaving WhatsApp.
-- **The owner** adds products, changes prices and stock, opens and closes stores and checks sales by chat, and gets an email the moment something needs them.
+**For buyers**
 
-Two AI teammates run on [Chord](https://chordhq.xyz). This repo is the REST API they call, their skills, and the docs. Built by Samuel Owolabi for the TSG Labs Forward-deployed Engineering exercise.
-
-## Try it
-
-**As a customer**, open the shop's test chat: [chat.tsglabs.dev/c/f7lZY2nKUZl1Sm_qcTnKRs9P](https://chat.tsglabs.dev/c/f7lZY2nKUZl1Sm_qcTnKRs9P). Some things to type:
-
-| Type this | What happens |
+| Problem | With Orderly |
 |---|---|
-| How much is the iPhone 13? | Live price and stock per store, then it offers delivery |
-| Can you do 600k? | Lagos-style bargaining. It counters twice, then holds, and never reveals the owner's floor |
-| I want the 20W charger and AirPods Pro, I'll pick up | One order, one payment link, items held at two stores |
-| 12 Admiralty Way, Lekki Phase 1, Lagos. 08031234567 | A delivery quote: distance, time with traffic, fee and total |
-| PAID (after paying) | Checks Paystack and sends the receipt |
-| Can I speak to the owner? | Asks for a number and emails the owner a call-back request |
+| Waiting hours for a reply | You get an answer instantly, at any hour, from live prices and stock |
+| The item is at another branch | Items from different branches come together in one order and one payment |
+| Sent the money, heard nothing back | You get your receipt as soon as Paystack confirms |
+| Not knowing the delivery fee or time | You see both upfront, from the real driving distance and traffic |
+| Paying for something that's already gone | Your item is held the moment you say yes |
+| Downloading and opening an app or visiting a website to shop | Everything happens in the chat you already use |
 
-To pay, use Paystack's test card: **4084 0840 8408 4081**, any future expiry, CVV **408**, PIN **0000**, OTP **123456**. No real money moves.
+**For sellers**
 
-**As the owner**, the owner chat link is shared with the submission (it can change the live demo data). Try "Add 3 more iPhone 13 to Lekki", "How did we do today?", "We're closing Yaba" or "How much is delivery?".
+| Problem | With Orderly |
+|---|---|
+| The same questions all day | They're answered for you, and customers bargain within your limit |
+| Missing orders while busy or asleep | You get an email the moment an order is paid |
+| Stock split across branches | You have one live count, so nothing is sold twice |
+| Managing several branches | You open new ones, change hours, close them and move stock between them, all by chat |
+| Checking every payment by hand | Paystack confirms every payment for you |
+| Fake payment screenshots | A screenshot never confirms an order; only Paystack does |
+| Updating stock and prices | You change them by chat, and customers see it at once |
+| No record of sales | You ask "how did we do today?" and get real figures |
 
-The API is live at [orderly-o1ag.onrender.com](https://orderly-o1ag.onrender.com/health), and its OpenAPI spec is at [/openapi.json](https://orderly-o1ag.onrender.com/openapi.json).
+Two AI teammates run on [Chord](https://chordhq.xyz). This repo is the API they call, their skills and the docs. The demo shop is Kola Gadgets, a Lagos phone shop with three branches.
 
-## How it fits together
+- Try the live agents: [SUBMISSION.md](SUBMISSION.md)
+- Problems found in Chord: [field notes](docs/field-notes.md)
+- Seller interviews: [customer discovery](docs/customer-discovery.md)
 
-```mermaid
-flowchart LR
-  C[Customer on WhatsApp] --> S
-  O[Owner] --> W
-  subgraph Chord
-    S[Orderly Shop teammate]
-    W[Orderly Owner teammate]
-  end
-  S -->|buyer key| API[Orderly API]
-  W -->|seller key| API
-  API --> DB[(Postgres)]
-  API <-->|payment links, checks, webhooks| P[Paystack]
-  API -->|addresses, routes| G[Google Maps]
-  API -->|owner emails| R[Resend]
-```
+## Run it
 
-- The teammates never touch the database. Every price, stock figure and payment result comes from the API, and every rule is enforced there, not just in the prompts.
-- The shop teammate's tools use the **buyer key**, which can't change anything; the owner's use the **seller key**. Chord shows every tool to both teammates, so the shop agent could still call an owner tool. The skill forbids it, and the API refuses anything the buyer key isn't allowed to do ([field notes](docs/field-notes.md), write-up 1).
-- Paystack confirms payments two ways: a signed webhook the moment a payment lands, and a check when the customer replies PAID.
-- Resend emails the owner, because a Chord teammate can't start a conversation by itself.
-
-## The rules the API enforces
-
-| Rule | How | Proved by |
-|---|---|---|
-| **Never sell twice** | Stock is held in one atomic update when the order is created, and released after 30 minutes unpaid. Every line is held at the store it's in, all or nothing. | Ten buyers racing for two units: exactly two get them |
-| **Never confirm without Paystack** | Webhooks are signature-checked, and both paths check status, amount and currency against the order. A mismatch is never confirmed. | Wrong amount, wrong currency, declined card, Paystack down |
-| **Never invent prices or stock** | Every figure comes from the database. Bargained prices must sit between the owner's floor and the list price, and a delivery order charges exactly what was quoted. | Below-floor offers refused, price changed mid-quote |
-| **Customers can't change anything** | Buyer and seller keys, checked on every request: the buyer key can never change prices, stock or stores. Chord shows every tool to both teammates, so the shop skill also forbids owner tools. | Buyer key refused on every owner tool |
-| **Late payments are handled** | Paid after the hold ran out: re-held if the stock is still there, otherwise marked for a refund and the owner is emailed. | Late payment with and without stock |
-
-## What's inside
-
-- **Bargaining** with ready-made counter offers from the API, so the agent never sees a floor it could leak.
-- **Pickup or delivery**, with Google-routed distance, traffic-aware times and a fee the owner sets by chat. Orders can span stores; delivery always leaves from one, and the owner's email lists what to bring over.
-- **Owner by chat**: products, prices and discount floors, stock at any store, opening hours, closing a store and moving its stock, delivery pricing and sales reports.
-- **Owner emails** for paid orders, refunds needed, payment problems and call-back requests, as simple HTML ([samples](docs/email-samples)).
-- **Resilience**: retries for short Paystack and Google outages, and a delivery quote skips any store Google can't route from.
-
-## Run it locally
-
-You need Node 22+, Postgres and jq.
+Needs Node 22+ and Postgres.
 
 ```bash
 npm ci
-cp .env.example .env     # then fill in the values
-npm run db:create        # makes the role and database
-npm run db:reset         # migrates and seeds Kola Gadgets
-npm run dev              # serves on :3000
+cp .env.example .env     # fill in the values; DATABASE_URL can be any Postgres
+npm run db:migrate       # create the tables
+npm run db:seed          # optional: load the demo shop (wipes existing data)
+npm run dev              # http://localhost:3000
 ```
 
-To run the tests, start the three local stand-ins for Paystack, Google and Resend, then the API pointed at them:
+`/health` checks the database. `/openapi.json` is the spec Chord imports.
 
-```bash
-npm run fake-paystack & npm run fake-google & npm run fake-resend &
-PAYSTACK_BASE_URL=http://localhost:4010 GOOGLE_GEOCODING_URL=http://localhost:4020/geocode/json \
-  GOOGLE_ROUTES_URL=http://localhost:4020/routes RESEND_URL=http://localhost:4030/emails \
-  RESEND_API_KEY=re_test OWNER_EMAIL=owner@example.com npm run dev
-npm run db:seed:test && npm run test:api
+Tests: 259 end-to-end checks in `test/curl-tests.sh` (every tool, failure cases, the last-unit race, late payments, webhooks, delivery and emails), run against local fakes for Paystack, Google and Resend. Setup is in [CLAUDE.md](CLAUDE.md).
+
+Deploy: `render.yaml` is a Render Blueprint for the API and database.
+
+## How it works
+
+```mermaid
+flowchart LR
+  C[Customer] --> S[Orderly Shop]
+  O[Owner] --> W[Orderly Owner]
+  S -->|buyer key| API[Orderly API]
+  W -->|seller key| API
+  API --> DB[(Postgres)]
+  API <--> P[Paystack]
+  API --> G[Google Maps]
+  API --> R[Resend]
 ```
 
-The curl suite runs about 250 end-to-end checks: every tool, the failure cases, the last-unit race, late payments, webhooks, delivery and emails. `npm run test:retry`, `test:geocoding`, `test:hours` and `test:location` are small unit tests.
+- Customers chat with **Orderly Shop**; the owner chats with **Orderly Owner**. Both are Chord teammates.
+- Neither holds any data. They call the Orderly API: the shop with a buyer key that can look up products and branches, quote delivery, place orders, check payments and request a call-back, the owner with a seller key that can also change products, prices, stock, branches and delivery pricing, and see sales.
+- The API keeps everything in Postgres, takes and confirms payments with Paystack, prices delivery with Google Maps, and emails the owner through Resend.
+- Every rule lives in the API, not in the prompts.
 
-## Repo map
+**Built with** TypeScript, Express, Zod (validation, and the OpenAPI spec generated from it), Postgres, Paystack test mode, Google Geocoding and Routes, Resend, and Render.
 
-| Path | What's there |
+## Tools
+
+Each tool is one endpoint under `/v1`, named by its `operationId` in the OpenAPI spec at [`/openapi.json`](https://orderly-o1ag.onrender.com/openapi.json), which is what Chord imports. The key column says which API keys it accepts.
+
+| Tool | Endpoint | Key | Used by | What it does |
+|---|---|---|---|---|
+| `list_products` | `GET /products` | Buyer and seller | Shop | Prices, stock per branch, counter offers |
+| `list_stores` | `GET /stores` | Buyer and seller | Shop | Address, map link, hours, open now |
+| `get_receipt` | `GET /orders/{id}/receipt` | Buyer and seller | Both | Receipt for a paid order |
+| `quote_delivery` | `POST /delivery/quote` | Buyer | Shop | Distance, time with traffic, fee and total |
+| `create_order` | `POST /orders` | Buyer | Shop | Holds items, across branches if needed; one Paystack link |
+| `verify_payment` | `POST /orders/{id}/verify` | Buyer | Shop | Checks Paystack; returns the receipt when paid |
+| `contact_owner` | `POST /owner/contact` | Buyer | Shop | Emails the owner a number to call back |
+| `owner_list_products` | `GET /owner/products` | Seller | Owner | Prices, floors, off-sale items, stock and held units |
+| `owner_list_stores` | `GET /owner/stores` | Seller | Owner | Every branch, open or closed |
+| `add_product`, `update_product` | `POST /products`, `PATCH /products/{id}` | Seller | Owner | Add products; change price, floor, details or stock |
+| `add_store`, `update_store` | `POST /stores`, `PATCH /stores/{id}` | Seller | Owner | Open a branch; change hours, close, reopen or move stock |
+| `delivery_settings` | `PATCH /delivery/settings` | Seller | Owner | Read or change the base fee and rate per km |
+| `list_orders` | `GET /orders` | Seller | Owner | Sales by period, branch and status; what needs attention |
+
+## Skills
+
+Each teammate's instructions, matching what's published in Chord:
+
+- Orderly Shop: [skills/orderly-shop/SKILL.md](skills/orderly-shop/SKILL.md)
+- Orderly Owner: [skills/orderly-owner/SKILL.md](skills/orderly-owner/SKILL.md)
+
+## Security and reliability
+
+- API keys compared in constant time; the buyer key can't change prices, stock or stores.
+- Paystack webhooks verified by HMAC-SHA512 signature on the raw body.
+- The shop agent never sees discount floors, only ready-made counter offers.
+- Secrets only in environment variables. Logs never record keys, bodies, names or phone numbers.
+- Call-back requests limited to one per number every 30 minutes.
+- Paystack and Google calls time out and retry up to three times; a branch Google can't route from is skipped; a failed email never blocks a payment.
+
+## Repo
+
+| Path | Contents |
 |---|---|
-| `src/` | The API: routes, controllers, services (the business rules), adapters (Paystack, Google, Resend), OpenAPI spec |
-| `migrations/` | Plain SQL migrations, applied in order |
-| `skills/` | The two Chord skills, the source of truth for what's published |
-| `test/` | The curl suite, unit tests and the local stand-ins in `test/fakes/` |
-| `docs/customer-discovery.md` | Interviews with three WhatsApp sellers, and how they shaped the build |
-| `docs/PRD.md` | The problem, the users and the features |
-| `docs/ENGINEERING.md` | Stack, data model, endpoints and Chord setup |
-| `docs/field-notes.md` | What went wrong with Chord, with evidence, and what Chord should change |
+| `src/` | Routes, controllers, services (business rules), adapters (Paystack, Google, Resend), OpenAPI |
+| `migrations/` | SQL migrations |
+| `skills/` | The two Chord skills |
+| `test/` | Curl suite, unit tests, local fakes |
+| `docs/` | PRD, engineering notes, field notes, interviews, email samples |
 
-## Stack
+## How I used AI tools
 
-TypeScript, Express, Zod and zod-to-openapi, Postgres, Paystack (test mode), Google Maps (Geocoding and Routes), Resend, hosted on Render.
+- **Claude Code** for building the API, tests, skills and docs.
+- **Codex** as a second reviewer and evaluator: it reviewed changes for bugs, and each finding was reproduced with a test before it was fixed.
+- **[CLAUDE.md](CLAUDE.md)** and a code-style skill in `.agents/skills/` as standing instructions for every session.
+- **Claude in Chrome** to publish skills in Chord, set up the simulator, read Render logs and run test chats, which is where the field notes' evidence comes from.
+- **Chord** runs the two teammates.
+
+Built by Samuel Owolabi for the TSG Labs Forward-deployed Engineering exercise.

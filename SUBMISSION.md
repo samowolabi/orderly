@@ -10,7 +10,7 @@ Kola Gadgets, a busy Yoruba man's shop in Lagos with three branches, Ikeja, Lekk
 
 So when orders pile up, mistakes happen. Ikeja sells the last iPhone while Lekki is promising it to someone else, or an order goes out on a fake screenshot before anyone has confirmed the money actually arrived. Kola Gadgets is made up, but its problems aren't: all three real Lagos sellers I interviewed check payments by hand, and all three had sold something that was already gone ([customer discovery](docs/customer-discovery.md)).
 
-It happens every day, and one missed iPhone buyer is a ₦600,000 sale gone. The three real Lagos sellers I talked to all said they'd pay to fix it, either monthly (one named ₦10,000) or as a small cut per sale.
+It happens every day, and one missed iPhone buyer is a ₦1,500,000 sale gone. The three real Lagos sellers I talked to all said they'd pay to fix it, either monthly (one named ₦10,000) or as a small cut per sale.
 
 Orderly was built so everyday people can buy and sell in their own words, right inside WhatsApp, with no app to download and no website to visit. A customer asks, gets an instant answer from live stock across every branch, and orders. The item is held the moment they say yes, so it's never sold twice, and the order is confirmed only when Paystack confirms the payment. On top of that, customers can bargain like they would in the shop and get a delivery fee based on the real driving distance. Kola manages stock, branches and prices by chat, gets an email when an order is paid or needs attention, and can ask "how did we do today?" for a real answer.
 
@@ -24,11 +24,13 @@ Orderly was built so everyday people can buy and sell in their own words, right 
 
 ## Try it
 
-There are two agents, both on Chord's WhatsApp simulator: **Orderly Shop** talks to Kola's customers, and **Orderly Owner** helps Kola run the shop. Chat with either the way you would on WhatsApp; the ideas below are only a starting point.
+There are two agents, both on Chord's WhatsApp simulator: **Orderly Shop** talks to Kola's customers, and **Orderly Owner** helps Kola run the shop. Chat with either the way you would on WhatsApp.
 
 ### As a customer
 
 Open the shop chat: [chat.tsglabs.dev/c/f7lZY2nKUZl1Sm_qcTnKRs9P](https://chat.tsglabs.dev/c/f7lZY2nKUZl1Sm_qcTnKRs9P)
+
+You're shopping at Kola Gadgets for phones and accessories: iPhones, Samsung and Tecno phones, AirPods, chargers and power banks. Talk to it the way you'd talk to a real shop: ask questions, bargain, change your mind. Here are some suggested messages to try:
 
 | You could say | What it does |
 |---|---|
@@ -47,7 +49,9 @@ To pay, use Paystack's test card: **4084 0840 8408 4081**, any future expiry, CV
 
 ### As the owner
 
-Open the owner chat: [chat.tsglabs.dev/c/VrYKliOZokctDkpgMNwtU4ra](https://chat.tsglabs.dev/c/VrYKliOZokctDkpgMNwtU4ra). It changes the live demo data.
+Open the owner chat: [chat.tsglabs.dev/c/VrYKliOZokctDkpgMNwtU4ra](https://chat.tsglabs.dev/c/VrYKliOZokctDkpgMNwtU4ra). Changes you make here show up straight away in the shop chat, so try changing a price as Kola, then ask the shop about it.
+
+You're Kola, running three branches from your phone. Talk to it the way you'd talk to your shop manager: ask how sales are going, change prices and stock, open or close a branch. Here are some suggested messages to try:
 
 | You could say | What it does |
 |---|---|
@@ -58,6 +62,7 @@ Open the owner chat: [chat.tsglabs.dev/c/VrYKliOZokctDkpgMNwtU4ra](https://chat.
 | Add a Pixel 9 at 900k, 2 in Ikeja | It asks the lowest price you'd take if a customer bargains, then adds it |
 | Lekki now closes at 6pm, and shuts on Sundays | Changes the weekly hours in one go; customers see the new times straight away |
 | How much is delivery? | The base fee, the rate per km and an example trip |
+| We've opened a new branch at 25 Adeniran Ogunsanya Street, Surulere, Mon to Sat 9 to 7 | Adds the store with a map pin from the address; it starts empty, so it offers to add stock |
 | We're closing Yaba | It offers to move Yaba's stock to another branch first |
 
 ## Links
