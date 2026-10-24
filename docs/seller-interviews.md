@@ -1,16 +1,11 @@
-# Customer discovery
+# Seller interviews
 
-Before building, Samuel interviewed three Lagos sellers who sell on WhatsApp. Sellers are anonymous; each agreed to be quoted without their name.
+Before building, I asked three Lagos sellers who sell on WhatsApp how they handle orders today. Each agreed to be quoted without their name, and names and photos are hidden in the screenshots.
 
-## The problem, as Kola Gadgets lives it
+## How
 
-Kola Gadgets, a busy Yoruba man's shop in Lagos with three branches, Ikeja, Lekki and Yaba, takes orders on WhatsApp from morning till midnight. The same questions come in nonstop ("how much?", "is it available?", "how much is delivery?"), and a slow reply at 11pm or in a rush hour sends the buyer to the next shop. Behind the chat, nothing is in one place: checking stock means calling another branch, the delivery fee is a guess, every "I've paid" means digging through the bank app, and the only sales record is the chat itself.
-
-So when orders pile up, mistakes happen. Ikeja sells the last iPhone while Lekki is promising it to someone else, or an order goes out on a fake screenshot before anyone has confirmed the money actually arrived. Kola Gadgets is made up, but its problems aren't: all three real Lagos sellers I interviewed check payments by hand, and all three had sold something that was already gone (below).
-
-It happens every day, and one missed iPhone buyer is a ₦1,500,000 sale gone. The three real Lagos sellers I talked to all said they'd pay to fix it, either monthly (one named ₦10,000) or as a small cut per sale.
-
-Orderly was built so everyday people can buy and sell in their own words, right inside WhatsApp, with no app to download and no website to visit. A customer asks, gets an instant answer from live stock across every branch, and orders. The item is held the moment they say yes, so it's never sold twice, and the order is confirmed only when Paystack confirms the payment. On top of that, customers can bargain like they would in the shop and get a delivery fee based on the real driving distance. Kola manages stock, branches and prices by chat, gets an email when an order is paid or needs attention, and can ask "how did we do today?" for a real answer.
+- **By message:** Sellers A and B on WhatsApp, Seller C in a direct message on another app. Seller A's chat is dated 22 February 2026.
+- **Same four questions for everyone,** sent in one message, with a note that I was building a tool and wanted to hear how they work before building anything.
 
 ## Who
 
@@ -37,21 +32,39 @@ Orderly was built so everyday people can buy and sell in their own words, right 
 | Multiple stores | 2 of 3 | B and C run more than one location. |
 | Fake alerts | 1 of 3 | C: "Fake alerts can happen, so it's important to verify that the payment was successful before releasing an order." A has never had one. |
 
+### The chats
+
+**Seller A**, clothing
+
+![Seller A: the questions](seller-interviews/seller-a-1.jpg)
+
+![Seller A: the answers, including a cut per sale "like Bumpa"](seller-interviews/seller-a-2.jpg)
+
+**Seller B**, multiple branches
+
+![Seller B: the questions and answers](seller-interviews/seller-b-1.jpg)
+
+![Seller B: ₦10,000 a month, the trust objection and "Then that works"](seller-interviews/seller-b-2.jpg)
+
+**Seller C**, multiple stores
+
+![Seller C: the questions and answers](seller-interviews/seller-c.jpg)
+
 ## Pricing
 
 - Seller A: a percentage per sale, like Bumpa.
-- Seller B: ₦10,000 a month, if it works the way a person would.
+- Seller B: ₦10,000 a month, "if it can work the exact same way a person would".
 - Seller C: a reasonable monthly fee, depending on features.
 
 ## The trust objection
 
-Seller B said "someone handling it would be better than something", because selling sometimes needs demos and videos. After hearing that the agent hands anything it cannot answer to a real person, Seller B replied: "Then that works."
+Seller B said "someone handling it would be better than something", because selling sometimes needs demos and videos. After hearing that the agent hands anything it can't answer to a real person, Seller B replied: "Then that works."
 
 ## How the findings shaped the build
 
 | Finding | What Orderly does |
 | --- | --- |
-| Overselling | Stock is held atomically per store the moment an order is made, for 30 minutes. Orders can take items from several stores, each held where it is. Two buyers can never get the last unit. |
+| Overselling | Stock is held atomically per store the moment an order is made, for 30 minutes; a delivery order is held with its Paystack link in the same message. Orders can take items from several stores, each held where it is. Two buyers can never get the last unit. |
 | Manual payment checks | Paystack confirms every payment, by signed webhook and when the customer replies PAID, checking status, amount and currency against the order. The owner never has to open the bank app. |
 | Fake alerts | A screenshot or "I've paid" is never proof. Only Paystack's confirmation releases an order. |
 | Multiple stores | Stores are rows in a table, with stock tracked per store. The owner can open, close and move stock between stores by chat. |
@@ -62,3 +75,11 @@ Seller B said "someone handling it would be better than something", because sell
 
 - Sending product demos and videos to customers.
 - Choosing between per-sale and monthly pricing.
+
+## How this became Kola Gadgets
+
+Kola Gadgets is made up, but it's built from these three sellers' problems.
+
+Kola Gadgets, a busy Yoruba man's shop in Lagos with three branches, Ikeja, Lekki and Yaba, takes orders on WhatsApp from morning till midnight. The same questions come in nonstop ("how much?", "is it available?", "how much is delivery?"), and a slow reply at 11pm or in a rush hour sends the buyer to the next shop. Behind the chat, nothing is in one place: checking stock means calling another branch, the delivery fee is a guess, every "I've paid" means digging through the bank app, and the only sales record is the chat itself.
+
+So when orders pile up, mistakes happen. Ikeja sells the last iPhone while Lekki is promising it to someone else, or an order goes out on a fake screenshot before anyone has confirmed the money actually arrived.
