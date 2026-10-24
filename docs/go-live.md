@@ -9,8 +9,9 @@ For your customers, any time of day:
 - Holds the item and sends the Paystack link in the same message, so nothing is sold twice.
 - Confirms the order only when Paystack confirms the money.
 
-For you:
+For you, the owner:
 - You update products, stock, prices and branches by chatting with your own assistant.
+- You ask "how did we do today?" and get your sales, what to send out and anything that needs you.
 - You get an email when an order is paid or needs you.
 
 **What it doesn't do**
