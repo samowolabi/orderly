@@ -1,6 +1,6 @@
 # Deployment field notes
 
-Five problems that changed how Orderly was built, then a short list of the rest. The full log, with every problem and screenshot, is in [field-notes-log.md](field-notes-log.md).
+Five problems that changed how Orderly was built, then a short list of the rest. The full log, with every problem and screenshot, is in [full-log.md](full-log.md).
 
 | Problem | Impact | What I did | What Chord should change |
 |---|---|---|---|
@@ -137,7 +137,7 @@ What the three have in common: none of them is a reply to a message the customer
 
 ## Other problems I hit
 
-**In Chord** (details in the [full log](field-notes-log.md)):
+**In Chord** (details in the [full log](full-log.md)):
 - The agent wrote its working into customer messages, once leaking a bargaining figure (a buffer, not the real floor). Fixed by having the API return ready-made counter offers, so there's no floor to leak.
 - Imported tools reach the agent under generated names (`watchtower__create_order-POST`) instead of their `operationId`.
 - The Paystack connector says the webhook secret is optional, but Connect fails without it: "webhook_secret is required".

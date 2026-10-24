@@ -31,7 +31,7 @@ Orderly is an AI sales assistant for shops that sell on WhatsApp and other chat 
 Two AI teammates run on [Chord](https://chordhq.xyz). This repo is the API they call, their skills and the docs. The demo shop is Kola Gadgets, a Lagos phone shop with three branches.
 
 - Try the live agents: [SUBMISSION.md](SUBMISSION.md)
-- Problems found in Chord: [field notes](docs/field-notes.md)
+- Problems found in Chord: [field notes](docs/field-notes/README.md)
 - Seller interviews: [customer discovery](docs/customer-discovery.md)
 
 ## Run it

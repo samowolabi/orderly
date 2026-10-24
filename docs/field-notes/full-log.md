@@ -1,6 +1,6 @@
 # Field notes: full log
 
-Every problem hit while building Orderly on Chord, grouped by area. The five that mattered most are written up in [field-notes.md](field-notes.md).
+Every problem hit while building Orderly on Chord, grouped by area. The five that mattered most are written up in [README.md](README.md).
 
 ## Tools and access
 

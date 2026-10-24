@@ -73,5 +73,5 @@ You're Kola, running three branches from your phone. Talk to it the way you'd ta
 | Owner agent | [chat.tsglabs.dev/c/VrYKliOZokctDkpgMNwtU4ra](https://chat.tsglabs.dev/c/VrYKliOZokctDkpgMNwtU4ra) |
 | Repo | [github.com/samowolabi/orderly](https://github.com/samowolabi/orderly) |
 | Recording (3 minutes) | To come |
-| Field notes | [docs/field-notes.md](docs/field-notes.md) |
-| Go-live note | To come |
+| Field notes | [docs/field-notes/](docs/field-notes/README.md) |
+| Go-live note | [docs/go-live.md](docs/go-live.md) |

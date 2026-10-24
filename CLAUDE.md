@@ -7,7 +7,7 @@ This repo is Samuel Owolabi's submission for the TSG Labs build exercise (role: 
 Read these first:
 - `docs/PRD.md`: the problem, users, core features and rules
 - `docs/ENGINEERING.md`: stack, data model, endpoints, payment states, Chord setup, build order
-- `docs/field-notes.md`: the five field notes for the submission; `docs/field-notes-log.md`: every problem hit with Chord (keep adding to it)
+- `docs/field-notes/`: `README.md` holds the five field notes for the submission, `full-log.md` every problem hit with Chord (keep adding to it)
 
 ## Stack
 - TypeScript, Express, Zod (input validation), zod-to-openapi (generates the OpenAPI spec Chord imports)
@@ -90,5 +90,5 @@ Every response has the shape `{ success, data, error: { code, message_for_agent 
 - Test keys and made-up data only. Never commit `.env` or any key.
 - Keep skill files in `skills/` as the source of truth; upload to Chord from there and remember to **publish** the draft.
 - Test endpoints with curl before any Chord test chat, since chats spend credits.
-- When something in Chord breaks or confuses, add an entry to `docs/field-notes-log.md` right away.
+- When something in Chord breaks or confuses, add an entry to `docs/field-notes/full-log.md` right away.
 - Written docs use plain, direct language and no em dashes.

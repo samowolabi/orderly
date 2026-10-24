@@ -45,7 +45,7 @@ Seller B said "someone handling it would be better than something", because sell
 | Manual payment checks | Paystack confirms every payment, by signed webhook and when the customer replies PAID, checking status, amount and currency against the order. The owner never has to open the bank app. |
 | Fake alerts | A screenshot or "I've paid" is never proof. Only Paystack's confirmation releases an order. |
 | Multiple stores | Stores are rows in a table, with stock tracked per store. The owner can open, close and move stock between stores by chat. |
-| Disappearing buyers | The hold runs out after 30 minutes and the stock goes back on sale. The plan was also a reminder to quiet buyers, but Chord's reminder messages never reach the simulator, so it was removed (see [field notes](field-notes.md), note 4). |
+| Disappearing buyers | The hold runs out after 30 minutes and the stock goes back on sale. The plan was also a reminder to quiet buyers, but Chord's reminder messages never reach the simulator, so it was removed (see [field notes](field-notes/README.md), note 4). |
 | Trust objection | Anything the agent can't answer goes to a person. A customer who asks for the owner gives their number, and the owner gets an email to call them back. |
 
 ## Gaps (next steps)
