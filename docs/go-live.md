@@ -33,8 +33,3 @@ For you:
 - Paystack is down: if a payment link can't be made, nothing is held or charged and the customer is passed to you. If a payment can't be checked, nothing is confirmed until Paystack is back, and then it confirms automatically.
 - Maps are down: delivery can't be priced, so it offers pickup.
 - You hear about problems by email, and chats passed to you show in Chord. Check both every day.
-
-**What it costs**
-- Paystack: 1.5% + ₦100 per local card payment (no ₦100 under ₦2,500), capped at ₦2,000.
-- Chord: about one credit per completed sale.
-- Hosting: depends on the hosting platform, the computing resources used and the traffic.
