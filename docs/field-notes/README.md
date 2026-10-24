@@ -37,6 +37,7 @@ So the order was invented (the link even copied a payment-reference pattern from
 - Skill rules: the shop never writes an order number or link that `create_order` didn't return in that turn; the owner never disowns an earlier reply.
 - The rule wasn't enough. In a re-test on shop skill v37, which has it, the agent did the same again: "Held for you 👍 Order ORD-1002" with `checkout.paystack.com/orderly-ORD-1002-7c2e91`, and no `create_order` in the log.
 - So I removed the step it skips. `quote_delivery` now holds the items and returns the real Paystack link in the same call, so the quote message already carries the link and there's no "yes" turn left to invent. Switching to pickup replaces the order and releases the hold.
+- Re-test in the same chat: one reply with a real order (ORD-1002) and a real Paystack link, confirmed by `verify_payment` returning `not_paid_yet` rather than `order_not_found`. The agent first tried to replace the invented iPhone order; the API refused that with `order_not_found`, and it carried on correctly.
 
 **What Chord should change.**
 - Show each reply's tool calls in the conversation: tool name, status, time taken and any error.
