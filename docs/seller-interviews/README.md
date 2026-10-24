@@ -36,19 +36,19 @@ Before building, I asked three Lagos sellers who sell on WhatsApp how they handl
 
 **Seller A**, clothing
 
-![Seller A: the questions](seller-interviews/seller-a-1.jpg)
+![Seller A: the questions](seller-a-1.jpg)
 
-![Seller A: the answers, including a cut per sale "like Bumpa"](seller-interviews/seller-a-2.jpg)
+![Seller A: the answers, including a cut per sale "like Bumpa"](seller-a-2.jpg)
 
 **Seller B**, multiple branches
 
-![Seller B: the questions and answers](seller-interviews/seller-b-1.jpg)
+![Seller B: the questions and answers](seller-b-1.jpg)
 
-![Seller B: ₦10,000 a month, the trust objection and "Then that works"](seller-interviews/seller-b-2.jpg)
+![Seller B: ₦10,000 a month, the trust objection and "Then that works"](seller-b-2.jpg)
 
 **Seller C**, multiple stores
 
-![Seller C: the questions and answers](seller-interviews/seller-c.jpg)
+![Seller C: the questions and answers](seller-c.jpg)
 
 ## Pricing
 
@@ -68,7 +68,7 @@ Seller B said "someone handling it would be better than something", because sell
 | Manual payment checks | Paystack confirms every payment, by signed webhook and when the customer replies PAID, checking status, amount and currency against the order. The owner never has to open the bank app. |
 | Fake alerts | A screenshot or "I've paid" is never proof. Only Paystack's confirmation releases an order. |
 | Multiple stores | Stores are rows in a table, with stock tracked per store. The owner can open, close and move stock between stores by chat. |
-| Disappearing buyers | The hold runs out after 30 minutes and the stock goes back on sale. The plan was also a reminder to quiet buyers, but Chord's reminder messages never reach the simulator, so it was removed (see [field notes](field-notes/README.md), note 4). |
+| Disappearing buyers | The hold runs out after 30 minutes and the stock goes back on sale. The plan was also a reminder to quiet buyers, but Chord's reminder messages never reach the simulator, so it was removed (see [field notes](../field-notes/README.md), note 4). |
 | Trust objection | Anything the agent can't answer goes to a person. A customer who asks for the owner gives their number, and the owner gets an email to call them back. |
 
 ## Gaps (next steps)

@@ -32,7 +32,7 @@ Two AI teammates run on [Chord](https://chordhq.xyz). This repo is the API they 
 
 - Try the live agents: [SUBMISSION.md](SUBMISSION.md)
 - Problems found in Chord: [field notes](docs/field-notes/README.md)
-- [Seller interviews](docs/seller-interviews.md), with the chats
+- [Seller interviews](docs/seller-interviews/README.md), with the chats
 
 ## Run it
 

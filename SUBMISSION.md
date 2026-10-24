@@ -10,7 +10,7 @@ Samuel Owolabi
 
 **What Orderly solves:** customers get instant answers from live stock at every branch, and the item is held with a real Paystack link in the same message, confirmed only when Paystack confirms the money, so nothing is sold twice or released on a fake screenshot, while Kola runs stock, branches and sales by chat.
 
-**Why it's worth paying for:** one missed iPhone buyer is a ₦1,500,000 sale gone, and all three real Lagos sellers I interviewed had sold something already gone, check payments by hand ([seller interviews](docs/seller-interviews.md)), and would pay for this, either monthly (one named ₦10,000) or as a small cut per sale.
+**Why it's worth paying for:** one missed iPhone buyer is a ₦1,500,000 sale gone, and all three real Lagos sellers I interviewed had sold something already gone, check payments by hand ([seller interviews](docs/seller-interviews/README.md)), and would pay for this, either monthly (one named ₦10,000) or as a small cut per sale.
 
 **What I left out on purpose:** product photos and full specs, promos, refunds (the owner does those in Paystack), live money and a real WhatsApp number (it runs on Paystack test mode and Chord's WhatsApp simulator), to make the core loop solid first: ask, order, pay, confirm, never sell twice.
 
