@@ -143,7 +143,7 @@ export const QuoteDeliveryBody = z.object({
     .trim()
     .min(5)
     .max(300)
-    .openapi({ description: "Delivery address as the customer gave it, with house number, street, area and city", example: "12 Admiralty Way, Lekki Phase 1, Lagos" }),
+    .openapi({ description: "Delivery address as the customer gave it: at least the area and city. A street and house number help but aren't required", example: "12 Admiralty Way, Lekki Phase 1, Lagos" }),
   phone: z
     .string()
     .trim()
