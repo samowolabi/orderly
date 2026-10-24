@@ -2,6 +2,16 @@
 
 Before building, Samuel interviewed three Lagos sellers who sell on WhatsApp. Sellers are anonymous; each agreed to be quoted without their name.
 
+## The problem, as Kola Gadgets lives it
+
+Kola Gadgets, a busy Yoruba man's shop in Lagos with three branches, Ikeja, Lekki and Yaba, takes orders on WhatsApp from morning till midnight. The same questions come in nonstop ("how much?", "is it available?", "how much is delivery?"), and a slow reply at 11pm or in a rush hour sends the buyer to the next shop. Behind the chat, nothing is in one place: checking stock means calling another branch, the delivery fee is a guess, every "I've paid" means digging through the bank app, and the only sales record is the chat itself.
+
+So when orders pile up, mistakes happen. Ikeja sells the last iPhone while Lekki is promising it to someone else, or an order goes out on a fake screenshot before anyone has confirmed the money actually arrived. Kola Gadgets is made up, but its problems aren't: all three real Lagos sellers I interviewed check payments by hand, and all three had sold something that was already gone (below).
+
+It happens every day, and one missed iPhone buyer is a ₦1,500,000 sale gone. The three real Lagos sellers I talked to all said they'd pay to fix it, either monthly (one named ₦10,000) or as a small cut per sale.
+
+Orderly was built so everyday people can buy and sell in their own words, right inside WhatsApp, with no app to download and no website to visit. A customer asks, gets an instant answer from live stock across every branch, and orders. The item is held the moment they say yes, so it's never sold twice, and the order is confirmed only when Paystack confirms the payment. On top of that, customers can bargain like they would in the shop and get a delivery fee based on the real driving distance. Kola manages stock, branches and prices by chat, gets an email when an order is paid or needs attention, and can ask "how did we do today?" for a real answer.
+
 ## Who
 
 | Seller | Business |
