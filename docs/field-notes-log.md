@@ -1,6 +1,6 @@
 # Field notes: full log
 
-Every problem hit while building Orderly on Chord, grouped by area. The four that mattered most are written up in [field-notes.md](field-notes.md).
+Every problem hit while building Orderly on Chord, grouped by area. The five that mattered most are written up in [field-notes.md](field-notes.md).
 
 ## Tools and access
 
@@ -23,7 +23,7 @@ Every problem hit while building Orderly on Chord, grouped by area. The four tha
 | Oct 23 | The agent wrote its working into a customer message | "Price 650,000, floor 628,000, offer 600,000…" before the counter ([clean re-test](screenshots/haggle-v22-clean.png)) | The API returns ready-made counter offers, so there's no floor to leak | Keep reasoning out of replies |
 | Oct 24 | The agent takes back changes it really made | "that change never went through", while the log shows `update_store` returning 200, on skill v15, which forbids this ([chat](screenshots/owner-false-retraction-v15.png), [log](screenshots/owner-update-store-log.png)); same on Oct 23 ([chat](screenshots/owner-false-retraction.png)) | Skill rule to look it up instead; it didn't hold | Keep earlier tool calls in the agent's history |
 | Oct 23 | The agent lost an order it had just made, then made a second one | After ORD-1014, "I've paid" got "I can't see a hold or a payment link in this chat"; the next one created a new hold | Every hold message includes the order number; never create an order on "I've paid" | Keep earlier tool results in the agent's history |
-| Oct 23 | No view of which tools a teammate called | Activity shows only totals ("Requests 10"); conversations offer only "Copy message" | One log line per API request in Render ([example](screenshots/api-log-ord-1010.png)) | Show each reply's tool calls |
+| Oct 23 | No view of which tools a teammate called | Activity shows only totals ("Requests 10"); conversations offer only "Copy message" | One log line per API request, on Render, our hosting platform ([example](screenshots/api-log-ord-1010.png)) | Show each reply's tool calls |
 
 ## Simulator and messages
 
@@ -33,7 +33,7 @@ Every problem hit while building Orderly on Chord, grouped by area. The four tha
 | Oct 23 | An operator's reply never reaches the simulator | Reply typed in Chord is in the thread, not in the simulator ([Chord](screenshots/owner-takeover-chord.png), [simulator](screenshots/owner-takeover-simulator.png), [earlier test](screenshots/handover-operator-reply-chord.png)) | Owner gets a call-back email instead | Deliver operator replies |
 | Oct 23 | A reminder's message never reaches the simulator | ORD-1010's receipt was sent in Chord 37 s after payment; the simulator showed only the link ([Chord](screenshots/receipt-and-leak-in-chord.png), [simulator](screenshots/receipt-missing-simulator.png)) | Removed reminders; the customer replies PAID | Deliver reminder messages |
 | Oct 23 | Nothing outside Chord can start a teammate's turn | Paystack's webhook confirmed ORD-1018 within seconds; the customer can't be told | Customer replies PAID; the owner is emailed | An inbound webhook that starts a turn |
-| Oct 23 | No reply buttons | No tool or syntax for interactive messages | The hold message says to reply PAID | WhatsApp reply buttons |
+| Oct 23 | No buttons or suggested messages | No tool or syntax for quick replies; a chat link has only a business name, no greeting or starter prompts | The hold message says to reply PAID; suggested messages listed for testers | Quick-reply buttons, and starter prompts on chat links |
 | Oct 23 | A "stay quiet" reminder posted its reasoning to the customer | "…so I'm sending nothing to the customer." | Removed reminders | A "no reply" outcome for scheduled runs |
 | Oct 23 | Reminders ran a little late | Checks ran 11 to 21 s after their time ([schema](screenshots/reminder-tool-schema.png), [a run](screenshots/reminder-paid-check-run.png)); later ones showed Cancelled because a check had found the order paid ([screenshot](screenshots/reminder-never-ran.png)) | None needed | Document the scheduler's timing |
 | Oct 23 | Garbled characters in a reply | Bullets showed as "â€˘" | Cleared on the next skill version | Fix the message encoding |

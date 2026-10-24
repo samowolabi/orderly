@@ -1,6 +1,6 @@
 # Deployment field notes
 
-Four problems that changed how Orderly was built, then a short list of the rest. The full log, with every problem and screenshot, is in [field-notes-log.md](field-notes-log.md).
+Five problems that changed how Orderly was built, then a short list of the rest. The full log, with every problem and screenshot, is in [field-notes-log.md](field-notes-log.md).
 
 | Problem | Impact | What I did | What Chord should change |
 |---|---|---|---|
@@ -8,6 +8,7 @@ Four problems that changed how Orderly was built, then a short list of the rest.
 | 2. A teammate can't send more than one message per turn | Multi-step tasks stall after "I'll check…"; the receipt and rider message merge into one | Skills: look everything up first, then send one message | Document it, or allow an interim message |
 | 3. Every teammate has access to every tool | The customer agent holds the owner's key | API refuses buyer-key changes; skill forbids owner tools; owner-only tools added | Choose tools per teammate, or set a credential per teammate |
 | 4. Events and actions don't send messages to the simulator | No live owner chat, no automatic payment confirmation | Customer replies PAID; owner gets emails and call-back requests | Deliver every message to the simulator; let an external event start a turn |
+| 5. The chat has no tap-to-reply buttons or suggested starter messages | Customers and testers type every step, including "I've paid" | The hold message asks for PAID; SUBMISSION.md lists messages to try | Quick-reply buttons, and starter prompts on chat links |
 
 ## 1. Chord doesn't show which tools a teammate called
 
@@ -24,7 +25,7 @@ Four problems that changed how Orderly was built, then a short list of the rest.
 There was no store lookup before the take-back, so it wasn't based on fresh data. It looks as if earlier turns' tool calls aren't kept in the history the teammate sees, so it stops trusting what it said. The same thing happened on 23 October with a stock change ("I never ran either of those actions in this chat"), while the log showed both `update_product` calls returning 200.
 
 **Workaround.**
-- The API's request log, in Render, is now how I debug every chat. It never records keys, request bodies, names or phone numbers.
+- The API's request log, on Render, our hosting platform, is now how I debug every chat. It never records keys, request bodies, names or phone numbers.
 - Both skills say never to take back a reported change, and to look it up if unsure. That didn't stop it: the 24 October take-back was on owner skill v15, which has the rule. This can't be fixed from outside Chord.
 
 **What Chord should change.**
@@ -33,7 +34,7 @@ There was no store lookup before the take-back, so it wasn't based on fresh data
 
 ![Orderly Owner takes back a reopening that really happened](screenshots/owner-false-retraction-v15.png)
 
-![Render's log: update_store for Yaba returned 200](screenshots/owner-update-store-log.png)
+![The API's log on Render, our hosting platform: update_store for Yaba returned 200](screenshots/owner-update-store-log.png)
 
 ## 2. A teammate can't send more than one message per turn
 
@@ -43,7 +44,7 @@ There was no store lookup before the take-back, so it wasn't based on fresh data
 
 Payment confirmation hit the same limit. For delivery orders, the plan was two messages after payment: the receipt, then "Our rider is on the way". When the customer paid ORD-1018 on 23 October and said "I've paid", both arrived as one message. Everything a teammate writes in a turn goes out as a single reply.
 
-**How I found the cause.** The API logs every call with the tool name and the key's role. For that turn, Render's log showed two calls 50 ms apart, then nothing:
+**How I found the cause.** The API logs every call with the tool name and the key's role. For that turn, the API's log on Render, our hosting platform, showed two calls 50 ms apart, then nothing:
 
 ```
 11:11:09.169Z tool=list_products role=buyer status=200 GET /v1/products
@@ -66,7 +67,7 @@ So a teammate can make several calls in one turn. What ends the turn is writing 
 
 ![The re-test on skill v15: one reply covering all three parts](screenshots/owner-retest-reply.png)
 
-![Render's log for the re-test: six lookups in one turn, all with the seller key](screenshots/owner-retest-log.png)
+![The API's log on Render, our hosting platform, for the re-test: six lookups in one turn, all with the seller key](screenshots/owner-retest-log.png)
 
 ## 3. Every teammate has access to every tool (no per-teammate access)
 
@@ -118,6 +119,22 @@ What the three have in common: none of them is a reply to a message the customer
 ![Chord sends the ORD-1010 receipt from a payment check](screenshots/receipt-and-leak-in-chord.png)
 ![The simulator for the same order: still only the payment link](screenshots/receipt-missing-simulator.png)
 
+## 5. The chat has no tap-to-reply buttons or suggested starter messages
+
+**Impact.** Customers have to type every step, including telling the shop they've paid. Testers open an empty chat with no idea what to try.
+
+**What happened.** After sending the payment link, I wanted an "I've paid" button, so the customer could confirm with one tap. When creating the simulator chat links, I also wanted a few starter messages, so a new tester could see what the agent can do.
+
+**How I found the cause.** I asked the shop teammate to search Chord's docs with its own `docs__search_chord` tool. It found nothing on interactive messages and said its options are "plain text replies, schedule_reminder … and handover_to_human." The simulator's messages are plain text only (sequence, sender, body and time), and creating a chat link asks only for a business name.
+
+**Workaround.**
+- The hold message ends "Reply *PAID* so we can confirm your payment": one short word instead of a button.
+- SUBMISSION.md lists suggested messages for testers.
+
+**What Chord should change.**
+- Quick-reply buttons and list messages for teammates, shown in the simulator too.
+- Optional starter prompts or a greeting on chat links.
+
 ## Other problems I hit
 
 **In Chord** (details in the [full log](field-notes-log.md)):
@@ -126,7 +143,7 @@ What the three have in common: none of them is a reply to a message the customer
 - The Paystack connector says the webhook secret is optional, but Connect fails without it: "webhook_secret is required".
 
 **Outside Chord:**
-- The Render free plan sleeps. One cold start took 22 seconds, close to Chord's 30-second tool timeout. I kept the API warm before tests.
+- Render, our hosting platform, sleeps on its free plan. One cold start took 22 seconds, close to Chord's 30-second tool timeout. I kept the API warm before tests.
 - Retrying a Paystack payment link could hit Paystack's duplicate-reference check, so every retry uses a fresh reference.
 - Google gives vague matches for some addresses. Those get no map pin rather than a wrong one.
 - Code review found two bugs in our API: held stock counted against the wrong branch, and a webhook and a PAID check racing to confirm the same order. Each was reproduced with a failing test, then fixed.

@@ -56,7 +56,7 @@ The API is split into focused modules:
 
 ## Data
 
-Nine tables. Stores are rows, not fixed names, so an owner can run any number of them. Addresses are structured and may include coordinates, so agents can quote them consistently and share a map link or WhatsApp pin. Opening hours are rows too, so the API can say whether a store is open now. Money is stored as integer subunits (kobo for NGN), which is what Paystack expects, always next to its ISO 4217 currency code. New products are priced in `BUSINESS_CURRENCY` (default NGN), an order copies its products' currency (one currency per order), and payment checks compare Paystack's currency to the order's. Only `src/utils/money.ts` knows how big a currency's subunit is; the API returns every amount as `{ amount, currency, display }` in the main unit.
+Ten tables. Stores are rows, not fixed names, so an owner can run any number of them. Addresses are structured and may include coordinates, so agents can quote them consistently and share a map link or WhatsApp pin. Opening hours are rows too, so the API can say whether a store is open now. Money is stored as integer subunits (kobo for NGN), which is what Paystack expects, always next to its ISO 4217 currency code. New products are priced in `BUSINESS_CURRENCY` (default NGN), an order copies its products' currency (one currency per order), and payment checks compare Paystack's currency to the order's. Only `src/utils/money.ts` knows how big a currency's subunit is; the API returns every amount as `{ amount, currency, display }` in the main unit.
 
 | Table | Holds | Key columns |
 | --- | --- | --- |
@@ -68,6 +68,7 @@ Nine tables. Stores are rows, not fixed names, so an owner can run any number of
 | order_items | The lines of an order, each held at its own store | order_id, line, product_id, store_id, quantity, unit_price_subunit, list_price_subunit (before bargaining), amount_subunit |
 | delivery_quotes | A priced trip from a store to a customer's address; an order uses at most one | id (e.g. DQ-3F9A2C1B), store_id, address, phone, distance_m, duration_s, fee_subunit, currency, prep_minutes, item_stores (where each product is held), transfer_minutes (bringing items over from other stores), expires_at |
 | delivery_settings | The owner's delivery pricing (one row; none means the env defaults) | currency, base_fee_subunit, fee_per_km_subunit |
+| owner_contacts | Customers who asked for the owner; limits each number to one call-back email every 30 minutes | name, phone, phone_key, reason, order_id, emailed, created_at |
 | events | A log of everything that happened | order_id, type, detail, created_at |
 
 The demo seeds Kola Gadgets with three stores, Ikeja, Lekki and Yaba; the owner can add more by chat. `npm run db:seed:test` seeds only Ikeja and Lekki, because the curl suite opens, edits and closes Yaba itself. When a new store omits `location`, or a store's address changes without one, the API geocodes the structured address with Google. Vague matches give no pin rather than a wrong one: Google's `APPROXIMATE` results are dropped, and the map link then searches the address. Explicit coordinates always win, and `location: null` deliberately stores no pin.
@@ -132,13 +133,11 @@ Only a verified Paystack payment marks an order paid. The signed webhook is the 
 
 ## Chord setup
 
-Both teammates exist with placeholder skills; the real skills go in once the API works.
-
 | Setting | Orderly Shop | Orderly Owner |
 | --- | --- | --- |
 | Role | Sales assistant | Store operations assistant |
 | Autonomy | Act independently | Act independently |
-| Chat link business name | Kola Gadgets | Kola Gadgets (Owner) |
+| Chat link business name | Kola Gadgets | Kola Gadgets |
 | API tools | 7 customer tools (buyer key) | 9 owner tools, all seller key except get_receipt; 15 in the spec |
 | Built-in tools | handover_to_human | none yet |
 | Escalation triggers | Payment failed twice; amount mismatch or Paystack unreachable; paid after stock sold; complaint or refund; final bargained price refused; question it cannot answer | none |
@@ -173,8 +172,8 @@ The API enforces the rules, so a confused or tricked agent still can't break the
 
 About 5 hours of build, each step done before the next starts. Chord credits are only spent from step 4.
 
-1. **Database and seed data** (30 min): the six tables, Kola Gadgets' stores and their products.
-2. **Endpoints** (1 hr): all twelve, with Paystack test calls, tested with curl including the failure cases.
+1. **Database and seed data** (30 min): the tables, Kola Gadgets' stores and their products.
+2. **Endpoints** (1 hr): the core tools, with Paystack test calls, tested with curl including the failure cases.
 3. **Deploy and import** (30 min): Render, generate the OpenAPI spec, import into Chord, assign tools and keys per teammate.
 4. **Orderly Shop skill** (1 hr): real skill, escalation triggers, full order test in the simulator.
 5. **Orderly Owner skill** (45 min): add stock by chat, then a customer buys it.

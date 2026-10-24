@@ -52,7 +52,7 @@ These are the core features. Each one answers something the sellers raised.
 - **Receipt:** sent in chat as soon as payment is confirmed.
 - **Receipt on PAID:** every hold message ends "Reply PAID so we can confirm your payment." When the customer replies, the agent checks with Paystack and sends the receipt at once. Paystack's webhook confirms the order on our side within seconds either way, so stock and the owner's sales are right even before the customer writes. (Scheduled payment checks were built and then removed: Chord reminder messages never reach the simulator. See field note 4.)
 - **Owner alerts by email:** when a payment is confirmed, the owner gets an email: paid (with the items, stores and pickup or delivery details), paid late, refund needed, or check payment. Chord can't message the owner first, so email is how the owner hears without asking.
-- **A real person when needed:** anything unusual is handed to the owner instead of guessed.
+- **A real person when needed:** anything unusual is handed to the owner instead of guessed. When a customer asks for the owner, the agent takes their number and the owner gets a call-back email, because a person's reply in Chord never reaches the simulator (field note 4).
 
 ## Rules it never breaks
 
@@ -69,27 +69,27 @@ These are enforced by Orderly's own API, not just by the AI's instructions.
 | When | What |
 | --- | --- |
 | Next if time | Promo codes; an end-of-day sales summary for the owner |
-| Stretch | Discount requests approved by Orderly Owner within a price floor; PDF receipts |
+| Stretch | PDF receipts |
 | Designed, not built | Refunds through Paystack, ready to build if reviewers ask |
-| Left out | Delivery booking, product photos, multiple businesses, real payments or phone numbers |
+| Left out | Product photos and full specs, promos, multiple businesses, real payments or phone numbers |
 
 ## How we know it works
 
-Orderly is ready when every check below passes in the WhatsApp simulator.
+Every check below has passed, in the WhatsApp simulator or in the curl suite where a simulator test would need two people or a real wait.
 
-- [ ] Owner adds a phone; a customer orders it, pays with a Paystack test card, and gets a receipt
-- [ ] Two customers try to buy the last unit at once; only one gets it
-- [ ] A declined card is not confirmed, and a new link is offered
-- [ ] "I've paid" before paying is checked and corrected
-- [ ] A quiet customer's hold expires and stock returns
-- [ ] An unusual question is handed to a person
-- [ ] Orderly Shop refuses when asked to change a price
+- [x] Owner adds stock by chat; a customer orders, pays with a Paystack test card, and gets a receipt (simulator)
+- [x] Two customers try to buy the last unit at once; only one gets it (curl: ten buyers, two units, exactly two held)
+- [x] A declined card is not confirmed, and a new link is offered (curl)
+- [x] "I've paid" before paying is checked and corrected (simulator)
+- [x] A quiet customer's hold expires and stock returns (curl)
+- [x] An unusual question is handed to a person (simulator)
+- [x] Orderly Shop refuses when asked to change a price (simulator)
 
 ## Risks and open questions
 
 | Risk | What we do about it |
 | --- | --- |
-| Handover to a person may not work in the simulator | Tell the customer a person will follow up, flag the order for the owner, and note it in the field notes |
+| A person's reply in Chord never reaches the simulator (confirmed) | The agent takes the customer's number and emails the owner a call-back request (field note 4) |
 | Owners may not trust an AI with customers | Hand over anything unusual; the owner sees every handed-off chat |
 | "Bumpa already does this" | Orderly lives inside WhatsApp, with no extra app, and hands over to a person |
 | Paystack needs a customer email that WhatsApp buyers rarely give | Use a placeholder in test mode, made from the buyer's name and order number (e.g. `tunde+ord-1004@example.com`) so the Paystack dashboard shows who paid for what; ask for an email before going live |

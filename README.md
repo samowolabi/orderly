@@ -50,7 +50,7 @@ npm run dev              # http://localhost:3000
 
 Tests: 259 end-to-end checks in `test/curl-tests.sh` (every tool, failure cases, the last-unit race, late payments, webhooks, delivery and emails), run against local fakes for Paystack, Google and Resend. Setup is in [CLAUDE.md](CLAUDE.md).
 
-Deploy: `render.yaml` is a Render Blueprint for the API and database.
+Deploy: `render.yaml` sets up the API and its database on Render, our hosting platform.
 
 ## How it works
 
@@ -71,7 +71,7 @@ flowchart LR
 - The API keeps everything in Postgres, takes and confirms payments with Paystack, prices delivery with Google Maps, and emails the owner through Resend.
 - Every rule lives in the API, not in the prompts.
 
-**Built with** TypeScript, Express, Zod (validation, and the OpenAPI spec generated from it), Postgres, Paystack test mode, Google Geocoding and Routes, Resend, and Render.
+**Built with** TypeScript, Express, Zod (validation, and the OpenAPI spec generated from it), Postgres, Paystack test mode, Google Geocoding and Routes, Resend, and Render (our hosting platform).
 
 ## Tools
 
@@ -124,7 +124,7 @@ Each teammate's instructions, matching what's published in Chord:
 - **Claude Code** for building the API, tests, skills and docs.
 - **Codex** as a second reviewer and evaluator: it reviewed changes for bugs, and each finding was reproduced with a test before it was fixed.
 - **[CLAUDE.md](CLAUDE.md)** and a code-style skill in `.agents/skills/` as standing instructions for every session.
-- **Claude in Chrome** to publish skills in Chord, set up the simulator, read Render logs and run test chats, which is where the field notes' evidence comes from.
+- **Claude in Chrome** to publish skills in Chord, set up the simulator, read the API's logs on Render (our hosting platform) and run test chats, which is where the field notes' evidence comes from.
 - **Chord** runs the two teammates.
 
 Built by Samuel Owolabi for the TSG Labs Forward-deployed Engineering exercise.

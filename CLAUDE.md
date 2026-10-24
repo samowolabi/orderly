@@ -7,7 +7,7 @@ This repo is Samuel Owolabi's submission for the TSG Labs build exercise (role: 
 Read these first:
 - `docs/PRD.md`: the problem, users, core features and rules
 - `docs/ENGINEERING.md`: stack, data model, endpoints, payment states, Chord setup, build order
-- `docs/field-notes.md`: the four field notes for the submission; `docs/field-notes-log.md`: every problem hit with Chord (keep adding to it)
+- `docs/field-notes.md`: the five field notes for the submission; `docs/field-notes-log.md`: every problem hit with Chord (keep adding to it)
 
 ## Stack
 - TypeScript, Express, Zod (input validation), zod-to-openapi (generates the OpenAPI spec Chord imports)
