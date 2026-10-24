@@ -70,7 +70,7 @@ Nine tables. Stores are rows, not fixed names, so an owner can run any number of
 | delivery_settings | The owner's delivery pricing (one row; none means the env defaults) | currency, base_fee_subunit, fee_per_km_subunit |
 | events | A log of everything that happened | order_id, type, detail, created_at |
 
-The demo seeds Kola Gadgets with two stores, Ikeja and Lekki; the owner can add more by chat. When a new store omits `location`, or a store's address changes without one, the API geocodes the structured address with Google. Vague matches give no pin rather than a wrong one: Google's `APPROXIMATE` results are dropped, and the map link then searches the address. Explicit coordinates always win, and `location: null` deliberately stores no pin.
+The demo seeds Kola Gadgets with three stores, Ikeja, Lekki and Yaba; the owner can add more by chat. `npm run db:seed:test` seeds only Ikeja and Lekki, because the curl suite opens, edits and closes Yaba itself. When a new store omits `location`, or a store's address changes without one, the API geocodes the structured address with Google. Vague matches give no pin rather than a wrong one: Google's `APPROXIMATE` results are dropped, and the map link then searches the address. Explicit coordinates always win, and `location: null` deliberately stores no pin.
 
 
 Order status is one of: `pending_payment`, `paid`, `failed`, `expired`, `paid_no_stock`, `handed_over`.
@@ -173,7 +173,7 @@ The API enforces the rules, so a confused or tricked agent still can't break the
 
 About 5 hours of build, each step done before the next starts. Chord credits are only spent from step 4.
 
-1. **Database and seed data** (30 min): the six tables, Kola Gadgets' two stores and their products.
+1. **Database and seed data** (30 min): the six tables, Kola Gadgets' stores and their products.
 2. **Endpoints** (1 hr): all twelve, with Paystack test calls, tested with curl including the failure cases.
 3. **Deploy and import** (30 min): Render, generate the OpenAPI spec, import into Chord, assign tools and keys per teammate.
 4. **Orderly Shop skill** (1 hr): real skill, escalation triggers, full order test in the simulator.

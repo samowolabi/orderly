@@ -3,7 +3,8 @@ import { toRows } from "../utils/store-hours";
 import type { CoordinatesInputValue, ResolvedAddressValue } from "../utils/store-location";
 import { pool, withTransaction } from "./pool";
 
-// Kola Gadgets: a made-up Lagos phone and gadget store. All data is fictional.
+// Kola Gadgets: a made-up Lagos phone and gadget store with three branches. All data is fictional.
+// `--test` seeds only Ikeja and Lekki: the curl suite opens, edits and closes Yaba itself.
 
 // The demo prices are naira, so the seed states its currency instead of using BUSINESS_CURRENCY.
 const SEED_CURRENCY = "NGN";
@@ -16,9 +17,11 @@ type SeedStore = {
   location: CoordinatesInputValue;
 
   hours: Parameters<typeof toRows>[0];
+  // Left out by `--test`.
+  demoOnly?: boolean;
 };
 
-const stores: SeedStore[] = [
+const allStores: SeedStore[] = [
   {
     id: "ikeja",
     name: "Kola Gadgets Ikeja",
@@ -36,32 +39,42 @@ const stores: SeedStore[] = [
       { days: ["sun"], opens: "12:00", closes: "17:00" },
     ],
   },
+  {
+    id: "yaba",
+    name: "Kola Gadgets Yaba",
+    address: { line1: "318 Herbert Macaulay Way", area: "Yaba", city: "Lagos", state: "Lagos", country_code: "NG" },
+    location: { latitude: 6.507249, longitude: 3.378556 },
+    hours: [{ days: ["mon", "tue", "wed", "thu", "fri", "sat"], opens: "09:00", closes: "18:00" }],
+    demoOnly: true,
+  },
 ];
 
 // stock: units per store id. Stores left out get a 0 row so every product
 // shows at every store.
 const products = [
-  { id: "IP13-128", name: "iPhone 13", variant: "128GB", price: 650_000, floor: 620_000, stock: { ikeja: 2, lekki: 1 } },
-  { id: "IP14-128", name: "iPhone 14", variant: "128GB", price: 820_000, floor: 790_000, stock: { ikeja: 3, lekki: 2 } },
+  { id: "IP13-128", name: "iPhone 13", variant: "128GB", price: 650_000, floor: 620_000, stock: { ikeja: 2, lekki: 1, yaba: 1 } },
+  { id: "IP14-128", name: "iPhone 14", variant: "128GB", price: 820_000, floor: 790_000, stock: { ikeja: 3, lekki: 2, yaba: 1 } },
   // One unit in the whole business: the "two buyers, last unit" test.
   { id: "IP15P-256", name: "iPhone 15 Pro", variant: "256GB", price: 1_450_000, floor: 1_400_000, stock: { ikeja: 1 } },
   { id: "S23-256", name: "Samsung Galaxy S23", variant: "256GB", price: 780_000, floor: 750_000, stock: { ikeja: 1, lekki: 2 } },
-  { id: "A15-128", name: "Samsung Galaxy A15", variant: "128GB", price: 210_000, floor: 200_000, stock: { ikeja: 6, lekki: 4 } },
-  { id: "CAMON20-256", name: "Tecno Camon 20", variant: "256GB", price: 265_000, floor: 250_000, stock: { ikeja: 5, lekki: 3 } },
-  { id: "AIRPODS-PRO2", name: "AirPods Pro", variant: "2nd generation", price: 310_000, floor: 295_000, stock: { lekki: 4 } },
-  { id: "ANKER-20K", name: "Anker PowerCore power bank", variant: "20,000mAh", price: 45_000, floor: 42_000, stock: { ikeja: 10, lekki: 8 } },
-  { id: "APL-20W", name: "Apple USB-C charger", variant: "20W", price: 28_000, floor: 25_000, stock: { ikeja: 12, lekki: 0 } },
+  { id: "A15-128", name: "Samsung Galaxy A15", variant: "128GB", price: 210_000, floor: 200_000, stock: { ikeja: 6, lekki: 4, yaba: 3 } },
+  { id: "CAMON20-256", name: "Tecno Camon 20", variant: "256GB", price: 265_000, floor: 250_000, stock: { ikeja: 5, lekki: 3, yaba: 4 } },
+  { id: "AIRPODS-PRO2", name: "AirPods Pro", variant: "2nd generation", price: 310_000, floor: 295_000, stock: { lekki: 4, yaba: 2 } },
+  { id: "ANKER-20K", name: "Anker PowerCore power bank", variant: "20,000mAh", price: 45_000, floor: 42_000, stock: { ikeja: 10, lekki: 8, yaba: 6 } },
+  { id: "APL-20W", name: "Apple USB-C charger", variant: "20W", price: 28_000, floor: 25_000, stock: { ikeja: 12, lekki: 0, yaba: 0 } },
 ];
 
 // Replaces existing data with the deterministic Kola Gadgets demo catalog.
 async function seed() {
+  const stores = allStores.filter((s) => !(s.demoOnly && process.argv.includes("--test")));
+
   if (process.env.NODE_ENV === "production" && !process.argv.includes("--force")) {
     throw new Error("Seeding wipes all data. Refusing in production without --force.");
   }
 
   // Rebuilds all demo rows atomically so partial seeds cannot remain.
   await withTransaction(async (db) => {
-    await db.query("TRUNCATE events, order_items, orders, delivery_quotes, delivery_settings, stock, products, store_hours, stores RESTART IDENTITY CASCADE");
+    await db.query("TRUNCATE events, owner_contacts, order_items, orders, delivery_quotes, delivery_settings, stock, products, store_hours, stores RESTART IDENTITY CASCADE");
     await db.query("ALTER SEQUENCE order_number_seq RESTART WITH 1001");
 
     for (const s of stores) {

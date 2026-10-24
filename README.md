@@ -88,7 +88,7 @@ npm run fake-paystack & npm run fake-google & npm run fake-resend &
 PAYSTACK_BASE_URL=http://localhost:4010 GOOGLE_GEOCODING_URL=http://localhost:4020/geocode/json \
   GOOGLE_ROUTES_URL=http://localhost:4020/routes RESEND_URL=http://localhost:4030/emails \
   RESEND_API_KEY=re_test OWNER_EMAIL=owner@example.com npm run dev
-npm run db:seed && npm run test:api
+npm run db:seed:test && npm run test:api
 ```
 
 The curl suite runs about 250 end-to-end checks: every tool, the failure cases, the last-unit race, late payments, webhooks, delivery and emails. `npm run test:retry`, `test:geocoding`, `test:hours` and `test:location` are small unit tests.

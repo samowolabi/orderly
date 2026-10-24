@@ -22,7 +22,7 @@ One seller put it simply: "most times I just want to make the sale quickly, but 
 
 ## Who it is for
 
-Two users, two AI teammates on Chord, one shared store. The demo business is Kola Gadgets, a made-up phone store with stores in Ikeja and Lekki.
+Two users, two AI teammates on Chord, one shared store. The demo business is Kola Gadgets, a made-up phone store with branches in Ikeja, Lekki and Yaba.
 
 | User | Teammate | Where they chat | What they want |
 | --- | --- | --- | --- |
