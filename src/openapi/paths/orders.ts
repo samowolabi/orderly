@@ -8,7 +8,7 @@ registry.registerPath({
   operationId: "quote_delivery",
   summary: "Price delivery to the customer's address",
   description:
-    "Call when the customer wants delivery rather than pickup, once you have their address and phone number. Delivers from one store: the nearest with everything in stock, or, when no store has it all, the nearest with some of it, with the rest brought over from other stores first. Returns the driving distance, how long it takes with current traffic, the fee and the new total. Tell the customer and ask them to confirm before calling create_order with delivery_quote_id. If it says address_not_found, ask for a fuller address. If they'd rather not pay for delivery, offer pickup.",
+    "Call when the customer wants delivery rather than pickup, once you have their address and phone number. Delivers from one store: the nearest with everything in stock, or, when no store has it all, the nearest with some of it, with the rest brought over from other stores first. Returns the driving distance, how long it takes with current traffic, the fee and the new total. Send buyer_name: the items are then held and the Paystack link made in the same call, so send the customer one message with the fee, total and the real payment_url from order. Never write a link yourself. If they'd rather pick up, call create_order for pickup with replace_order_id. If it says address_not_found, ask for the area and city or a landmark.",
   security: security.buyer,
   request: { body: body(schema.QuoteDeliveryBody) },
   responses: {

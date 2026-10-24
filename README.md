@@ -82,7 +82,7 @@ Each tool is one endpoint under `/v1`, named by its `operationId` in the OpenAPI
 | `list_products` | `GET /products` | Buyer and seller | Shop | Prices, stock per branch, counter offers |
 | `list_stores` | `GET /stores` | Buyer and seller | Shop | Address, map link, hours, open now |
 | `get_receipt` | `GET /orders/{id}/receipt` | Buyer and seller | Both | Receipt for a paid order |
-| `quote_delivery` | `POST /delivery/quote` | Buyer | Shop | Distance, time with traffic, fee and total |
+| `quote_delivery` | `POST /delivery/quote` | Buyer | Shop | Distance, time with traffic, fee and total; with a name, holds the items and returns the Paystack link in the same call |
 | `create_order` | `POST /orders` | Buyer | Shop | Holds items, across branches if needed; one Paystack link |
 | `verify_payment` | `POST /orders/{id}/verify` | Buyer | Shop | Checks Paystack; returns the receipt when paid |
 | `contact_owner` | `POST /owner/contact` | Buyer | Shop | Emails the owner a number to call back |

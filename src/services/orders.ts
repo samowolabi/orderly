@@ -13,7 +13,7 @@ import { ApiError } from "../utils/http";
 import { formatMoney, moneyView, toSubunits } from "../utils/money";
 import { ownerEmailHtml, ownerEmailText, type OwnerEmail } from "../utils/email-template";
 import { formatAddress, type AddressRow } from "../utils/store-location";
-import { claimDeliveryQuote, deliveryMinutes, distanceKm } from "./delivery";
+import { claimDeliveryQuote, deliveryMinutes, distanceKm, quoteDelivery as quoteDeliveryTrip } from "./delivery";
 import { retry } from "../utils/retry";
 import { linePrice } from "./pricing";
 import { expireStaleOrders, failOrder, holdItems, logEvent, mergeItems, whenStockFrees, type Db, type HoldItem, type StoreLine } from "./stock";
@@ -44,6 +44,19 @@ type CreateOrderInput = {
 
   buyer_name: string;
   buyer_email?: string;
+  // An unpaid order this one takes over, e.g. delivery swapped for pickup: its hold is released.
+  replace_order_id?: string;
+};
+
+// A delivery quote; with the customer's name it also holds the items and makes the payment link.
+type QuoteDeliveryInput = {
+  items: HoldItem[];
+  address: string;
+  phone: string;
+  store_id?: string;
+  buyer_name?: string;
+  buyer_email?: string;
+  replace_order_id?: string;
 };
 
 type ListOrdersInput = {
@@ -420,6 +433,10 @@ export async function createOrder(input: CreateOrderInput) {
       ? new Map(quote.items.map((item) => [item.product_id, item.unit_price_subunit]))
       : new Map(items.map((item) => [item.product_id, linePrice(productOf.get(item.product_id)!, item.price)]));
 
+    // The order this replaces lets go of its hold first, so its units can be held again here.
+    // If anything below fails, the transaction rolls back and the old order keeps its hold.
+    if (input.replace_order_id) await releaseReplacedOrder(db, input.replace_order_id);
+
     const short = await holdItems(db, lines);
     if (short) {
       const store = storeOf.get(short.store_id)!;
@@ -506,6 +523,44 @@ export async function createOrder(input: CreateOrderInput) {
   }
 
   return orderView(await loadOrder(pool, order.id));
+}
+
+// Cancels an unpaid order that a new one replaces, releasing its hold. A paid order can't be replaced.
+async function releaseReplacedOrder(db: Db, orderId: string) {
+  const { rows } = await db.query<{ status: OrderStatus }>("SELECT status FROM orders WHERE id = $1 FOR UPDATE", [orderId.toUpperCase()]);
+  const old = rows[0];
+  if (!old) throw new ApiError(404, "order_not_found", `No order ${orderId} to replace. Leave out replace_order_id.`);
+  if (old.status === "paid") {
+    throw new ApiError(409, "already_paid", `${orderId} is already paid, so it can't be replaced. Only make a new order if the customer wants something more.`);
+  }
+  if (old.status === "pending_payment") await failOrder(db, orderId.toUpperCase(), "replaced");
+}
+
+// Quotes delivery. With the customer's name, it also holds the items and makes the payment link
+// in the same call, so the agent's one reply carries a real link and there's no second step to
+// skip or invent.
+export async function quoteDelivery(input: QuoteDeliveryInput) {
+  const quote = await quoteDeliveryTrip(input);
+  if (!input.buyer_name) return { ...quote, order: null };
+
+  const order = await createOrder({
+    items: input.items,
+    delivery_quote_id: quote.quote_id,
+    buyer_name: input.buyer_name,
+    buyer_email: input.buyer_email,
+    replace_order_id: input.replace_order_id,
+  });
+  const area = quote.matched_area
+    ? `The map only found ${quote.matched_area}, not the street, so the fee is for the area. Don't ask for more of the address: say the rider will call ${quote.phone} to find them. `
+    : "";
+  return {
+    ...quote,
+    order,
+    next_step:
+      `${area}The items are held and the payment link is ready. Send one message: delivery from ${quote.store.name}, ${quote.distance_km} km, about ${quote.minutes} minutes once paid; ` +
+      `the delivery fee ${quote.fee.display}; the total ${order.amount.display}; order ${order.order_id}; this payment link: ${order.payment_url} ; held for ${order.minutes_left} minutes. ` +
+      `End with "Reply *PAID* once you've paid." Offer pickup instead in one line. If they choose pickup, call create_order for pickup with replace_order_id ${order.order_id}, which releases this delivery order.`,
+  };
 }
 
 // Maps a payment outcome to the exact conversational instruction for Chord.

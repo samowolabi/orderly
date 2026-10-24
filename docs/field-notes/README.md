@@ -4,7 +4,7 @@ Five problems that changed how Orderly was built, then a short list of the rest.
 
 | Problem | Impact | What I did | What Chord should change |
 |---|---|---|---|
-| 1. Chord doesn't show which tools a teammate called | No way to debug a wrong reply; the teammate invents actions and denies real ones | Added a request log to the API; skill rules | Show each reply's tool calls; keep them in the teammate's history |
+| 1. Chord doesn't show which tools a teammate called | No way to debug a wrong reply; the teammate invents actions and denies real ones | Added a request log to the API; the delivery quote now holds and makes the link in one call | Show each reply's tool calls; keep them in the teammate's history |
 | 2. A teammate can't send more than one message per turn | Multi-step tasks stall after "I'll check…"; the receipt and rider message merge into one | Skills: look everything up first, then send one message | Document it, or allow an interim message |
 | 3. Every teammate has access to every tool | The customer agent holds the owner's key | API refuses buyer-key changes; skill forbids owner tools; owner-only tools added | Choose tools per teammate, or set a credential per teammate |
 | 4. Events and actions don't send messages to the simulator | No live owner chat, no automatic payment confirmation | Customer replies PAID; owner gets emails and call-back requests | Deliver every message to the simulator; let an external event start a turn |
@@ -34,7 +34,9 @@ So the order was invented (the link even copied a payment-reference pattern from
 
 **Workaround.**
 - The API's request log, on Render, our hosting platform, is now how I debug every chat. It never records keys, request bodies, names or phone numbers.
-- Skill rules: the shop never writes an order number or link that `create_order` didn't return in that turn; the owner never disowns an earlier reply. The owner already had a similar rule (skill v15) and broke it, so rules make this rarer, not impossible.
+- Skill rules: the shop never writes an order number or link that `create_order` didn't return in that turn; the owner never disowns an earlier reply.
+- The rule wasn't enough. In a re-test on shop skill v37, which has it, the agent did the same again: "Held for you 👍 Order ORD-1002" with `checkout.paystack.com/orderly-ORD-1002-7c2e91`, and no `create_order` in the log.
+- So I removed the step it skips. `quote_delivery` now holds the items and returns the real Paystack link in the same call, so the quote message already carries the link and there's no "yes" turn left to invent. Switching to pickup replaces the order and releases the hold.
 
 **What Chord should change.**
 - Show each reply's tool calls in the conversation: tool name, status, time taken and any error.

@@ -88,7 +88,7 @@ Tool endpoints below are relative to `/v1` (for example `POST /v1/orders`); the 
 | list_products | `GET /products` | Yes | Yes | Prices and stock at each store; filter by store |
 | owner_list_stores | `GET /owner/stores` | No | Yes | Every store, closed ones included (the owner's view; in Chord the shared list_stores carries the buyer key) |
 | owner_list_products | `GET /owner/products` | No | Yes | Products with floors, off-sale items, closed stores' stock and units held for unpaid orders |
-| quote_delivery | `POST /delivery/quote` | Yes | No | Prices delivery from one store (the nearest with everything, or the nearest with some of it, the rest brought over first): driving distance, traffic-aware time, fee and total |
+| quote_delivery | `POST /delivery/quote` | Yes | No | Prices delivery from one store (the nearest with everything, or the nearest with some of it, the rest brought over first): driving distance, traffic-aware time, fee and total. With `buyer_name` it also holds the items and returns the order with its Paystack link, in one call. `create_order` and `quote_delivery` take `replace_order_id` to release an unpaid order they replace |
 | contact_owner | `POST /owner/contact` | Yes | No | Emails the owner a customer's name, number and reason so the owner calls back (one per number every 30 minutes) |
 | create_order | `POST /orders` | Yes | No | Holds one or more items at the chosen store for 30 minutes (all or nothing) and returns one Paystack link for the total |
 | verify_payment | `POST /orders/{id}/verify` | Yes | No | Checks Paystack, confirms the order, returns the receipt |

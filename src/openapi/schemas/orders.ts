@@ -124,6 +124,12 @@ export const CreateOrderBody = z
       .openapi({ description: "For delivery: the quote_id from quote_delivery, once the customer has agreed to the fee. It sets the store and adds the fee.", example: "DQ-3F9A2C1B" }),
     buyer_name: z.string().trim().min(1).max(100).openapi({ example: "Tunde Bakare" }),
     buyer_email: z.email().optional().openapi({ description: "For the Paystack receipt. Leave out if the customer didn't give one." }),
+    replace_order_id: z
+      .string()
+      .trim()
+      .toUpperCase()
+      .optional()
+      .openapi({ description: "An unpaid order this one replaces, e.g. a delivery order when the customer switches to pickup. Its hold is released first.", example: "ORD-1004" }),
   })
   .refine(
     (input) => input.store_id !== undefined || input.delivery_quote_id !== undefined || input.items.every((item) => item.store_id !== undefined),
@@ -150,6 +156,20 @@ export const QuoteDeliveryBody = z.object({
     .min(1)
     .optional()
     .openapi({ description: "Only if the customer insists on one store. Leave out to deliver from the nearest store that has everything." }),
+  buyer_name: z
+    .string()
+    .trim()
+    .min(1)
+    .max(100)
+    .optional()
+    .openapi({ description: "Send it: the items are then held and the Paystack link made in this same call, so the reply to the customer carries the real link. Leave out only to price delivery without holding anything.", example: "Tunde Bakare" }),
+  buyer_email: z.email().optional().openapi({ description: "For the Paystack receipt. Leave out if the customer didn't give one." }),
+  replace_order_id: z
+    .string()
+    .trim()
+    .toUpperCase()
+    .optional()
+    .openapi({ description: "An unpaid order this replaces, e.g. a new address or items for the same customer. Its hold is released first.", example: "ORD-1004" }),
 });
 
 export const DeliveryQuote = z
@@ -174,6 +194,7 @@ export const DeliveryQuote = z
     items_subtotal: Money,
     total: Money.openapi({ description: "Items plus delivery" }),
     expires_at: Timestamp.openapi({ description: "Use the quote in create_order before this" }),
+    order: Order.nullable().openapi({ description: "The held order with its payment_url, when buyer_name was sent; null for a price-only quote" }),
     next_step: z.string(),
   })
   .openapi("DeliveryQuote");

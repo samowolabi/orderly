@@ -302,6 +302,20 @@ call "$BUYER" POST /orders '{"items":[{"product_id":"ANKER-20K"}],"delivery_quot
 check "an order from an area quote" 201 '.data.delivery.area == "Sangotedo, Lagos"'
 pay "$OA"; call "$BUYER" POST "/orders/$OA/verify"
 check "its receipt says the rider calls to find them" 200 '.data.outcome == "paid" and (.data.receipt.text | test("call 08025610983 when close, to find you"))'
+echo "== Delivery: one call quotes, holds and makes the link"
+call "$BUYER" POST /delivery/quote '{"items":[{"product_id":"ANKER-20K"}],"address":"'"$LEKKI_ADDR"'","phone":"08031234567","buyer_name":"Bisi"}'; OQ=$(jq -r .data.order.order_id <<<"$BODY")
+check "with a name, the quote holds the items and returns the real link" 201 '.data.order.status == "pending_payment" and (.data.order.payment_url | startswith("http")) and .data.order.amount.amount == 46600 and .data.order.delivery.fee.amount == 1600 and (.data as $d | ($d.next_step | contains($d.order.payment_url)) and ($d.next_step | contains("replace_order_id " + $d.order.order_id)))'; msg
+call "$BUYER" POST /orders '{"items":[{"product_id":"ANKER-20K"}],"delivery_quote_id":"'"$(jq -r .data.quote_id <<<"$BODY")"'","buyer_name":"Bisi"}'
+check "its quote can't be used for a second order" 409 '.error.code == "quote_used"'
+call "$BUYER" POST /orders '{"items":[{"product_id":"ANKER-20K"}],"store_id":"lekki","buyer_name":"Bisi","replace_order_id":"'"$OQ"'"}'; OP=$(jq -r .data.order_id <<<"$BODY")
+check "switching to pickup replaces the delivery order" 201 '.data.delivery == null and .data.status == "pending_payment"'
+call "$BUYER" POST "/orders/$OQ/verify";        check "the replaced delivery order is cancelled" 200 '.data.outcome == "failed"'
+[ "$(event_count "$OQ" order_failed)" = "1" ] && check "and its hold was released" 200 || check "and its hold was released" 500
+call "$BUYER" POST /orders '{"items":[{"product_id":"ANKER-20K"}],"store_id":"lekki","buyer_name":"Bisi","replace_order_id":"ORD-9999"}'
+check "replacing an order that doesn't exist" 404 '.error.code == "order_not_found"'
+pay "$OP"; call "$BUYER" POST "/orders/$OP/verify"; check "the pickup order is paid" 200 '.data.outcome == "paid"'
+call "$BUYER" POST /orders '{"items":[{"product_id":"ANKER-20K"}],"store_id":"lekki","buyer_name":"Bisi","replace_order_id":"'"$OP"'"}'
+check "a paid order can't be replaced" 409 '.error.code == "already_paid"'
 call "$BUYER" POST /delivery/quote '{"items":[{"product_id":"ANKER-20K"}],"address":"'"$LEKKI_ADDR"'","phone":"08031234567"}'
 check "an exact address has no matched area" 201 '.data.matched_area == null and (.data.next_step | test("rider will call") | not)'
 call "$BUYER" POST /delivery/quote '{"items":[{"product_id":"ANKER-20K"}],"address":"1 Lost Road, Atlantis","phone":"08031234567"}'
@@ -557,7 +571,7 @@ email_check "never the same email twice" 'group_by(.subject) | all(length == 1)'
 jq -r '[.[] | select(.subject | startswith("Paid: '"$O1"'"))][0] | "        | \(.subject)", (.text | split("\n")[] | "        | \(.)")' <<<"$EMAILS"
 
 echo "== Owner: list_orders"
-call "$SELLER" GET /orders;                   check "today's orders and summary" 200 '.data.period == "today" and .data.summary.counts.paid == 12 and .data.summary.paid_totals == [{"amount":4484300,"currency":"NGN","display":"₦4,484,300"}]'
+call "$SELLER" GET /orders;                   check "today's orders and summary" 200 '.data.period == "today" and .data.summary.counts.paid == 13 and .data.summary.paid_totals == [{"amount":4529300,"currency":"NGN","display":"₦4,529,300"}]'
 check "list_orders shows each order's lines" 200 '[.data.orders[] | select(.order_id == "'"$OM"'") | .items[].product.id] == ["IP14-128", "ANKER-20K"]'
 jq -c '.data.summary' <<<"$BODY" | sed 's/^/        /'
 check "paid_no_stock and mismatch need attention" 200 '[.data.needs_attention[].order_id] | contains(["'"$RACE"'", "'"$O5"'"])'

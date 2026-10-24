@@ -5,10 +5,11 @@ import * as deliveryService from "../services/delivery";
 import * as orderService from "../services/orders";
 import { parse, success } from "../utils/http";
 
-// Validates a delivery request and returns a stored quote from the nearest store.
+// Validates a delivery request and returns a stored quote from the nearest store, with the
+// items held and a payment link when the customer's name is given.
 export async function quoteDelivery(request: Request, response: Response) {
   const input = parse(QuoteDeliveryBody, request.body);
-  success(response, await deliveryService.quoteDelivery(input), 201);
+  success(response, await orderService.quoteDelivery(input), 201);
 }
 
 // Reads or changes the owner's delivery pricing.
