@@ -27,6 +27,7 @@ For you, the owner:
 - Load your real products, stock, prices and lowest prices.
 - Top up Chord credits and set a monthly limit.
 - Lock the owner chat to your number. Today anyone with the link can act as you.
+- Set up alerts for when the server or Paystack fails, not just for orders.
 - Try it for a week with a few regular customers first.
 
 **When something goes wrong**
