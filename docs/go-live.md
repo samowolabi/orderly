@@ -5,9 +5,9 @@
 For your customers, any time of day:
 - Answers questions straight away, from your live prices and stock at all three branches.
 - Bargains, but never below the lowest price you set.
-- Quotes delivery from the real distance, or offers pickup.
-- Holds the item the moment they say yes, so nothing is sold twice.
-- Sends a Paystack link, and confirms the order only when Paystack confirms the money.
+- Quotes delivery from the real distance, even from just an area name, and the rider calls for the exact spot. Or offers pickup.
+- Holds the item and sends the Paystack link in the same message, so nothing is sold twice.
+- Confirms the order only when Paystack confirms the money.
 
 For you:
 - You update products, stock, prices and branches by chatting with your own assistant.
@@ -18,6 +18,7 @@ For you:
 - Photos or detailed specs. It passes those questions to you.
 - Message customers first. After paying, customers reply PAID to get their receipt.
 - Chat live with you inside WhatsApp. When a customer asks for you, it emails you their number to call back.
+- Always remember its own past actions perfectly. If it says something didn't happen, ask it to check again; your stock, orders and payments are always recorded correctly.
 
 **Before real customers**
 - Switch Paystack to live keys, and point its payment notifications at the live server.
@@ -30,6 +31,6 @@ For you:
 **When something goes wrong**
 - A card is declined: nothing is charged, and the customer gets a new link.
 - Someone pays after the hold ran out: the item is held again if it's still there. If not, you get a "Refund needed" email.
-- Paystack is down: if a payment link can't be made, nothing is held or charged and the customer is passed to you. If a payment can't be checked, nothing is confirmed until Paystack is back, and then it confirms automatically.
+- Paystack is down: nothing is charged, and payments confirm automatically once it's back.
 - Maps are down: delivery can't be priced, so it offers pickup.
 - You hear about problems by email, and chats passed to you show in Chord. Check both every day.
