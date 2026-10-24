@@ -10,7 +10,7 @@ For your customers, any time of day:
 - Confirms the order only when Paystack confirms the money.
 
 For you, the owner:
-- You update products, stock, prices and branches by chatting with your own assistant.
+- You run the shop by chatting with your own assistant: add new products and stock, change prices, open a new branch, or close one and move its stock.
 - You ask "how did we do today?" and get your sales, what to send out and anything that needs you.
 - You get an email when an order is paid or needs you.
 
