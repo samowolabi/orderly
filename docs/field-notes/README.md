@@ -138,6 +138,7 @@ So a teammate can make several calls in a turn, but writing text ends it: Chord 
 ## Other problems I hit
 
 **In Chord** (details in the [full log](full-log.md)):
+- The sign-up code email ("Your Chord code", from onboarding@chordhq.xyz) landed in Gmail's spam, and the code expires in 10 minutes ([screenshot](screenshots/signup-code-in-spam.jpg)). A new builder who doesn't check spam can't get in. Fix: email authentication (SPF, DKIM, DMARC) for the sending domain, and a "check your spam" hint on the sign-up screen.
 - The agent wrote its working into customer messages, once leaking a bargaining figure (a buffer, not the real floor). Fixed by having the API return ready-made counter offers, so there's no floor to leak.
 - No timing per reply. Replies can feel slow, but the API answers in 5 to 560 ms per call, so the time is in Chord's model turns. Chord shows nothing to confirm where it goes.
 - Imported tools reach the agent under generated names (`watchtower__create_order-POST`) instead of their `operationId`.

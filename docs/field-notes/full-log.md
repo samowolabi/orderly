@@ -45,6 +45,7 @@ Every problem hit while building Orderly on Chord, grouped by area. The five tha
 
 | Date | Problem | Evidence | Workaround | What Chord should change |
 |---|---|---|---|---|
+| Oct 20 | Sign-up code email went to spam | Gmail: "This message is similar to messages that were identified as spam in the past"; the code expires in 10 minutes ([screenshot](screenshots/signup-code-in-spam.jpg)) | Found it in the spam folder | Authenticate the sending domain (SPF, DKIM, DMARC); add a "check your spam" hint |
 | Oct 22 | Skill title comes from the file name, not the skill's `name` | `SKILL (1).md` showed as "SKILL (1)" | Renamed by hand | Read the title from the frontmatter |
 | Oct 22 | Autonomy options have no descriptions | "Suggest, I approve", "Work with me", "Act independently" | Chose "Act independently" | One line under each option |
 | Oct 22 | Simulator setup step isn't in the brief | Admin > Connected apps had to be allowed first | Followed the credits email | Mention it in the brief |
