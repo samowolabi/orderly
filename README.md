@@ -30,7 +30,9 @@ Orderly is an AI sales assistant for shops that sell on WhatsApp and other chat 
 
 Two AI teammates run on [Chord](https://chordhq.xyz). This repo is the API they call, their skills and the docs. The demo shop is Kola Gadgets, a Lagos phone shop with three branches.
 
-- Try the live agents: [SUBMISSION.md](SUBMISSION.md)
+- Chat with the shop, as a customer: [chat.tsglabs.dev/c/f7lZY2nKUZl1Sm_qcTnKRs9P](https://chat.tsglabs.dev/c/f7lZY2nKUZl1Sm_qcTnKRs9P)
+- Chat with the owner's assistant, as Kola: [chat.tsglabs.dev/c/VrYKliOZokctDkpgMNwtU4ra](https://chat.tsglabs.dev/c/VrYKliOZokctDkpgMNwtU4ra) (changes the live demo)
+- What to try, and the test card: [SUBMISSION.md](SUBMISSION.md)
 - Problems found in Chord: [field notes](docs/field-notes/README.md)
 - [Seller interviews](docs/seller-interviews/README.md), with the chats
 
