@@ -30,7 +30,7 @@ There are two agents, both on Chord's WhatsApp simulator: **Orderly Shop** talks
 
 ### As a customer
 
-Open the shop chat: [chat.tsglabs.dev/c/f7lZY2nKUZl1Sm_qcTnKRs9P](https://chat.tsglabs.dev/c/f7lZY2nKUZl1Sm_qcTnKRs9P)
+Open the shop chat: [chat.tsglabs.dev/c/d-XsCnjHixLXHMBTqabwchBW](https://chat.tsglabs.dev/c/d-XsCnjHixLXHMBTqabwchBW)
 
 You're shopping at Kola Gadgets for phones and accessories: iPhones, Samsung and Tecno phones, AirPods, chargers and power banks. Talk to it the way you'd talk to a real shop: ask questions, bargain, change your mind. Here are some suggested messages to try:
 
@@ -51,7 +51,7 @@ To pay, use Paystack's test card: **4084 0840 8408 4081**, any future expiry, CV
 
 ### As the owner
 
-Open the owner chat: [chat.tsglabs.dev/c/VrYKliOZokctDkpgMNwtU4ra](https://chat.tsglabs.dev/c/VrYKliOZokctDkpgMNwtU4ra). Changes you make here show up straight away in the shop chat, so try changing a price as Kola, then ask the shop about it.
+Open the owner chat: [chat.tsglabs.dev/c/ECMEH5o8Zww7YGb1mU4UhCHj](https://chat.tsglabs.dev/c/ECMEH5o8Zww7YGb1mU4UhCHj). Changes you make here show up straight away in the shop chat, so try changing a price as Kola, then ask the shop about it.
 
 You're Kola, running three branches from your phone. Talk to it the way you'd talk to your shop manager: ask how sales are going, change prices and stock, open or close a branch. Here are some suggested messages to try:
 
@@ -71,8 +71,8 @@ You're Kola, running three branches from your phone. Talk to it the way you'd ta
 
 | What | Where |
 |---|---|
-| Shop agent (customer) | [chat.tsglabs.dev/c/f7lZY2nKUZl1Sm_qcTnKRs9P](https://chat.tsglabs.dev/c/f7lZY2nKUZl1Sm_qcTnKRs9P) |
-| Owner agent | [chat.tsglabs.dev/c/VrYKliOZokctDkpgMNwtU4ra](https://chat.tsglabs.dev/c/VrYKliOZokctDkpgMNwtU4ra) |
+| Shop agent (customer) | [chat.tsglabs.dev/c/d-XsCnjHixLXHMBTqabwchBW](https://chat.tsglabs.dev/c/d-XsCnjHixLXHMBTqabwchBW) |
+| Owner agent | [chat.tsglabs.dev/c/ECMEH5o8Zww7YGb1mU4UhCHj](https://chat.tsglabs.dev/c/ECMEH5o8Zww7YGb1mU4UhCHj) |
 | Repo | [github.com/samowolabi/orderly](https://github.com/samowolabi/orderly) |
 | Recording (3 minutes) | To come |
 | Field notes | [docs/field-notes/](docs/field-notes/README.md) |
