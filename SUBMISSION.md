@@ -74,6 +74,6 @@ You're Kola, running three branches from your phone. Talk to it the way you'd ta
 | Shop agent (customer) | [chat.tsglabs.dev/c/godPj6BoVOo9rGJZUJl7xOad](https://chat.tsglabs.dev/c/godPj6BoVOo9rGJZUJl7xOad) |
 | Owner agent | [chat.tsglabs.dev/c/QsYUCjl5u2dDnwR-Chi3NxDX](https://chat.tsglabs.dev/c/QsYUCjl5u2dDnwR-Chi3NxDX) |
 | Repo | [github.com/samowolabi/orderly](https://github.com/samowolabi/orderly) |
-| Recording (3 minutes) | To come |
+| Recording | [Watch on Google Drive](https://drive.google.com/file/d/1LW53SiLu5CzKb8_RaJinrDyiDvfQ4j-m/view?usp=drive_link). It runs past 3 minutes because it also walks through the owner side; the full customer order is at 2:47–5:24 |
 | Field notes | [docs/field-notes/](docs/field-notes/README.md) |
 | Go-live note | [docs/go-live.md](docs/go-live.md) |
