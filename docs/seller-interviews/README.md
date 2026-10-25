@@ -4,7 +4,7 @@ Before building, I asked three Lagos sellers who sell on WhatsApp how they handl
 
 ## How
 
-- **By message:** Sellers A and B on WhatsApp, Seller C in a direct message on another app.
+- **By message:** Sellers A and B on WhatsApp, Seller C in a direct message on another app. Seller A's chat is dated Tuesday 20 October 2026, the day after the brief and before any code.
 - **Same four questions for everyone,** sent in one message, with a note that I was building a tool and wanted to hear how they work before building anything.
 
 ## Who
