@@ -1,10 +1,10 @@
 # Seller interviews
 
-Before building, I asked three Lagos sellers who sell on WhatsApp how they handle orders today. Each agreed to be quoted without their name, and names and photos are hidden in the screenshots.
+Before building, I asked three Lagos sellers who sell on WhatsApp how they handle orders today. Each agreed to be quoted.
 
 ## How
 
-- **By message:** Sellers A and B on WhatsApp, Seller C in a direct message on another app. Seller A's chat is dated 22 February 2026.
+- **By message:** Sellers A and B on WhatsApp, Seller C in a direct message on another app.
 - **Same four questions for everyone,** sent in one message, with a note that I was building a tool and wanted to hear how they work before building anything.
 
 ## Who
@@ -36,9 +36,9 @@ Before building, I asked three Lagos sellers who sell on WhatsApp how they handl
 
 **Seller A**, clothing
 
-![Seller A: the questions](seller-a-1.jpg)
+![Seller A: the questions and first answers](seller-a-1.jpg)
 
-![Seller A: the answers, including a cut per sale "like Bumpa"](seller-a-2.jpg)
+![Seller A: the rest of the answers, including a cut per sale "like Bumpa"](seller-a-2.jpg)
 
 **Seller B**, multiple branches
 
